@@ -8,7 +8,7 @@ import "../styles/admin.css";
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 // ⚠️ CHANGE THESE CREDENTIALS before deploying!
 const ADMIN_USER = "admin";
-const ADMIN_PASS = "12345678";
+const ADMIN_PASS = import.meta.env.VITE_ADMIN_PASSWORD || "admin123";
 
 function fmtTime(iso) {
   if (!iso) return "—";
