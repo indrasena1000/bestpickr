@@ -28,6 +28,8 @@ app.use(
   }),
 );
 
+app.options("*", cors()); // preflight for all routes
+
 // compression: gzip responses (smaller = faster)
 app.use(compression());
 
