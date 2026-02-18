@@ -11,7 +11,7 @@ export default defineConfig({
     // In production, use nginx or a reverse proxy.
     proxy: {
       "/api": {
-        target: "http://localhost:5001",
+        target: "https://bestpickr-backend.vercel.app/",
         changeOrigin: true,
       },
     },
