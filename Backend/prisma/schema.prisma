@@ -142,3 +142,25 @@ enum Platform {
   FLIPKART
   MYNTRA
 }
+
+// ── ANALYTICS ──────────────────────────────────────────────────────
+model PageView {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  sessionId   String
+  visitorId   String
+  eventType   String   // page_view | search | affiliate_click | product_view
+  page        String?
+  query       String?
+  productName String?
+  productId   String?
+  affiliateUrl String?
+  referrer    String?
+  userAgent   String?
+  screenWidth Int?
+  path        String?
+
+  @@index([createdAt])
+  @@index([visitorId])
+  @@index([eventType])
+}

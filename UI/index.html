@@ -2,11 +2,123 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="bestpickr — Find the highest rated product across Amazon, Flipkart & Myntra" />
-    <title>bestpickr</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- ── PRIMARY META ──────────────────────────────────────── -->
+    <title>bestpickr — Find the Best Rated Products in India</title>
+    <meta name="description" content="bestpickr uses AI to compare products across Amazon, Flipkart & Myntra and rank them by buyer satisfaction. Find the best headphones, smartphones, laptops & more in India — in seconds." />
+    <meta name="keywords" content="best products india, product comparison india, amazon vs flipkart, best rated headphones india, best smartphone india 2025, ai product ranking, bestpickr, product review aggregator india, best buy india, product comparison tool" />
+    <meta name="author" content="bestpickr" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <link rel="canonical" href="https://bestpickr.vercel.app/" />
+
+    <!-- ── OPEN GRAPH (Facebook / WhatsApp) ──────────────────── -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://bestpickr.vercel.app/" />
+    <meta property="og:title" content="bestpickr — AI Product Rankings for Indian Shoppers" />
+    <meta property="og:description" content="Stop guessing. Find the best-rated product across Amazon, Flipkart & Myntra in one search. Free. No ads. Rankings powered by AI." />
+    <meta property="og:site_name" content="bestpickr" />
+    <meta property="og:locale" content="en_IN" />
+
+    <!-- ── TWITTER CARD ───────────────────────────────────────── -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@bestpickr" />
+    <meta name="twitter:title" content="bestpickr — AI Product Rankings for Indian Shoppers" />
+    <meta name="twitter:description" content="Compare products across Amazon, Flipkart & Myntra. AI-ranked by buyer satisfaction. Free." />
+
+    <!-- ── STRUCTURED DATA — WebSite ─────────────────────────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "bestpickr",
+      "url": "https://bestpickr.vercel.app",
+      "description": "AI-powered product comparison across Amazon, Flipkart & Myntra. Find the best rated products in India.",
+      "inLanguage": "en-IN",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://bestpickr.vercel.app/#/results?q={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
+
+    <!-- ── STRUCTURED DATA — Organization ────────────────────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "bestpickr",
+      "url": "https://bestpickr.vercel.app",
+      "description": "India's AI-powered product comparison engine. We rank products across Amazon, Flipkart & Myntra by buyer satisfaction.",
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "email": "hello@bestpickr.in",
+        "contactType": "customer support",
+        "areaServed": "IN",
+        "availableLanguage": "English"
+      },
+      "areaServed": "IN",
+      "foundingLocation": "India"
+    }
+    </script>
+
+    <!-- ── STRUCTURED DATA — FAQ (for rich results) ──────────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How does bestpickr rank products?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "bestpickr uses a proprietary AI score (0-10) combining platform ratings (40%), review sentiment analysis (30%), value for money (15%), and review volume confidence (15%) across Amazon India, Flipkart, and Myntra."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is bestpickr free to use?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, bestpickr is completely free. We earn a small affiliate commission when you purchase through our buy links, which keeps the service free for everyone."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does bestpickr accept paid rankings?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Never. All rankings on bestpickr are determined purely by our AI algorithm. Brands cannot pay to rank higher. We do not accept sponsored placements."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which platforms does bestpickr compare?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "bestpickr currently compares products across Amazon India, Flipkart, and Myntra — the three largest e-commerce platforms in India."
+          }
+        }
+      ]
+    }
+    </script>
+
+    <!-- ── FONTS ──────────────────────────────────────────────── -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+    <!-- ── THEME COLOR ────────────────────────────────────────── -->
+    <meta name="theme-color" content="#1A6B3C" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="bestpickr" />
   </head>
   <body>
     <div id="root"></div>

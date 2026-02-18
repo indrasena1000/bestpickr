@@ -2,11 +2,99 @@
 import { useState, useEffect, useRef } from 'react'
 import { getCategories, searchProducts } from '../services/api'
 import { HomeTableSkeleton } from '../components/Skeleton.jsx'
+import { trackClick } from '../utils/analytics'
+
+// ── REAL FEATURED PRODUCTS (Amazon Affiliate Links) ────────────────
+// Update product names/prices to match your actual products
+const FEATURED_PRODUCTS = [
+  {
+    id: 'fp1',
+    name: 'boAt Airdopes 141 TWS Earbuds with 42H Playback',
+    brand: 'boAt',
+    emoji: '🎧',
+    price: 1299,
+    oldPrice: 2990,
+    discount: 57,
+    rating: 4.0,
+    reviewCount: 85420,
+    badge: '🔥 Bestseller',
+    affiliateUrl: 'https://amzn.to/4tHHwpX',
+    features: ['42H Battery', 'ENx Noise Cancellation', 'ASAP Charge'],
+    category: 'Electronics',
+  },
+  {
+    id: 'fp2',
+    name: 'Redmi A4 5G Smartphone (4GB RAM, 128GB Storage)',
+    brand: 'Xiaomi',
+    emoji: '📱',
+    price: 8499,
+    oldPrice: 12999,
+    discount: 35,
+    rating: 4.1,
+    reviewCount: 23100,
+    badge: '⚡ Limited Deal',
+    affiliateUrl: 'https://amzn.to/3ZLGr2P',
+    features: ['5G Ready', '50MP Camera', '5000 mAh Battery'],
+    category: 'Smartphones',
+  },
+  {
+    id: 'fp3',
+    name: 'Amazon Echo Dot (5th Gen) Smart Speaker with Alexa',
+    brand: 'Amazon',
+    emoji: '🔊',
+    price: 3499,
+    oldPrice: 5499,
+    discount: 36,
+    rating: 4.5,
+    reviewCount: 41200,
+    badge: '✅ Top Rated',
+    affiliateUrl: 'https://amzn.to/3OeTirV',
+    features: ['Alexa Built-in', 'Improved Bass', 'Smart Home Hub'],
+    category: 'Smart Home',
+  },
+]
 
 const RANK_CLASS = ['','g','s','b','n','n','n','n','n','n','n']
 const SUGGESTS   = ['noise cancelling headphones','air fryer','running shoes','gaming mouse','robot vacuum cleaner','smartphone under 20000','laptop for students']
 
 const PLT_ICONS = { Amazon:'🛒', Flipkart:'🔵', Myntra:'🛍️' }
+
+function FeaturedProductCard({ product }) {
+  function handleBuy(e) {
+    e.stopPropagation()
+    trackClick({ type: 'affiliate_click', productId: product.id, productName: product.name, url: product.affiliateUrl })
+    window.open(product.affiliateUrl, '_blank', 'noopener,noreferrer')
+  }
+  return (
+    <div className="fcard">
+      <div className="fcard-badge">{product.badge}</div>
+      <div className="fcard-img-placeholder">{product.emoji}</div>
+      <div className="fcard-body">
+        <div className="fcard-brand">{product.brand} · {product.category}</div>
+        <div className="fcard-name">{product.name}</div>
+        <div className="fcard-rating">
+          <span className="fcard-stars">{'★'.repeat(Math.round(product.rating))}</span>
+          {product.rating} · {product.reviewCount.toLocaleString()} reviews
+        </div>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:4, marginTop:4 }}>
+          {product.features.map(f => <span key={f} className="plt-pill" style={{ background:'var(--accent-bg)', color:'var(--accent)' }}>{f}</span>)}
+        </div>
+        <div className="fcard-meta">
+          <div>
+            <div className="fcard-price">₹{product.price.toLocaleString('en-IN')}</div>
+            <div style={{ display:'flex', gap:6, alignItems:'center', marginTop:2 }}>
+              <span className="fcard-old">₹{product.oldPrice.toLocaleString('en-IN')}</span>
+              <span className="fcard-discount">{product.discount}% off</span>
+            </div>
+          </div>
+        </div>
+        <button className="fcard-buy-btn" onClick={handleBuy}>
+          🛒 Buy on Amazon →
+        </button>
+      </div>
+    </div>
+  )
+}
 
 export default function HomePage({ onSearch, onViewProduct }) {
   const [q,           setQ]     = useState('')
@@ -201,6 +289,17 @@ export default function HomePage({ onSearch, onViewProduct }) {
               No products found. Try a different category or search above.
             </div>
           )}
+        </div>
+
+        {/* ── FEATURED PRODUCTS ──────────────────────── */}
+        <div className="section featured-section" style={{ paddingTop:0 }}>
+          <div className="section-head">
+            <div className="section-title">🔥 Hot Deals — Curated by bestpickr</div>
+            <div style={{ fontSize:11, color:'var(--ink4)', fontWeight:600 }}>Affiliate links · Helps support us</div>
+          </div>
+          <div className="featured-grid">
+            {FEATURED_PRODUCTS.map(p => <FeaturedProductCard key={p.id} product={p} />)}
+          </div>
         </div>
 
         {/* ── SCORE EXPLAINER ─────────────────── */}

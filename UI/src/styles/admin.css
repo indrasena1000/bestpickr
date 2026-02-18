@@ -1,0 +1,6 @@
+/* ─── ADMIN DASHBOARD STYLES ─────────────────────── */
+/* Already defined in global.css — this file for any overrides */
+
+.admin-wrap table { font-family: 'DM Mono', monospace; }
+.admin-wrap code { font-family: 'DM Mono', monospace; font-size: 12px; }
+.admin-wrap ol li::marker { color: #3B82F6; font-weight: 700; }

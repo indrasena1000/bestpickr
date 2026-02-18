@@ -1,45 +1,108 @@
 // src/components/Footer.jsx
-export default function Footer({ onSearch }) {
-  const suggests = ['Best headphones', 'Gaming mouse', 'Running shoes', 'Air fryer', 'Skincare serum']
+export default function Footer({ onSearch, onNav, onAdmin }) {
+  const popular = [
+    'Best noise cancelling headphones India',
+    'Best budget smartphone 2025',
+    'Best gaming mouse under ₹2000',
+    'Best air fryer India',
+    'Best wireless earbuds',
+  ]
+
+  function nav(page) { if (onNav) onNav(page) }
+
   return (
     <footer>
       <div className="wrap">
         <div className="footer-grid">
+
+          {/* Brand */}
           <div>
             <div className="footer-brand"><b>best</b><span>pickr</span></div>
-            <div className="footer-desc">We compare products across Amazon, Flipkart & Myntra using AI — so you always find the best-rated product at the best price.</div>
-            <div style={{ marginTop:12, fontSize:12, color:'var(--ink4)' }}>Made in India 🇮🇳</div>
+            <div className="footer-desc">
+              India's smartest product comparison engine. We rank products across Amazon, Flipkart &amp; Myntra using AI — so you always find the best-rated product at the best price.
+            </div>
+            <div style={{ marginTop:14 }}>
+              <div style={{ fontSize:11, fontWeight:700, letterSpacing:'.4px', textTransform:'uppercase', color:'var(--ink4)', marginBottom:8 }}>Popular Searches</div>
+              {popular.map(s => (
+                <div key={s} onClick={() => onSearch && onSearch(s)}
+                  style={{ fontSize:12, color:'var(--ink4)', cursor:'pointer', marginBottom:5, lineHeight:1.5, transition:'color .12s' }}
+                  onMouseEnter={e => e.target.style.color='var(--accent)'}
+                  onMouseLeave={e => e.target.style.color='var(--ink4)'}
+                >
+                  → {s}
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop:14, fontSize:12, color:'var(--ink4)' }}>Made with ❤️ in India 🇮🇳</div>
           </div>
+
+          {/* Product */}
           <div>
             <div className="footer-col-title">Product</div>
             <div className="footer-links">
-              {['How it works','AI Score explained','Price alerts','Browser extension'].map(l => (
-                <div key={l} className="footer-link">{l}</div>
-              ))}
+              <div className="footer-link" onClick={() => nav('how-it-works')}>How It Works</div>
+              <div className="footer-link" onClick={() => nav('ai-score')}>AI Score Explained</div>
+              <div className="footer-link" onClick={() => nav('price-alerts')}>Price Alerts</div>
+              <div className="footer-link" onClick={() => onSearch && onSearch('best products')}>Top Lists</div>
+              <div className="footer-link" onClick={() => onSearch && onSearch('trending electronics')}>Trending Now</div>
             </div>
           </div>
+
+          {/* Company */}
           <div>
             <div className="footer-col-title">Company</div>
             <div className="footer-links">
-              {['About','Blog','Careers','Contact'].map(l => (
-                <div key={l} className="footer-link">{l}</div>
-              ))}
+              <div className="footer-link" onClick={() => nav('about')}>About bestpickr</div>
+              <div className="footer-link" onClick={() => nav('blog')}>Blog</div>
+              <div className="footer-link">
+                <a href="mailto:hello@bestpickr.in" style={{ color:'inherit', textDecoration:'none' }}>hello@bestpickr.in</a>
+              </div>
+            </div>
+            <div style={{ marginTop:20 }}>
+              <div className="footer-col-title">Categories</div>
+              <div className="footer-links">
+                {[
+                  ['Headphones','best headphones india'],
+                  ['Smartphones','best smartphones india 2025'],
+                  ['Laptops','best laptops for students india'],
+                  ['Gaming','best gaming accessories india'],
+                  ['Skincare','best skincare products india'],
+                ].map(([label, q]) => (
+                  <div key={label} className="footer-link" onClick={() => onSearch && onSearch(q)}>{label}</div>
+                ))}
+              </div>
             </div>
           </div>
+
+          {/* Legal */}
           <div>
             <div className="footer-col-title">Legal</div>
             <div className="footer-links">
-              {['Privacy Policy','Terms','Affiliate Disclosure'].map(l => (
-                <div key={l} className="footer-link">{l}</div>
-              ))}
+              <div className="footer-link" onClick={() => nav('privacy')}>Privacy Policy</div>
+              <div className="footer-link" onClick={() => nav('terms')}>Terms of Service</div>
+            </div>
+            <div style={{ marginTop:20, background:'var(--accent-bg)', border:'1px solid #C8E6D4', borderRadius:'var(--r2)', padding:'12px 14px' }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'var(--accent)', marginBottom:5 }}>🛒 Affiliate Disclosure</div>
+              <div style={{ fontSize:11, color:'var(--ink3)', lineHeight:1.6 }}>
+                We earn a small commission on qualifying purchases via affiliate links. Rankings are never influenced by this — products are ranked purely by our AI score.
+              </div>
             </div>
           </div>
+
         </div>
+
+        {/* Bottom bar */}
         <div className="footer-bottom">
-          <div>© 2025 bestpickr. All rights reserved.</div>
-          <div style={{ fontSize:11, color:'var(--ink4)', maxWidth:500, lineHeight:1.5 }}>
-            bestpickr earns affiliate commissions when you click Buy links. This never affects rankings — products are ranked purely by AI score.
+          <div>© {new Date().getFullYear()} bestpickr. All rights reserved.</div>
+          <div style={{ fontSize:11, color:'var(--ink4)' }}>
+            bestpickr is an independent product comparison platform. Not affiliated with Amazon, Flipkart or Myntra.
           </div>
+          {/* Hidden admin dot */}
+          <div
+            onClick={() => typeof onAdmin === 'function' && onAdmin()}
+            style={{ fontSize:11, color:'var(--ink4)', cursor:'pointer', opacity:0.3, userSelect:'none', padding:'0 4px' }}
+            title="·"
+          >·</div>
         </div>
       </div>
     </footer>

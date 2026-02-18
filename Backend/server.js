@@ -21,7 +21,11 @@ app.use(helmet());
 // cors: allow requests from our React frontend
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: [
+      process.env.FRONTEND_URL || "http://localhost:5173",
+      /\.vercel\.app$/,
+      "https://bestpickr.vercel.app",
+    ],
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
@@ -53,10 +57,13 @@ const limiter = rateLimit({
 app.use("/api/", limiter);
 
 // ── ROUTES ───────────────────────────────────────────────────────
-app.use("/api/search", require("./src/routes/search"));
-app.use("/api/products", require("./src/routes/products"));
-app.use("/api/categories", require("./src/routes/categories"));
-app.use("/api/health", require("./src/routes/health"));
+app.use("/api/search",    require("./src/routes/search"));
+app.use("/api/products",  require("./src/routes/products"));
+app.use("/api/categories",require("./src/routes/categories"));
+app.use("/api/health",    require("./src/routes/health"));
+// Analytics: track visitors, clicks, send Telegram reports
+const { router: analyticsRouter, sendTelegram } = require("./src/routes/analytics");
+app.use("/api/analytics", analyticsRouter);
 
 // ── ROOT ──────────────────────────────────────────────────────────
 app.get("/", (req, res) => {

@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /#/admin
+Disallow: /#/detail
+
+Sitemap: https://bestpickr.vercel.app/sitemap.xml
