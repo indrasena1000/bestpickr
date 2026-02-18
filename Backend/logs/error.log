@@ -1,0 +1,21 @@
+{"clientVersion":"5.22.0","errorCode":"P1012","level":"error","message":"❌ Failed to start server: \u001b[1;91merror\u001b[0m: \u001b[1mEnvironment variable not found: DATABASE_URL.\u001b[0m\n  \u001b[1;94m-->\u001b[0m  \u001b[4mschema.prisma:19\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\u001b[1;94m18 | \u001b[0m  provider = \"postgresql\"\n\u001b[1;94m19 | \u001b[0m  url      = \u001b[1;91menv(\"DATABASE_URL\")\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\nValidation Error Count: 1","name":"PrismaClientInitializationError","stack":"PrismaClientInitializationError: \u001b[1;91merror\u001b[0m: \u001b[1mEnvironment variable not found: DATABASE_URL.\u001b[0m\n  \u001b[1;94m-->\u001b[0m  \u001b[4mschema.prisma:19\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\u001b[1;94m18 | \u001b[0m  provider = \"postgresql\"\n\u001b[1;94m19 | \u001b[0m  url      = \u001b[1;91menv(\"DATABASE_URL\")\u001b[0m\n\u001b[1;94m   | \u001b[0m\n\nValidation Error Count: 1\n    at t (/Users/indrasena/Downloads/bestpickr/Backend/node_modules/@prisma/client/runtime/library.js:112:2488)\n    at async start (/Users/indrasena/Downloads/bestpickr/Backend/server.js:84:5)","timestamp":"2026-02-18 14:39:08"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:41:43"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:41:45"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:41:50"}
+{"level":"error","message":"Myntra scrape error: browserType.launch: Executable doesn't exist at /Users/indrasena/Library/Caches/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-mac-arm64/chrome-headless-shell\n╔═════════════════════════════════════════════════════════════════════════╗\n║ Looks like Playwright Test or Playwright was just installed or updated. ║\n║ Please run the following command to download new browsers:              ║\n║                                                                         ║\n║     npx playwright install                                              ║\n║                                                                         ║\n║ <3 Playwright Team                                                      ║\n╚═════════════════════════════════════════════════════════════════════════╝","timestamp":"2026-02-18 14:41:54"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:41:54"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:42:00"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:42:00"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:42:41"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:42:41"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:42:46"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:42:46"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:43:06"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:43:06"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:44:05"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:44:06"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:44:13"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:44:15"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:44:15"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:44:20"}
+{"level":"error","message":"DB save error:","timestamp":"2026-02-18 14:44:20"}
