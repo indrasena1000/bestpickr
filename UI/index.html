@@ -2,19 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- BUG #1 FIX: maximum-scale=1 prevents auto-zoom on input focus on iOS -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
 
     <!-- ── PRIMARY META ──────────────────────────────────────── -->
     <title>bestpickr — Find the Best Rated Products in India</title>
     <meta name="description" content="bestpickr uses AI to compare products across Amazon, Flipkart & Myntra and rank them by buyer satisfaction. Find the best headphones, smartphones, laptops & more in India — in seconds." />
-    <meta name="keywords" content="best products india, product comparison india, amazon vs flipkart, best rated headphones india, best smartphone india 2025, ai product ranking, bestpickr, product review aggregator india, best buy india, product comparison tool" />
+    <meta name="keywords" content="best products india, product comparison india, amazon vs flipkart, best rated headphones india, best smartphone india 2025, ai product ranking, bestpickr, product review aggregator india, best buy india, product comparison tool, best buy india 2026, top rated products india" />
     <meta name="author" content="bestpickr" />
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-    <link rel="canonical" href="https://bestpickr.vercel.app/" />
+    <link rel="canonical" href="https://bestpickr.in/" />
 
     <!-- ── OPEN GRAPH (Facebook / WhatsApp) ──────────────────── -->
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://bestpickr.vercel.app/" />
+    <meta property="og:url" content="https://bestpickr.in/" />
     <meta property="og:title" content="bestpickr — AI Product Rankings for Indian Shoppers" />
     <meta property="og:description" content="Stop guessing. Find the best-rated product across Amazon, Flipkart & Myntra in one search. Free. No ads. Rankings powered by AI." />
     <meta property="og:site_name" content="bestpickr" />
@@ -26,20 +27,24 @@
     <meta name="twitter:title" content="bestpickr — AI Product Rankings for Indian Shoppers" />
     <meta name="twitter:description" content="Compare products across Amazon, Flipkart & Myntra. AI-ranked by buyer satisfaction. Free." />
 
+    <!-- ── FAVICON — SVG logo mark ───────────────────────────── -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231A6B3C'/%3E%3Cpath d='M8.5 16.5L13 21L23.5 10.5' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%231A6B3C'/%3E%3Cpath d='M46 90L76 120L134 60' stroke='white' stroke-width='14' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+
     <!-- ── STRUCTURED DATA — WebSite ─────────────────────────── -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "WebSite",
       "name": "bestpickr",
-      "url": "https://bestpickr.vercel.app",
+      "url": "https://bestpickr.in",
       "description": "AI-powered product comparison across Amazon, Flipkart & Myntra. Find the best rated products in India.",
       "inLanguage": "en-IN",
       "potentialAction": {
         "@type": "SearchAction",
         "target": {
           "@type": "EntryPoint",
-          "urlTemplate": "https://bestpickr.vercel.app/#/results?q={search_term_string}"
+          "urlTemplate": "https://bestpickr.in/#/results?q={search_term_string}"
         },
         "query-input": "required name=search_term_string"
       }
@@ -52,7 +57,7 @@
       "@context": "https://schema.org",
       "@type": "Organization",
       "name": "bestpickr",
-      "url": "https://bestpickr.vercel.app",
+      "url": "https://bestpickr.in",
       "description": "India's AI-powered product comparison engine. We rank products across Amazon, Flipkart & Myntra by buyer satisfaction.",
       "contactPoint": {
         "@type": "ContactPoint",
@@ -111,7 +116,13 @@
     <!-- ── FONTS ──────────────────────────────────────────────── -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+    <!-- BUG #13 FIX: Hide body until React hydrates to prevent maintenance mode flash -->
+    <style>
+      body { visibility: hidden; }
+      body.bp-ready { visibility: visible; }
+    </style>
 
     <!-- ── THEME COLOR ────────────────────────────────────────── -->
     <meta name="theme-color" content="#1A6B3C" />

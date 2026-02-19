@@ -8,3 +8,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
   </React.StrictMode>
 )
+
+// BUG #13 FIX: Reveal body only after React has mounted
+// This prevents the flash of real website during maintenance mode check
+requestAnimationFrame(() => {
+  document.body.classList.add('bp-ready')
+})

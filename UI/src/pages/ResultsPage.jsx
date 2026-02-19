@@ -1,33 +1,33 @@
 // src/pages/ResultsPage.jsx
-// ✅ FIXED: Product images now display properly with graceful fallback
-//           when image fails to load (shows category-aware emoji instead of broken image)
+// BUG #4  FIX: Sort dropdown centered on mobile
+// BUG #10 FIX: "You save" calculation correct (shows MRP - lowestPrice)
+// BUG #18 FIX: Hover tooltip on result cards explaining AI pick reason
+// BUG #19 FIX: Scroll to top button
 
 import { useEffect, useState, useRef } from 'react'
-import { useSearch }      from '../hooks/useSearch'
+import { useSearch }      from '../hooks/useSearch.js'
 import { ResultSkeleton } from '../components/Skeleton.jsx'
 
 const RANK_CLASS = ['','g','s','b','n','n','n','n','n','n','n']
-const PLT_COLOR  = { Amazon:'', Flipkart:'color:var(--accent2)', Myntra:'color:#9B2FAE' }
 const PLT_ICONS  = { Amazon:'🛒', Flipkart:'🔵', Myntra:'🛍️' }
 const fmt = (n) => n ? `₹${Number(n).toLocaleString('en-IN')}` : '—'
 
-// ── CATEGORY EMOJI MAP ─────────────────────────────────────────────
 const CATEGORY_EMOJIS = {
-  headphones: '🎧', earbuds: '🎧', audio: '🎧', speaker: '🔊',
-  mobile: '📱', phone: '📱', smartphone: '📱',
-  laptop: '💻', computer: '💻',
-  tablet: '📱', ipad: '📱',
-  tv: '📺', television: '📺',
-  camera: '📷',
-  watch: '⌚', smartwatch: '⌚',
-  shoe: '👟', shoes: '👟', sneaker: '👟',
-  bag: '👜', backpack: '🎒',
-  book: '📚', kindle: '📚',
-  gaming: '🎮', controller: '🎮',
-  kitchen: '🍳', airfryer: '🍳', fryer: '🍳',
-  vacuum: '🌀', cleaner: '🌀',
-  printer: '🖨️',
-  mouse: '🖱️', keyboard: '⌨️',
+  headphones:'🎧', earbuds:'🎧', audio:'🎧', speaker:'🔊',
+  mobile:'📱', phone:'📱', smartphone:'📱',
+  laptop:'💻', computer:'💻',
+  tablet:'📱', ipad:'📱',
+  tv:'📺', television:'📺',
+  camera:'📷',
+  watch:'⌚', smartwatch:'⌚',
+  shoe:'👟', shoes:'👟', sneaker:'👟',
+  bag:'👜', backpack:'🎒',
+  book:'📚', kindle:'📚',
+  gaming:'🎮', controller:'🎮',
+  kitchen:'🍳', airfryer:'🍳', fryer:'🍳',
+  vacuum:'🌀', cleaner:'🌀',
+  printer:'🖨️',
+  mouse:'🖱️', keyboard:'⌨️',
 }
 
 function getCategoryEmoji(product) {
@@ -38,46 +38,31 @@ function getCategoryEmoji(product) {
   return '📦'
 }
 
-// ── PRODUCT IMAGE with graceful error fallback ─────────────────────
 function ProductImage({ product }) {
   const [failed, setFailed] = useState(false)
-  const imgRef = useRef(null)
-
-  // If imageUrl changes, reset failed state
   useEffect(() => { setFailed(false) }, [product.imageUrl])
 
   if (!product.imageUrl || failed) {
     return (
       <div style={{
-        width: '100%', height: '100%',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'var(--paper2)',
-        borderRadius: 'var(--r2)',
-        fontSize: 36,
+        width:'100%', height:'100%',
+        display:'flex', alignItems:'center', justifyContent:'center',
+        background:'var(--paper2)', borderRadius:'var(--r2)', fontSize:36,
       }}>
         {getCategoryEmoji(product)}
       </div>
     )
   }
-
   return (
     <img
-      ref={imgRef}
       src={product.imageUrl}
       alt={product.name}
       onError={() => setFailed(true)}
-      style={{
-        width: '100%',
-        height: '100%',
-        objectFit: 'contain',
-        borderRadius: 'var(--r2)',
-        background: '#fff',
-      }}
+      style={{ width:'100%', height:'100%', objectFit:'contain', borderRadius:'var(--r2)', background:'#fff' }}
     />
   )
 }
 
-// Filter helpers
 function applyFilters(results, filters) {
   return results.filter(p => {
     if (filters.minScore && p.aiScore < filters.minScore) return false
@@ -90,22 +75,63 @@ function applyFilters(results, filters) {
   })
 }
 
+// BUG #18: Tooltip component
+function AITooltip({ reason, children }) {
+  const [show, setShow] = useState(false)
+  return (
+    <div
+      style={{ position:'relative', display:'inline-block' }}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {children}
+      {show && reason && (
+        <div style={{
+          position:'absolute', bottom:'calc(100% + 8px)', left:'50%', transform:'translateX(-50%)',
+          background:'#1A1A1A', color:'white', fontSize:11, fontWeight:500,
+          padding:'8px 12px', borderRadius:8, whiteSpace:'normal', width:230,
+          boxShadow:'0 4px 16px rgba(0,0,0,.3)', zIndex:400, lineHeight:1.5,
+          pointerEvents:'none',
+        }}>
+          <div style={{ color:'#7ECFA0', fontWeight:700, marginBottom:3, fontSize:10, letterSpacing:'.5px' }}>
+            🤖 WHY BESTPICKR CHOSE THIS
+          </div>
+          {reason}
+          <div style={{
+            position:'absolute', top:'100%', left:'50%', transform:'translateX(-50%)',
+            width:0, height:0,
+            borderLeft:'6px solid transparent', borderRight:'6px solid transparent',
+            borderTop:'6px solid #1A1A1A',
+          }}/>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ResultsPage({ query, category, onViewProduct, onSearch }) {
   const { results, loading, error, meta, search } = useSearch()
   const [sort,    setSort]    = useState('best')
   const [filters, setFilters] = useState({ platforms: [], minScore: 0, maxPrice: 0 })
+  // BUG #19 FIX
+  const [showScroll, setShowScroll] = useState(false)
 
   useEffect(() => {
     if (query) search(query, category)
   }, [query, category])
 
-  // Apply filters + sort
+  useEffect(() => {
+    function onScroll() { setShowScroll(window.scrollY > 300) }
+    window.addEventListener('scroll', onScroll, { passive:true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
   const filtered = applyFilters(results, filters)
   const sorted   = [...filtered].sort((a, b) => {
     if (sort === 'price_asc')  return (a.lowestPrice||Infinity) - (b.lowestPrice||Infinity)
     if (sort === 'price_desc') return (b.lowestPrice||0) - (a.lowestPrice||0)
-    if (sort === 'rating')     return b.avgRating - a.avgRating
-    return b.aiScore - a.aiScore
+    if (sort === 'rating')     return (b.avgRating||0) - (a.avgRating||0)
+    return (b.aiScore||0) - (a.aiScore||0)
   })
 
   const top     = results[0]
@@ -126,7 +152,6 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
 
         {/* ── SIDEBAR FILTERS ─────────────────── */}
         <aside className="sidebar">
-          {/* Platforms */}
           <div className="filter-box">
             <div className="filter-box-title">
               Platforms
@@ -148,7 +173,6 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
             })}
           </div>
 
-          {/* Min AI Score */}
           <div className="filter-box">
             <div className="filter-box-title">
               Min AI Score
@@ -163,14 +187,11 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
                   onChange={() => setFilters(f => ({ ...f, minScore: val }))}
                 />
                 <span>{label} {desc}</span>
-                <span className="filter-cnt">
-                  {results.filter(p => p.aiScore >= val).length}
-                </span>
+                <span className="filter-cnt">{results.filter(p => p.aiScore >= val).length}</span>
               </label>
             ))}
           </div>
 
-          {/* Price Range */}
           <div className="filter-box">
             <div className="filter-box-title">
               Max Price
@@ -192,7 +213,6 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
             ))}
           </div>
 
-          {/* Cache info */}
           {meta && (
             <div style={{ fontSize:11, color:'var(--ink4)', padding:'8px 12px', background:'var(--paper2)', borderRadius:'var(--r2)', border:'1px solid var(--line)' }}>
               {meta.fromCache ? '⚡ Cached result' : `🔍 Live search in ${meta.elapsed}ms`}
@@ -207,21 +227,25 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
 
         {/* ── MAIN RESULTS ─────────────────────── */}
         <div>
-          {/* Results header */}
-          <div className="results-bar">
-            <div className="results-title">
+          {/* BUG #4 FIX: Sort centered using flex with justify-content */}
+          <div className="results-bar" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
+            <div className="results-title" style={{ flex:1, minWidth:0 }}>
               Top 10 for <span>"{query}"</span>
             </div>
-            <select
-              className="sort-select"
-              value={sort}
-              onChange={e => setSort(e.target.value)}
-            >
-              <option value="best">Sort: Best Match</option>
-              <option value="price_asc">Lowest Price</option>
-              <option value="price_desc">Highest Price</option>
-              <option value="rating">Highest Rated</option>
-            </select>
+            {/* BUG #4: Sort centered block on mobile */}
+            <div style={{ display:'flex', justifyContent:'center' }}>
+              <select
+                className="sort-select"
+                value={sort}
+                onChange={e => setSort(e.target.value)}
+                style={{ margin:'0 auto', display:'block' }}
+              >
+                <option value="best">Sort: Best Match</option>
+                <option value="price_asc">Lowest Price</option>
+                <option value="price_desc">Highest Price</option>
+                <option value="rating">Highest Rated</option>
+              </select>
+            </div>
           </div>
 
           {/* AI Summary bar */}
@@ -241,7 +265,6 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
             </div>
           )}
 
-          {/* Loading */}
           {loading && (
             <div>
               <div className="loading-wrap" style={{ padding:'16px 0 20px', flexDirection:'row', justifyContent:'flex-start' }}>
@@ -252,7 +275,6 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
             </div>
           )}
 
-          {/* Error */}
           {error && (
             <div className="error-wrap">
               ⚠️ {error}
@@ -265,7 +287,6 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
             </div>
           )}
 
-          {/* Empty state */}
           {!loading && !error && results.length === 0 && (
             <div style={{ background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r3)', padding:'48px 20px', textAlign:'center' }}>
               <div style={{ fontSize:40, marginBottom:12 }}>🔍</div>
@@ -280,7 +301,6 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
             </div>
           )}
 
-          {/* Result Cards */}
           {!loading && sorted.length > 0 && (
             <div className="result-cards">
               {sorted.map((p, i) => (
@@ -296,6 +316,29 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
           )}
         </div>
       </div>
+
+      {/* BUG #19 FIX: Scroll to top button */}
+      {showScroll && (
+        <button
+          onClick={() => window.scrollTo({ top:0, behavior:'smooth' })}
+          style={{
+            position:'fixed', bottom:24, right:24, width:44, height:44,
+            background:'var(--accent)', color:'white', border:'none',
+            borderRadius:'50%', cursor:'pointer', zIndex:500,
+            boxShadow:'0 4px 16px rgba(26,107,60,.4)',
+            fontSize:18, display:'flex', alignItems:'center', justifyContent:'center',
+          }}
+          title="Scroll to top"
+        >↑</button>
+      )}
+
+      {/* BUG #4 FIX: mobile sort center */}
+      <style>{`
+        @media(max-width:640px) {
+          .results-bar { flex-direction: column !important; align-items: stretch !important; }
+          .sort-select { width: 100% !important; text-align: center; }
+        }
+      `}</style>
     </div>
   )
 }
@@ -304,12 +347,22 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
 function ResultCard({ product: p, rank, isTop, onClick }) {
   const fmt = (n) => n ? `₹${Number(n).toLocaleString('en-IN')}` : '—'
 
+  // BUG #10 FIX: Correct "you save" = highestPrice - lowestPrice
+  const youSave = (p.highestPrice && p.lowestPrice && p.highestPrice > p.lowestPrice)
+    ? p.highestPrice - p.lowestPrice
+    : null
+  const savePct = youSave && p.highestPrice
+    ? Math.round((youSave / p.highestPrice) * 100)
+    : null
+
+  // BUG #18: AI tooltip reason
+  const aiReason = `AI Score ${p.aiScore}/10 based on ${(p.totalReviews||0).toLocaleString()} reviews across ${(p.platforms||[]).length} platforms. ${p.positivePct || 75}% positive sentiment.${isTop ? ' Ranked #1 — highest overall score in this search.' : ''}`
+
   return (
     <div className={`rcard ${isTop ? 'best' : ''}`} onClick={onClick}>
       <div className="rcard-top">
         <div className={`rcard-rank rank ${RANK_CLASS[rank]}`}>#{rank}</div>
 
-        {/* ✅ Product image with smart fallback — no more broken images or plain icons */}
         <div className="rcard-emoji">
           <ProductImage product={p} />
         </div>
@@ -318,11 +371,20 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
           <div className="rcard-brand">{p.brand}</div>
           <div className="rcard-name">{p.name}</div>
           <div className="rcard-meta">
-            <span style={{ display:'inline-flex', alignItems:'center', gap:4, background:'var(--accent-bg)', color:'var(--accent)', borderRadius:4, padding:'3px 9px', fontSize:12, fontWeight:700 }}>
-              ★ {p.aiScore}/10
-            </span>
+            {/* BUG #18: Tooltip wrapping AI score badge */}
+            <AITooltip reason={aiReason}>
+              <span style={{ display:'inline-flex', alignItems:'center', gap:4, background:'var(--accent-bg)', color:'var(--accent)', borderRadius:4, padding:'3px 9px', fontSize:12, fontWeight:700, cursor:'help' }}>
+                ★ {p.aiScore}/10
+              </span>
+            </AITooltip>
             {isTop && <span className="tag tag-g">Best Match</span>}
             {p.positivePct >= 80 && <span className="tag tag-b">Highly Praised</span>}
+            {/* BUG #10 FIX: Show you-save badge */}
+            {savePct && savePct >= 5 && (
+              <span style={{ background:'#FDF2EC', color:'var(--accent2)', fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:4 }}>
+                Save {savePct}%
+              </span>
+            )}
           </div>
         </div>
         <div style={{ textAlign:'right', flexShrink:0 }}>
@@ -332,17 +394,17 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
       </div>
 
       <div className="rcard-bottom">
-        {/* Reviews + sentiment */}
+        {/* Reviews */}
         <div>
           <div className="rcard-bottom-label">Reviews</div>
           <div className="rcard-bottom-val">{(p.totalReviews||0).toLocaleString()}</div>
           <div className="rcard-bottom-sub">across {(p.platforms||[]).length} platforms</div>
           <div className="sent-mini" style={{ marginTop:6 }}>
-            {[['Positive', p.positivePct, 'sent-pos'], ['Negative', p.negativePct||100-p.positivePct-10, 'sent-neg']].map(([lbl, pct, cls]) => (
+            {[['Positive', p.positivePct, 'sent-pos'], ['Negative', Math.max(0, 100-(p.positivePct||75)-10), 'sent-neg']].map(([lbl, pct, cls]) => (
               <div key={lbl} className="sent-mini-row">
                 <span className="sent-mini-lbl">{lbl}</span>
-                <div className="sent-mini-track"><div className={`sent-mini-fill ${cls}`} style={{ width:`${pct}%` }}/></div>
-                <span className="sent-mini-pct">{Math.round(pct)}%</span>
+                <div className="sent-mini-track"><div className={`sent-mini-fill ${cls}`} style={{ width:`${pct||0}%` }}/></div>
+                <span className="sent-mini-pct">{Math.round(pct||0)}%</span>
               </div>
             ))}
           </div>
@@ -361,18 +423,29 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
           </div>
         </div>
 
-        {/* Price */}
+        {/* BUG #10 FIX: Price + correct you save */}
         <div>
           <div className="rcard-bottom-label">Best Price</div>
           <div className="rcard-price-main">{fmt(p.lowestPrice)}</div>
           {p.highestPrice && p.highestPrice !== p.lowestPrice && (
-            <div className="rcard-bottom-sub">up to {fmt(p.highestPrice)}</div>
+            <div className="rcard-bottom-sub" style={{ textDecoration:'line-through', color:'var(--ink4)' }}>
+              {fmt(p.highestPrice)}
+            </div>
+          )}
+          {/* BUG #10: Correct "you save" = MRP - best price */}
+          {youSave && youSave > 0 && (
+            <div style={{ fontSize:11, color:'var(--accent2)', fontWeight:700, marginTop:2 }}>
+              You save {fmt(youSave)} ({savePct}%)
+            </div>
           )}
         </div>
 
         <div>
-          <button className="view-btn" style={{ padding:'9px 20px' }}
-            onClick={e => { e.stopPropagation(); onClick() }}>
+          <button
+            className="view-btn"
+            style={{ padding:'9px 20px' }}
+            onClick={e => { e.stopPropagation(); onClick() }}
+          >
             View deals →
           </button>
         </div>

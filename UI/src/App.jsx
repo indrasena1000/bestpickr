@@ -28,7 +28,7 @@ import {
   PrivacyPage, TermsPage,
 } from './pages/StaticPage.jsx'
 import { matchSeoRoute } from './seoRoutes.js'
-import { trackPageView, trackSearch } from './utils/analytics'
+import { trackPageView, trackSearch } from './utils/analytics.js'
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 

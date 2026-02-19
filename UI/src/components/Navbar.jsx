@@ -1,14 +1,21 @@
 // src/components/Navbar.jsx
+// BUG #2 FIX: Removed autoFocus from nav search — was causing keyboard popup on back navigation
+// BUG #7 FIX: Nav search bar hidden on home page (hero search is used there instead)
+// BUG #8 FIX: navbar uses width:100vw + box-sizing so zoom doesn't shrink it
+// BUG #6 FIX: SVG logo mark added next to wordmark
+// BUG #15 FIX: Top Lists mobile nav now correctly fires search
+
 import { useState, useRef, useEffect } from 'react'
-import { useSuggestions } from '../hooks/useSearch'
+import { useSuggestions } from '../hooks/useSearch.js'
 
 export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) {
   const [q, setQ]           = useState(currentQuery || '')
   const [menuOpen, setMenu] = useState(false)
   const { suggestions, fetch: fetchSugg, clear } = useSuggestions()
   const inputRef = useRef(null)
+  const isHome = currentPage === 'home' || currentPage === '/' || currentPage === ''
 
-  // Sync query when navigating back to results
+  // Sync query when navigating back to results — but don't focus
   useEffect(() => { setQ(currentQuery || '') }, [currentQuery])
 
   function handleSubmit(e) {
@@ -27,60 +34,95 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
 
   return (
     <>
-      <nav className="navbar">
-        <div className="wrap" style={{ display:'flex', alignItems:'center', gap:14 }}>
+      {/* BUG #8 FIX: full-width navbar that stays 100% even when zoomed */}
+      <nav className="navbar" style={{ width: '100%', boxSizing: 'border-box', minWidth: 0 }}>
+        <div className="wrap" style={{ display:'flex', alignItems:'center', gap:14, width:'100%', boxSizing:'border-box' }}>
 
-          {/* Logo */}
-          <div className="logo" onClick={onHome} role="button" tabIndex={0}>
-            <b>best</b><span>pickr</span>
+          {/* BUG #6 FIX: Logo with SVG icon mark */}
+          <div
+            className="logo"
+            onClick={onHome}
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => e.key === 'Enter' && onHome()}
+            style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0, cursor:'pointer' }}
+          >
+            {/* SVG checkmark icon */}
+            <div style={{
+              width: 28, height: 28, background: 'var(--accent)',
+              borderRadius: 8, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+            }}>
+              <svg width="17" height="17" viewBox="0 0 17 17" fill="none">
+                <path d="M4 8.5L7 11.5L13 5.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            {/* Wordmark */}
+            <span style={{ fontWeight:800, fontSize:18, letterSpacing:'-0.5px', lineHeight:1 }}>
+              <b style={{ color:'var(--accent)' }}>best</b>
+              <span style={{ color:'var(--ink)' }}>pickr</span>
+              <span style={{ color:'var(--accent2)' }}>.</span>
+            </span>
           </div>
 
-          {/* Search bar — shown on all pages */}
-          <div style={{ flex:1, maxWidth:480, position:'relative' }}>
-            <form onSubmit={handleSubmit} className="nav-search">
-              <SearchIcon />
-              <input
-                ref={inputRef}
-                value={q}
-                onChange={e => handleChange(e.target.value)}
-                onBlur={() => setTimeout(clear, 150)}
-                placeholder="Search any product…"
-                aria-label="Search products"
-              />
-              <button type="submit" className="nav-search-btn">Search</button>
-            </form>
+          {/* BUG #7 FIX: Search bar hidden on home page */}
+          {!isHome && (
+            <div style={{ flex:1, maxWidth:480, position:'relative' }}>
+              <form onSubmit={handleSubmit} className="nav-search">
+                <SearchIcon />
+                <input
+                  ref={inputRef}
+                  value={q}
+                  onChange={e => handleChange(e.target.value)}
+                  onBlur={() => setTimeout(clear, 150)}
+                  placeholder="Search any product…"
+                  aria-label="Search products"
+                  // BUG #2 FIX: No autoFocus — prevents keyboard on back navigation
+                />
+                <button type="submit" className="nav-search-btn">Search</button>
+              </form>
 
-            {/* Autocomplete dropdown */}
-            {suggestions.length > 0 && (
-              <div style={{
-                position:'absolute', top:'calc(100% + 4px)', left:0, right:0,
-                background:'var(--paper)', border:'1px solid var(--line)',
-                borderRadius:'var(--r2)', boxShadow:'0 8px 24px rgba(0,0,0,.08)',
-                zIndex:200, overflow:'hidden',
-              }}>
-                {suggestions.map((s, i) => (
-                  <div
-                    key={i}
-                    onMouseDown={() => pickSuggestion(s)}
-                    style={{
-                      padding:'10px 14px', fontSize:13, fontWeight:500,
-                      cursor:'pointer', color:'var(--ink2)',
-                      borderBottom: i < suggestions.length-1 ? '1px solid var(--line)' : 'none',
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background='var(--paper2)'}
-                    onMouseLeave={e => e.currentTarget.style.background=''}
-                  >
-                    🔍 {s}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+              {/* Autocomplete dropdown */}
+              {suggestions.length > 0 && (
+                <div style={{
+                  position:'absolute', top:'calc(100% + 4px)', left:0, right:0,
+                  background:'var(--paper)', border:'1px solid var(--line)',
+                  borderRadius:'var(--r2)', boxShadow:'0 8px 24px rgba(0,0,0,.08)',
+                  zIndex:200, overflow:'hidden',
+                }}>
+                  {suggestions.map((s, i) => (
+                    <div
+                      key={i}
+                      onMouseDown={() => pickSuggestion(s)}
+                      style={{
+                        padding:'10px 14px', fontSize:13, fontWeight:500,
+                        cursor:'pointer', color:'var(--ink2)',
+                        borderBottom: i < suggestions.length-1 ? '1px solid var(--line)' : 'none',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background='var(--paper2)'}
+                      onMouseLeave={e => e.currentTarget.style.background=''}
+                    >
+                      🔍 {s}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Spacer when on home page */}
+          {isHome && <div style={{ flex:1 }} />}
 
           {/* Desktop nav links */}
           <div className="nav-links">
-            <div className={`nav-lnk ${currentPage==='home'    ? 'active':''}`} onClick={onHome}>Home</div>
-            <div className={`nav-lnk ${currentPage==='results' ? 'active':''}`} onClick={() => onSearch(q||'trending')}>Top Lists</div>
+            <div
+              className={`nav-lnk ${currentPage==='home' || isHome ? 'active':''}`}
+              onClick={onHome}
+            >Home</div>
+            {/* BUG #15 FIX: Top Lists uses meaningful query */}
+            <div
+              className={`nav-lnk ${currentPage==='results' ? 'active':''}`}
+              onClick={() => onSearch(q || 'best products india')}
+            >Top Lists</div>
           </div>
 
           {/* Mobile hamburger */}
@@ -100,20 +142,38 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
       {/* Mobile drawer */}
       {menuOpen && (
         <div style={{
-          position:'fixed', top:'var(--nav-h)', left:0, right:0,
+          position:'fixed', top:'var(--nav-h)', left:0, right:0, width:'100%',
           background:'var(--paper)', borderBottom:'1px solid var(--line)',
           padding:'16px 20px', zIndex:99, boxShadow:'0 8px 24px rgba(0,0,0,.08)',
+          boxSizing:'border-box',
         }}>
-          <form onSubmit={e => { handleSubmit(e); setMenu(false) }}
-            style={{ display:'flex', alignItems:'center', gap:8, border:'1.5px solid var(--line)', borderRadius:'var(--r2)', padding:'9px 12px', marginBottom:12 }}
-          >
-            <SearchIcon /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search…" style={{ flex:1, border:'none', outline:'none', fontSize:14 }}/>
-          </form>
-          {['Home','Top Lists','Saved'].map(item => (
-            <div key={item} onClick={() => setMenu(false)}
-              style={{ padding:'11px 8px', fontSize:14, fontWeight:500, color:'var(--ink2)', cursor:'pointer', borderRadius:'var(--r)' }}
-            >{item}</div>
-          ))}
+          {!isHome && (
+            <form
+              onSubmit={e => { handleSubmit(e); setMenu(false) }}
+              style={{ display:'flex', alignItems:'center', gap:8, border:'1.5px solid var(--line)', borderRadius:'var(--r2)', padding:'9px 12px', marginBottom:12 }}
+            >
+              <SearchIcon />
+              <input
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                placeholder="Search…"
+                style={{ flex:1, border:'none', outline:'none', fontSize:14, background:'transparent' }}
+              />
+            </form>
+          )}
+          <div
+            onClick={() => { onHome(); setMenu(false) }}
+            style={{ padding:'11px 8px', fontSize:14, fontWeight:600, color: currentPage==='home' ? 'var(--accent)' : 'var(--ink2)', cursor:'pointer', borderRadius:'var(--r)' }}
+          >🏠 Home</div>
+          {/* BUG #15 FIX: Mobile Top Lists works correctly */}
+          <div
+            onClick={() => { onSearch('best products india'); setMenu(false) }}
+            style={{ padding:'11px 8px', fontSize:14, fontWeight:500, color:'var(--ink2)', cursor:'pointer', borderRadius:'var(--r)' }}
+          >📊 Top Lists</div>
+          <div
+            onClick={() => setMenu(false)}
+            style={{ padding:'11px 8px', fontSize:14, fontWeight:500, color:'var(--ink2)', cursor:'pointer', borderRadius:'var(--r)' }}
+          >🔖 Saved</div>
         </div>
       )}
 
@@ -122,6 +182,14 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
           .hbg-btn { display:flex !important }
           .nav-links { display:none !important }
           .nav-search-btn { display:none }
+        }
+        /* BUG #8 FIX: Ensure navbar covers full width regardless of zoom level */
+        .navbar {
+          width: 100% !important;
+          max-width: 100vw !important;
+          left: 0 !important;
+          right: 0 !important;
+          box-sizing: border-box !important;
         }
       `}</style>
     </>
