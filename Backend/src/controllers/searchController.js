@@ -13,6 +13,9 @@ async function search(req, res) {
 
   const { query, category = "" } = req.body;
 
+  // Set 60s timeout — ScraperAPI calls can take 30-40s on cache miss
+  req.setTimeout(60000);
+
   try {
     const agentResult = await runSearchAgent(query, category);
 

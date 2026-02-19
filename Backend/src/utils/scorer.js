@@ -155,7 +155,7 @@ function aggregateGroup(group, categoryAvgPrice) {
       price:      p.price,
       rating:     p.rating,
       reviewCount:p.reviewCount,
-      url:        p.affiliateUrl || p.url,
+      url:        ensureProductUrl(p.affiliateUrl || p.url, p.platform, group.name),
       inStock:    p.inStock !== false,
     })),
   };
@@ -171,4 +171,35 @@ function ratingToSentiment(rating) {
   return 35;
 }
 
-module.exports = { calculateAiScore, groupByProduct, aggregateGroup };
+/**
+ * Safety net: if a URL is just a homepage (no product path), replace it
+ * with a search URL so "Buy Now" at least takes the user to relevant results.
+ * This catches bad URLs from mock data or failed scraping.
+ */
+const HOMEPAGE_PATTERNS = [
+  /^https?:\/\/(www\.)?flipkart\.com\/?$/i,
+  /^https?:\/\/(www\.)?myntra\.com\/?$/i,
+  /^https?:\/\/(www\.)?amazon\.(in|com)\/?$/i,
+];
+
+function ensureProductUrl(url, platformName, productName) {
+  if (!url) return buildSearchUrl(platformName, productName);
+  // Check if it's just a homepage with no product path
+  for (const pattern of HOMEPAGE_PATTERNS) {
+    if (pattern.test(url)) {
+      return buildSearchUrl(platformName, productName);
+    }
+  }
+  return url;
+}
+
+function buildSearchUrl(platform, productName) {
+  const q = encodeURIComponent(productName || '');
+  const name = (platform || '').toLowerCase();
+  if (name === 'flipkart')  return `https://www.flipkart.com/search?q=${q}`;
+  if (name === 'myntra')    return `https://www.myntra.com/${q.replace(/%20/g, '-')}`;
+  if (name === 'amazon')    return `https://www.amazon.in/s?k=${q}&tag=bestpickr-21`;
+  return `https://www.google.com/search?q=${q}`;
+}
+
+module.exports = { calculateAiScore, groupByProduct, aggregateGroup, ensureProductUrl };

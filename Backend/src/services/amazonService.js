@@ -107,8 +107,8 @@ function buildSignedRequest(payload) {
  */
 async function searchProducts(query, category = "All") {
   if (!AMAZON_ACCESS_KEY || !AMAZON_SECRET_KEY) {
-    logger.warn("Amazon API keys not configured — returning mock data");
-    return getMockData(query);
+    logger.warn("Amazon API keys not configured — skipping Amazon");
+    return [];
   }
 
   const payload = {
@@ -143,8 +143,7 @@ async function searchProducts(query, category = "All") {
       message: err.message,
       status: err.response?.status,
     });
-    // Return mock data so the app still works during development
-    return getMockData(query);
+    return [];
   }
 }
 

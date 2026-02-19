@@ -1,238 +1,286 @@
 // src/agents/rankingAgent.js — bestpickr AI Ranking Agent
 // ─────────────────────────────────────────────────────────────────
-// THIS IS THE BRAIN OF BESTPICKR.
+// 3-TIER CACHE ARCHITECTURE:
 //
-// The agent:
-//   1. Receives a search query + category
-//   2. Fires parallel API calls to Amazon, Flipkart, Myntra
-//   3. Aggregates duplicate products across platforms
-//   4. Calculates AI score for each product
-//   5. Ranks them top 10
-//   6. Saves to database (cache)
-//   7. Returns ranked results
+//   Tier 1 — Search Cache (Redis, 6h TTL)
+//     Exact-match on normalized query + category.
+//     "best sony headphones" and "sony headphones" → same key.
+//     Cheapest to serve: 0 ScraperAPI credits.
 //
-// DESIGN PATTERN: Agent Pattern
-//   The agent is autonomous — it decides which platforms to query,
-//   handles failures gracefully (if Amazon is down, still returns
-//   Flipkart results), and caches results to avoid redundant work.
+//   Tier 2 — Category Cache (Redis, cron-preloaded at 12 AM IST)
+//     If no search cache hit, check if we have preloaded data
+//     for the category (e.g., "headphones", "smartphones").
+//     Also 0 credits — data was preloaded during off-hours.
+//
+//   Tier 3 — Live Scrape (ScraperAPI + Amazon PA5 API)
+//     Only when both caches miss. Costs 1-2 credits per search.
+//     Results get cached in Tier 1 for next 6 hours.
+//
+// FLOW:
+//   1. Check search-specific Redis cache (normalized key)
+//   2. If miss → check category cache (cron-preloaded)
+//   3. If miss → call all 3 platform APIs in parallel
+//   4. Score + rank results
+//   5. Cache in Redis (non-blocking)
+//   6. Save to PostgreSQL for long-term data (non-blocking)
 // ─────────────────────────────────────────────────────────────────
-const { PrismaClient } = require("@prisma/client");
-const pLimit = require("p-limit");
-const amazonService = require("../services/amazonService");
-const flipkartService = require("../services/flipkartService");
-const myntraService = require("../services/myntraService");
-const { groupByProduct, aggregateGroup } = require("../utils/scorer");
-const logger = require("../utils/logger");
-// import pLimit from "p-limit";
+'use strict'
 
-const prisma = new PrismaClient();
+const pLimit          = require('p-limit')
+const amazonService   = require('../services/amazonService')
+const flipkartService = require('../services/flipkartService')
+const myntraService   = require('../services/myntraService')
+const { groupByProduct, aggregateGroup } = require('../utils/scorer')
+const { getCachedResults, cacheResults, getCategoryCache } = require('../utils/redis')
+const { CATEGORIES }  = require('../cron/categoryPreloader')
+const logger          = require('../utils/logger')
 
-// Limit concurrent requests to avoid overwhelming APIs
-const limit = pLimit(3);
+// FIX 1: prisma is injected from server.js via setPrisma()
+// Never create new PrismaClient() here — use the shared instance
+let prisma = null
 
-// ── MAIN AGENT FUNCTION ───────────────────────────────────────────
-/**
- * Search and rank products across all platforms.
- *
- * @param {string} query    - User search query
- * @param {string} category - Product category
- * @returns {Array}         - Top 10 ranked products
- */
-async function runSearchAgent(query, category = "") {
-  const startTime = Date.now();
-  logger.info(`🤖 Agent started: query="${query}" category="${category}"`);
+function setPrisma(client) {
+  prisma = client
+  logger.info('rankingAgent: prisma client injected ✅')
+}
 
-  // ── STEP 1: Check cache first ─────────────────────────────────
-  const cached = await checkCache(query, category);
-  if (cached) {
-    logger.info(`⚡ Cache hit for "${query}" — ${Date.now() - startTime}ms`);
-    return { results: cached, fromCache: true };
+// Limit concurrent platform API calls (don't hammer services)
+const limit = pLimit(3)
+
+// ── CATEGORY DETECTION ──────────────────────────────────────────
+// Maps user query keywords → category slugs for Tier 2 cache lookup.
+// If the route already provides a category, we use that directly.
+// Otherwise, we try to detect it from the query text.
+const CATEGORY_KEYWORDS = {
+  headphones:  ['headphone', 'earphone', 'earbuds', 'earbud', 'headset', 'tws', 'neckband', 'airpods'],
+  smartphones: ['phone', 'mobile', 'smartphone', 'iphone', 'samsung galaxy', 'oneplus', 'pixel'],
+  laptops:     ['laptop', 'macbook', 'notebook', 'chromebook'],
+  appliances:  ['appliance', 'mixer', 'grinder', 'microwave', 'oven', 'toaster', 'blender', 'juicer'],
+  gaming:      ['gaming', 'controller', 'gamepad', 'console', 'playstation', 'xbox'],
+  footwear:    ['shoe', 'sneaker', 'sandal', 'slipper', 'boot', 'running shoe', 'trainer'],
+  skincare:    ['skincare', 'serum', 'sunscreen', 'moisturizer', 'cleanser', 'face wash', 'toner'],
+  fashion:     ['shirt', 'tshirt', 't-shirt', 'jeans', 'kurta', 'dress', 'jacket', 'hoodie'],
+  books:       ['book', 'novel', 'textbook', 'fiction', 'non-fiction'],
+  cameras:     ['camera', 'dslr', 'mirrorless', 'gopro', 'webcam', 'lens'],
+}
+
+function detectCategory(query, category) {
+  // If route already provides category, use it
+  if (category) {
+    const slug = category.toLowerCase().trim()
+    if (CATEGORIES.some(c => c.slug === slug)) return slug
+  }
+  // Try to detect from query text
+  const q = query.toLowerCase()
+  for (const [slug, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (keywords.some(kw => q.includes(kw))) return slug
+  }
+  return null
+}
+
+// ── MAIN AGENT ────────────────────────────────────────────────────
+async function runSearchAgent(query, category = '') {
+  const startTime = Date.now()
+  logger.info(`Agent: query="${query}" category="${category}"`)
+
+  // ── TIER 1: Search-specific Redis cache ─────────────────────────
+  // Normalized key: "best sony headphones" → same key as "sony headphones"
+  try {
+    const cached = await getCachedResults(query, category)
+    if (cached && cached.length > 0) {
+      logger.info(`Agent: Tier 1 HIT (search cache) for "${query}" in ${Date.now() - startTime}ms`)
+      return { results: cached, fromCache: true, source: 'search_cache' }
+    }
+  } catch (cacheErr) {
+    logger.warn(`Agent: Tier 1 check failed: ${cacheErr.message} — continuing`)
   }
 
-  // ── STEP 2: Fire all platform APIs in PARALLEL ────────────────
-  // Promise.allSettled means: even if one API fails,
-  // we still get results from the others.
-  logger.info(`📡 Calling all platform APIs in parallel...`);
+  // ── TIER 2: Category cache (cron-preloaded at 12 AM IST) ───────
+  // If the query maps to a known category, serve preloaded data.
+  // This avoids scraping for common category-level queries.
+  const detectedCategory = detectCategory(query, category)
+  if (detectedCategory) {
+    try {
+      const categoryResults = await getCategoryCache(detectedCategory)
+      if (categoryResults && categoryResults.length > 0) {
+        logger.info(
+          `Agent: Tier 2 HIT (category cache "${detectedCategory}") → ` +
+          `${categoryResults.length} products in ${Date.now() - startTime}ms`
+        )
+        // Cache this as a search result too, so next identical query hits Tier 1
+        cacheResults(query, category, categoryResults).catch(err =>
+          logger.warn(`Agent: Tier 2→1 promotion failed: ${err.message}`)
+        )
+        return { results: categoryResults, fromCache: true, source: 'category_cache' }
+      }
+    } catch (catErr) {
+      logger.warn(`Agent: Tier 2 check failed: ${catErr.message} — continuing to live scrape`)
+    }
+  }
 
-  const [amazonResult, flipkartResult, myntraResult] = await Promise.allSettled(
-    [
-      limit(() => amazonService.searchProducts(query, category)),
-      limit(() => flipkartService.searchProducts(query, category)),
-      limit(() => myntraService.searchProducts(query, category)),
-    ],
-  );
+  // ── TIER 3: Live scrape (costs ScraperAPI credits) ──────────────
+  // Both caches missed — call all platform APIs in parallel.
+  // Promise.allSettled = if one fails, others still return results.
+  logger.info(`Agent: Tier 3 — live scraping all platforms for "${query}"...`)
 
-  // Extract results, log any failures
-  const amazonProducts = extractSettled(amazonResult, "Amazon");
-  const flipkartProducts = extractSettled(flipkartResult, "Flipkart");
-  const myntraProducts = extractSettled(myntraResult, "Myntra");
+  const [amazonResult, flipkartResult, myntraResult] = await Promise.allSettled([
+    limit(() => amazonService.searchProducts(query, category)),
+    limit(() => flipkartService.searchProducts(query, category)),
+    limit(() => myntraService.searchProducts(query, category)),
+  ])
 
-  const allProducts = [
-    ...amazonProducts,
-    ...flipkartProducts,
-    ...myntraProducts,
-  ];
+  const amazonProducts   = extractSettled(amazonResult,   'Amazon')
+  const flipkartProducts = extractSettled(flipkartResult, 'Flipkart')
+  const myntraProducts   = extractSettled(myntraResult,   'Myntra')
+
+  const allProducts = [...amazonProducts, ...flipkartProducts, ...myntraProducts]
+
   logger.info(
-    `📦 Total raw products: ${allProducts.length} (Amazon:${amazonProducts.length} Flipkart:${flipkartProducts.length} Myntra:${myntraProducts.length})`,
-  );
+    `Agent: raw products: ${allProducts.length} ` +
+    `(Amazon:${amazonProducts.length} Flipkart:${flipkartProducts.length} Myntra:${myntraProducts.length})`
+  )
 
+  // FIX 3: If ALL platforms return empty, something is wrong
+  // Log a clear warning so the developer knows immediately
   if (allProducts.length === 0) {
-    logger.warn(`⚠️ No products found for "${query}"`);
-    return { results: [], fromCache: false };
+    logger.warn(`Agent: ⚠️  ALL platforms returned 0 products for "${query}"`)
+    logger.warn('Agent: Check ScraperAPI key, Amazon API keys, and network connectivity')
+    return { results: [], fromCache: false, error: 'no_products_found' }
   }
 
-  // ── STEP 3: Calculate category average price ──────────────────
-  // Used in the "value for money" scoring component
-  const prices = allProducts.map((p) => p.price).filter(Boolean);
+  // ── STEP 3: Category average price (for value scoring) ─────────
+  const prices = allProducts.map(p => p.price).filter(Boolean)
   const avgCategoryPrice = prices.length
     ? prices.reduce((a, b) => a + b, 0) / prices.length
-    : null;
+    : null
 
-  // ── STEP 4: Group same products across platforms ──────────────
-  // e.g., Sony WH-1000XM5 appears on Amazon AND Flipkart
-  // Group them so we compare cross-platform pricing
-  const groups = groupByProduct(allProducts);
-  logger.info(`🔗 Grouped into ${groups.length} unique products`);
+  // ── STEP 4: Group same product across platforms ───────────────
+  // Sony WH-1000XM5 on Amazon + Flipkart → one group
+  const groups = groupByProduct(allProducts)
+  logger.info(`Agent: grouped into ${groups.length} unique products`)
 
-  // ── STEP 5: Score and rank each product ──────────────────────
+  // ── STEP 5: Score and rank ────────────────────────────────────
   const scored = groups
-    .map((group) => aggregateGroup(group, avgCategoryPrice))
-    .sort((a, b) => b.aiScore - a.aiScore) // Sort by AI score descending
-    .slice(0, 10) // Top 10 only
-    .map((product, index) => ({
-      rank: index + 1,
-      ...product,
-    }));
+    .map(group => aggregateGroup(group, avgCategoryPrice))
+    .filter(p => p.aiScore > 0)
+    .sort((a, b) => b.aiScore - a.aiScore)
+    .slice(0, 10)
+    .map((product, index) => ({ rank: index + 1, ...product }))
 
-  logger.info(
-    `🏆 Top 10 ranked. #1: "${scored[0]?.name}" (${scored[0]?.aiScore})`,
-  );
+  logger.info(`Agent: ranked ${scored.length} products. #1: "${scored[0]?.name}" score=${scored[0]?.aiScore}`)
 
-  // ── STEP 6: Save to DB (cache + product storage) ─────────────
-  // Run async — don't block the response
-  saveResultsToDb(query, category, scored).catch((err) =>
-    logger.error("DB save error:", err.message),
-  );
+  // ── STEP 6: Cache in Redis → Tier 1 for next time (non-blocking)
+  cacheResults(query, category, scored).catch(err =>
+    logger.error(`Agent: Redis cache save failed: ${err.message}`)
+  )
 
-  const elapsed = Date.now() - startTime;
-  logger.info(`✅ Agent complete in ${elapsed}ms`);
+  // ── STEP 7: Persist to PostgreSQL for long-term data (non-blocking)
+  if (prisma) {
+    saveProductsToDb(query, category, scored).catch(err =>
+      // FIX 2: Full error message — was previously "DB save error:" with nothing after
+      logger.error(`Agent: DB save error: ${err.message} | code: ${err.code} | ${err.stack?.split('\n')[1]?.trim()}`)
+    )
+  } else {
+    logger.warn('Agent: prisma not injected — skipping DB save (call setPrisma() from server.js)')
+  }
+
+  const elapsed = Date.now() - startTime
+  logger.info(`Agent: complete in ${elapsed}ms`)
 
   return {
-    results: scored,
-    fromCache: false,
+    results:    scored,
+    fromCache:  false,
+    source:     'live_scrape',
     elapsed_ms: elapsed,
     platforms: {
-      amazon: amazonProducts.length,
+      amazon:   amazonProducts.length,
       flipkart: flipkartProducts.length,
-      myntra: myntraProducts.length,
+      myntra:   myntraProducts.length,
     },
-  };
-}
-
-// ── CACHE CHECK ───────────────────────────────────────────────────
-async function checkCache(query, category) {
-  try {
-    const cacheKey = query.toLowerCase().trim();
-    const entry = await prisma.searchCache.findUnique({
-      where: { query_category: { query: cacheKey, category: category || "" } },
-    });
-
-    if (entry && new Date() < new Date(entry.expiresAt)) {
-      // Increment hit count
-      await prisma.searchCache.update({
-        where: { id: entry.id },
-        data: { hitCount: { increment: 1 } },
-      });
-      return entry.resultJson;
-    }
-
-    // Expired cache — delete it
-    if (entry) {
-      await prisma.searchCache.delete({ where: { id: entry.id } });
-    }
-  } catch (err) {
-    logger.warn("Cache check failed:", err.message);
   }
-  return null;
 }
 
-// ── SAVE RESULTS TO DB ────────────────────────────────────────────
-async function saveResultsToDb(query, category, results) {
-  const ttlSeconds = parseInt(process.env.CACHE_TTL_SECONDS) || 3600;
-  const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+// ── SAVE TO POSTGRESQL ────────────────────────────────────────────
+// Persists products + price history for long-term data.
+// Redis handles speed; PostgreSQL handles durability and price tracking.
+// This runs async and never blocks the search response.
+async function saveProductsToDb(query, category, results) {
+  let savedCount = 0
 
-  // Save search cache
-  await prisma.searchCache.upsert({
-    where: {
-      query_category: {
-        query: query.toLowerCase().trim(),
-        category: category || "",
-      },
-    },
-    update: { resultJson: results, expiresAt, hitCount: 1 },
-    create: {
-      query: query.toLowerCase().trim(),
-      category: category || "",
-      resultJson: results,
-      expiresAt,
-    },
-  });
-
-  // Save individual products + price history
   for (const product of results) {
     for (const plt of product.platforms) {
       try {
-        const existing = await prisma.product.upsert({
+        // Ensure platform name matches Prisma enum: AMAZON | FLIPKART | MYNTRA
+        const platformEnum = plt.name.toUpperCase()
+        if (!['AMAZON', 'FLIPKART', 'MYNTRA'].includes(platformEnum)) {
+          logger.warn(`Agent DB: skipping unknown platform "${plt.name}"`)
+          continue
+        }
+
+        const platformId = `${product.name.slice(0, 80)}-${plt.name}`
+
+        const saved = await prisma.product.upsert({
           where: {
-            platform_platformId: {
-              platform: plt.name.toUpperCase(),
-              platformId: `${product.name}-${plt.name}`,
-            },
+            platform_platformId: { platform: platformEnum, platformId },
           },
           update: {
-            currentPrice: plt.price || 0,
-            platformRating: plt.rating,
-            reviewCount: plt.reviewCount || 0,
-            aiScore: product.aiScore,
-            lastScored: new Date(),
+            currentPrice:   plt.price   || 0,
+            platformRating: plt.rating  || null,
+            reviewCount:    plt.reviewCount || 0,
+            aiScore:        product.aiScore,
+            imageUrl:       product.imageUrl || null,   // FIX: was missing in old code
+            lastScored:     new Date(),
+            inStock:        plt.inStock !== false,
           },
           create: {
-            name: product.name,
-            brand: product.brand,
-            category: category,
-            platform: plt.name.toUpperCase(),
-            platformId: `${product.name}-${plt.name}`,
-            platformUrl: plt.url || "",
-            currentPrice: plt.price || 0,
-            platformRating: plt.rating,
-            reviewCount: plt.reviewCount || 0,
-            aiScore: product.aiScore,
-            lastScored: new Date(),
+            name:           product.name,
+            brand:          product.brand    || null,
+            category:       category         || null,
+            imageUrl:       product.imageUrl || null,
+            platform:       platformEnum,
+            platformId,
+            platformUrl:    plt.url          || '',
+            affiliateUrl:   plt.url          || '',
+            currentPrice:   plt.price        || 0,
+            platformRating: plt.rating       || null,
+            reviewCount:    plt.reviewCount  || 0,
+            aiScore:        product.aiScore,
+            lastScored:     new Date(),
           },
-        });
+        })
 
-        // Record price history
-        if (plt.price) {
+        // Price history: only record if we have a real price
+        if (plt.price && plt.price > 0) {
           await prisma.priceHistory.create({
-            data: { productId: existing.id, price: plt.price },
-          });
+            data: { productId: saved.id, price: plt.price },
+          })
         }
+
+        savedCount++
       } catch (e) {
-        // Non-fatal — continue with other products
-        logger.warn(
-          `Product save failed for ${product.name} on ${plt.name}:`,
-          e.message,
-        );
+        // FIX 2: Log actual error details — was previously silent
+        logger.warn(`Agent DB: product save failed for "${product.name}" on ${plt.name}: ${e.message}`)
       }
     }
+  }
+
+  if (savedCount > 0) {
+    logger.info(`Agent DB: saved ${savedCount} product-platform records`)
   }
 }
 
 // ── HELPER ────────────────────────────────────────────────────────
 function extractSettled(result, platformName) {
-  if (result.status === "fulfilled") return result.value || [];
-  logger.warn(`${platformName} API failed:`, result.reason?.message);
-  return [];
+  if (result.status === 'fulfilled') {
+    const items = result.value || []
+    if (items.length === 0) {
+      logger.warn(`Agent: ${platformName} returned 0 products`)
+    }
+    return items
+  }
+  // FIX 2: Log full error reason
+  logger.warn(`Agent: ${platformName} API failed: ${result.reason?.message || result.reason}`)
+  return []
 }
 
-module.exports = { runSearchAgent };
+module.exports = { runSearchAgent, setPrisma }

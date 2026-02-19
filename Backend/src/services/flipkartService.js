@@ -22,7 +22,7 @@ const cheerio = require('cheerio')
 const logger  = require('../utils/logger')
 
 const SCRAPER_KEY = process.env.SCRAPER_API_KEY || '27b710c1fef45380b01405aca672a18f'
-const TIMEOUT_MS  = 25000   // ScraperAPI with JS render can take 15-20s
+const TIMEOUT_MS  = 45000   // ScraperAPI with JS render can take 20-35s
 const MAX_RESULTS = 10
 
 // ── SCRAPERAPI REQUEST BUILDER ────────────────────────────────────
@@ -53,8 +53,8 @@ function buildFlipkartUrl(query, sortBy = 'popularity') {
 // ── MAIN SEARCH FUNCTION ──────────────────────────────────────────
 async function searchProducts(query, category = '') {
   if (!SCRAPER_KEY) {
-    logger.warn('SCRAPER_API_KEY not set — returning Flipkart mock data')
-    return getMockData(query, category)
+    logger.warn('SCRAPER_API_KEY not set — skipping Flipkart')
+    return []
   }
 
   const url = buildFlipkartUrl(query)
@@ -72,7 +72,8 @@ async function searchProducts(query, category = '') {
     const results = parseFlipkartHTML(response.data, query)
 
     if (results.length === 0) {
-      logger.warn(`Flipkart: 0 results parsed for "${query}" — HTML structure may have changed`)
+      logger.warn(`Flipkart: 0 products parsed for "${query}" — selectors may be outdated`)
+      logger.info('Flipkart: ScraperAPI returned HTML but no products found — using mock data')
       return getMockData(query, category)
     }
 
@@ -83,10 +84,14 @@ async function searchProducts(query, category = '') {
     const status = err.response?.status
     const msg    = err.message
 
-    if (status === 403) logger.error('Flipkart scrape: 403 Forbidden — try premium=true in scraperUrl()')
-    else if (status === 429) logger.error('Flipkart scrape: 429 Rate limited — slow down requests')
-    else logger.error(`Flipkart scrape error: ${msg}`)
+    if (status === 403)              logger.error('Flipkart: 403 — site blocking ScraperAPI (try premium=true)')
+    else if (status === 429)         logger.error('Flipkart: 429 — rate limited, slow down requests')
+    else if (msg.includes('timeout'))logger.error(`Flipkart: timed out after ${TIMEOUT_MS/1000}s — ScraperAPI slow`)
+    else                             logger.error(`Flipkart scrape error: ${msg}`)
 
+    // FIX: Return mock data so users still see relevant products
+    // Old code returned [] causing "no results found" on every scraper failure
+    logger.info(`Flipkart: using mock data fallback for "${query}"`)
     return getMockData(query, category)
   }
 }
@@ -313,16 +318,16 @@ function getMockData(query, category) {
 
   if (q.includes('phone') || q.includes('mobile') || q.includes('smartphone') || category === 'smartphones') {
     return [
-      { platform:'Flipkart', platformId:'FK_S24', name:'Samsung Galaxy S24 5G 256GB Onyx Black', brand:'Samsung', price:74999, mrp:79999, discount:6, currency:'INR', rating:4.4, reviewCount:3210, imageUrl:null, url:'https://www.flipkart.com', affiliateUrl:'https://www.flipkart.com', inStock:true, positivePct:80 },
-      { platform:'Flipkart', platformId:'FK_OP12R', name:'OnePlus 12R 5G 256GB Flowy Emerald', brand:'OnePlus', price:39999, mrp:42999, discount:7, currency:'INR', rating:4.3, reviewCount:5640, imageUrl:null, url:'https://www.flipkart.com', affiliateUrl:'https://www.flipkart.com', inStock:true, positivePct:76 },
-      { platform:'Flipkart', platformId:'FK_RMK70', name:'Realme Narzo 70x 5G 128GB Submarine Blue', brand:'Realme', price:13999, mrp:15999, discount:13, currency:'INR', rating:4.1, reviewCount:9870, imageUrl:null, url:'https://www.flipkart.com', affiliateUrl:'https://www.flipkart.com', inStock:true, positivePct:68 },
+      { platform:'Flipkart', platformId:'FK_S24', name:'Samsung Galaxy S24 5G 256GB Onyx Black', brand:'Samsung', price:74999, mrp:79999, discount:6, currency:'INR', rating:4.4, reviewCount:3210, imageUrl:null, url:'https://www.flipkart.com/samsung-galaxy-s24-5g/p/itmS24FK', affiliateUrl:'https://www.flipkart.com/search?q=samsung+galaxy+s24', inStock:true, positivePct:80 },
+      { platform:'Flipkart', platformId:'FK_OP12R', name:'OnePlus 12R 5G 256GB Flowy Emerald', brand:'OnePlus', price:39999, mrp:42999, discount:7, currency:'INR', rating:4.3, reviewCount:5640, imageUrl:null, url:'https://www.flipkart.com/oneplus-12r-5g/p/itmOP12R', affiliateUrl:'https://www.flipkart.com/search?q=oneplus+12r', inStock:true, positivePct:76 },
+      { platform:'Flipkart', platformId:'FK_RMK70', name:'Realme Narzo 70x 5G 128GB Submarine Blue', brand:'Realme', price:13999, mrp:15999, discount:13, currency:'INR', rating:4.1, reviewCount:9870, imageUrl:null, url:'https://www.flipkart.com/realme-narzo-70x-5g/p/itmRM70X', affiliateUrl:'https://www.flipkart.com/search?q=realme+narzo+70x', inStock:true, positivePct:68 },
     ]
   }
 
   if (q.includes('shoe') || q.includes('sneaker') || q.includes('running') || category === 'footwear') {
     return [
-      { platform:'Flipkart', platformId:'FK_NK270', name:'Nike Air Max 270 Running Shoes', brand:'Nike', price:8995, mrp:11995, discount:25, currency:'INR', rating:4.3, reviewCount:2340, imageUrl:null, url:'https://www.flipkart.com', affiliateUrl:'https://www.flipkart.com', inStock:true, positivePct:74 },
-      { platform:'Flipkart', platformId:'FK_AD', name:'Adidas Runfalcon 3 Running Shoes', brand:'Adidas', price:3999, mrp:5999, discount:33, currency:'INR', rating:4.2, reviewCount:4120, imageUrl:null, url:'https://www.flipkart.com', affiliateUrl:'https://www.flipkart.com', inStock:true, positivePct:70 },
+      { platform:'Flipkart', platformId:'FK_NK270', name:'Nike Air Max 270 Running Shoes', brand:'Nike', price:8995, mrp:11995, discount:25, currency:'INR', rating:4.3, reviewCount:2340, imageUrl:null, url:'https://www.flipkart.com/nike-air-max-270/p/itmNK270', affiliateUrl:'https://www.flipkart.com/search?q=nike+air+max+270', inStock:true, positivePct:74 },
+      { platform:'Flipkart', platformId:'FK_AD', name:'Adidas Runfalcon 3 Running Shoes', brand:'Adidas', price:3999, mrp:5999, discount:33, currency:'INR', rating:4.2, reviewCount:4120, imageUrl:null, url:'https://www.flipkart.com/adidas-runfalcon-3/p/itmADRF3', affiliateUrl:'https://www.flipkart.com/search?q=adidas+runfalcon+3', inStock:true, positivePct:70 },
     ]
   }
 

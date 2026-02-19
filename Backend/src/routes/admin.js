@@ -79,4 +79,56 @@ router.post('/maintenance', async (req, res) => {
   }
 })
 
+
+// ── GET /api/admin/cache-info ──────────────────────────────────────
+// Shows all Redis cached searches — used by admin dashboard
+router.get('/cache-info', async (req, res) => {
+  try {
+    const { getCacheInfo } = require('../utils/redis')
+    const info = await getCacheInfo()
+    res.json(info)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── DELETE /api/admin/cache ────────────────────────────────────────
+// Flush all Redis cache — forces fresh scrape on next search
+router.delete('/cache', async (req, res) => {
+  try {
+    const { token } = req.body
+    const adminToken = process.env.ADMIN_TOKEN || 'bestpickr-admin-2025'
+    if (token !== adminToken) return res.status(401).json({ error: 'Unauthorized' })
+    const { flushBestpickrCache } = require('../utils/redis')
+    const deleted = await flushBestpickrCache()
+    console.log(`[Admin] Redis cache flushed: ${deleted} keys deleted`)
+    res.json({ ok: true, deleted })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── POST /api/admin/preload-categories ───────────────────────────
+// Manually trigger category preloading (same as 12 AM IST cron)
+// Useful for: first deploy, after cache flush, testing
+router.post('/preload-categories', async (req, res) => {
+  try {
+    const { token } = req.body
+    const adminToken = process.env.ADMIN_TOKEN || 'bestpickr-admin-2025'
+    if (token !== adminToken) return res.status(401).json({ error: 'Unauthorized' })
+
+    const { preloadAllCategories } = require('../cron/categoryPreloader')
+    // Run in background — don't make the HTTP request wait 2+ minutes
+    res.json({ ok: true, message: 'Category preload started in background' })
+    const result = await preloadAllCategories()
+    console.log(`[Admin] Preload complete:`, result)
+  } catch (err) {
+    console.error('[Admin] preload error:', err)
+    // Response may already be sent — only send error if not
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message })
+    }
+  }
+})
+
 module.exports = router

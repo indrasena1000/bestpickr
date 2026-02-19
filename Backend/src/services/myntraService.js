@@ -29,7 +29,7 @@ const cheerio = require('cheerio')
 const logger  = require('../utils/logger')
 
 const SCRAPER_KEY = process.env.SCRAPER_API_KEY || '27b710c1fef45380b01405aca672a18f'
-const TIMEOUT_MS  = 25000
+const TIMEOUT_MS  = 45000   // ScraperAPI with JS render can take 20-35s
 const MAX_RESULTS = 10
 
 // ── CATEGORIES MYNTRA IS RELEVANT FOR ─────────────────────────────
@@ -75,8 +75,8 @@ async function searchProducts(query, category = '') {
   }
 
   if (!SCRAPER_KEY) {
-    logger.warn('SCRAPER_API_KEY not set — returning Myntra mock data')
-    return getMockData(query, category)
+    logger.warn('SCRAPER_API_KEY not set — skipping Myntra')
+    return []
   }
 
   logger.info(`🛍️  Myntra scraping: "${query}" via ScraperAPI (India IP)`)
@@ -100,7 +100,11 @@ async function searchProducts(query, category = '') {
       return htmlResults
     }
   } catch (err) {
-    logger.error(`Myntra HTML scrape failed: ${err.message}`)
+    if (err.message.includes('timeout')) {
+      logger.error(`Myntra: HTML scrape timed out after ${TIMEOUT_MS/1000}s`)
+    } else {
+      logger.error(`Myntra HTML scrape failed: ${err.message}`)
+    }
   }
 
   logger.warn(`Myntra: all strategies failed for "${query}" — using mock data`)
@@ -292,25 +296,25 @@ function getMockData(query, category) {
 
   if (q.includes('shoe') || q.includes('sneaker') || q.includes('running') || category === 'footwear') {
     return [
-      { platform:'Myntra', platformId:'MYN_NK1', name:'Nike Air Max 270 Running Shoes', brand:'Nike', price:9995, mrp:11995, currency:'INR', rating:4.4, reviewCount:2340, imageUrl:null, url:'https://www.myntra.com/nike/air-max/23401', affiliateUrl:'https://www.myntra.com', inStock:true, positivePct:78 },
-      { platform:'Myntra', platformId:'MYN_AD1', name:'Adidas Ultraboost Light Running Shoes', brand:'Adidas', price:14999, mrp:18999, currency:'INR', rating:4.5, reviewCount:1820, imageUrl:null, url:'https://www.myntra.com/adidas/ultraboost/12341', affiliateUrl:'https://www.myntra.com', inStock:true, positivePct:82 },
-      { platform:'Myntra', platformId:'MYN_PM1', name:'Puma Velocity Nitro 2 Running Shoes', brand:'Puma', price:7999, mrp:9999, currency:'INR', rating:4.2, reviewCount:980, imageUrl:null, url:'https://www.myntra.com/puma/velocity-nitro/9801', affiliateUrl:'https://www.myntra.com', inStock:true, positivePct:72 },
-      { platform:'Myntra', platformId:'MYN_SK1', name:'Skechers GOrun Consistent Running Shoes', brand:'Skechers', price:5499, mrp:6999, currency:'INR', rating:4.1, reviewCount:3410, imageUrl:null, url:'https://www.myntra.com/skechers/gorun/56781', affiliateUrl:'https://www.myntra.com', inStock:true, positivePct:68 },
+      { platform:'Myntra', platformId:'MYN_NK1', name:'Nike Air Max 270 Running Shoes', brand:'Nike', price:9995, mrp:11995, currency:'INR', rating:4.4, reviewCount:2340, imageUrl:null, url:'https://www.myntra.com/nike/air-max/23401', affiliateUrl:'https://www.myntra.com/nike/air-max/23401', inStock:true, positivePct:78 },
+      { platform:'Myntra', platformId:'MYN_AD1', name:'Adidas Ultraboost Light Running Shoes', brand:'Adidas', price:14999, mrp:18999, currency:'INR', rating:4.5, reviewCount:1820, imageUrl:null, url:'https://www.myntra.com/adidas/ultraboost/12341', affiliateUrl:'https://www.myntra.com/adidas/ultraboost/12341', inStock:true, positivePct:82 },
+      { platform:'Myntra', platformId:'MYN_PM1', name:'Puma Velocity Nitro 2 Running Shoes', brand:'Puma', price:7999, mrp:9999, currency:'INR', rating:4.2, reviewCount:980, imageUrl:null, url:'https://www.myntra.com/puma/velocity-nitro/9801', affiliateUrl:'https://www.myntra.com/puma/velocity-nitro/9801', inStock:true, positivePct:72 },
+      { platform:'Myntra', platformId:'MYN_SK1', name:'Skechers GOrun Consistent Running Shoes', brand:'Skechers', price:5499, mrp:6999, currency:'INR', rating:4.1, reviewCount:3410, imageUrl:null, url:'https://www.myntra.com/skechers/gorun/56781', affiliateUrl:'https://www.myntra.com/skechers/gorun/56781', inStock:true, positivePct:68 },
     ]
   }
 
   if (q.includes('serum') || q.includes('sunscreen') || q.includes('skincare') || q.includes('moisturizer') || category === 'skincare') {
     return [
-      { platform:'Myntra', platformId:'MYN_SK10', name:'The Ordinary Niacinamide 10% + Zinc 1% Serum', brand:'The Ordinary', price:699, mrp:699, currency:'INR', rating:4.5, reviewCount:5600, imageUrl:null, url:'https://www.myntra.com/the-ordinary/niacinamide/1001', affiliateUrl:'https://www.myntra.com', inStock:true, positivePct:85 },
-      { platform:'Myntra', platformId:'MYN_SK11', name:'Minimalist SPF 50 PA++++ Sunscreen', brand:'Minimalist', price:399, mrp:399, currency:'INR', rating:4.4, reviewCount:3200, imageUrl:null, url:'https://www.myntra.com/minimalist/spf50/1002', affiliateUrl:'https://www.myntra.com', inStock:true, positivePct:82 },
-      { platform:'Myntra', platformId:'MYN_SK12', name:'Dot & Key Watermelon Cooling Body Lotion SPF 30', brand:'Dot & Key', price:495, mrp:599, currency:'INR', rating:4.3, reviewCount:1890, imageUrl:null, url:'https://www.myntra.com/dot-key/body-lotion/1003', affiliateUrl:'https://www.myntra.com', inStock:true, positivePct:77 },
+      { platform:'Myntra', platformId:'MYN_SK10', name:'The Ordinary Niacinamide 10% + Zinc 1% Serum', brand:'The Ordinary', price:699, mrp:699, currency:'INR', rating:4.5, reviewCount:5600, imageUrl:null, url:'https://www.myntra.com/the-ordinary/niacinamide/1001', affiliateUrl:'https://www.myntra.com/the-ordinary/niacinamide/1001', inStock:true, positivePct:85 },
+      { platform:'Myntra', platformId:'MYN_SK11', name:'Minimalist SPF 50 PA++++ Sunscreen', brand:'Minimalist', price:399, mrp:399, currency:'INR', rating:4.4, reviewCount:3200, imageUrl:null, url:'https://www.myntra.com/minimalist/spf50/1002', affiliateUrl:'https://www.myntra.com/minimalist/spf50/1002', inStock:true, positivePct:82 },
+      { platform:'Myntra', platformId:'MYN_SK12', name:'Dot & Key Watermelon Cooling Body Lotion SPF 30', brand:'Dot & Key', price:495, mrp:599, currency:'INR', rating:4.3, reviewCount:1890, imageUrl:null, url:'https://www.myntra.com/dot-key/body-lotion/1003', affiliateUrl:'https://www.myntra.com/dot-key/body-lotion/1003', inStock:true, positivePct:77 },
     ]
   }
 
   if (q.includes('shirt') || q.includes('tshirt') || q.includes('jeans') || q.includes('kurta') || category === 'fashion') {
     return [
-      { platform:'Myntra', platformId:'MYN_F1', name:'H&M Regular Fit Cotton T-Shirt', brand:'H&M', price:799, mrp:999, currency:'INR', rating:4.2, reviewCount:6540, imageUrl:null, url:'https://www.myntra.com/hm/tshirt/1101', affiliateUrl:'https://www.myntra.com', inStock:true, positivePct:74 },
-      { platform:'Myntra', platformId:'MYN_F2', name:'Zara Slim-Fit Stretch Jeans', brand:'Zara', price:3999, mrp:4999, currency:'INR', rating:4.1, reviewCount:2300, imageUrl:null, url:'https://www.myntra.com/zara/jeans/1102', affiliateUrl:'https://www.myntra.com', inStock:true, positivePct:70 },
+      { platform:'Myntra', platformId:'MYN_F1', name:'H&M Regular Fit Cotton T-Shirt', brand:'H&M', price:799, mrp:999, currency:'INR', rating:4.2, reviewCount:6540, imageUrl:null, url:'https://www.myntra.com/hm/tshirt/1101', affiliateUrl:'https://www.myntra.com/hm/tshirt/1101', inStock:true, positivePct:74 },
+      { platform:'Myntra', platformId:'MYN_F2', name:'Zara Slim-Fit Stretch Jeans', brand:'Zara', price:3999, mrp:4999, currency:'INR', rating:4.1, reviewCount:2300, imageUrl:null, url:'https://www.myntra.com/zara/jeans/1102', affiliateUrl:'https://www.myntra.com/zara/jeans/1102', inStock:true, positivePct:70 },
     ]
   }
 
