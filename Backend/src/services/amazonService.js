@@ -156,11 +156,13 @@ async function searchProducts(query, category = "All") {
 //
 // These are used when the API returns a product matching this ASIN.
 const MANUAL_AFFILIATE_URLS = {
-  // Product 1 — Fridge Organizer — your full link (cleaned)
-  B08WC9RQYD:
-    "https://www.amazon.in/dp/B08WC9RQYD?tag=bestpickr-21&linkCode=ll2&linkId=0940b6aa9d41a50bb4d71b5efea535e6&ref_=as_li_ss_tl",
-  // Add more below as you generate links from Amazon Associates:
-  // "B0XXXXXXXXX": "https://www.amazon.in/dp/B0XXXXXXXXX?tag=bestpickr-21&linkCode=ll2&linkId=YOUR_LINK_ID&ref_=as_li_ss_tl",
+  B0CCLMLRY8:
+    "https://www.amazon.in/dp/B0CCLMLRY8?tag=bestpickr-21&linkCode=ll2&linkId=3224d39e3ae39a53dc87cfaca0257221&ref_=as_li_ss_tl",
+  B0C591TT8F:
+    "https://www.amazon.in/dp/B0C591TT8F?tag=bestpickr-21&linkCode=ll2&linkId=2657a6de8c2932c182b76deb8e749024&ref_=as_li_ss_tl",
+  B07DQXH8JZ:
+    "https://www.amazon.in/dp/B07DQXH8JZ?tag=bestpickr-21&linkCode=ll2&linkId=87747a090d2be209a3f34aed820729aa&ref_=as_li_ss_tl",
+  // Add more as you generate links from Amazon Associates portal
 };
 
 // Build the affiliate URL: manual link first, then auto-generated fallback
@@ -214,39 +216,58 @@ function mapToAmazonIndex(category) {
 }
 
 // ── MOCK DATA (when API keys not available) ───────────────────────
+// ✅ All URLs use clean dp/ASIN?tag= format — no amzn.to shortlinks
+// ✅ Mock data uses the same 3 products as your Hot Deals section for consistency
 function getMockData(query) {
   logger.info(`Amazon mock data for: "${query}"`);
+  const tag = AMAZON_ASSOCIATE_TAG || "bestpickr-21";
   return [
     {
       platform: "Amazon",
-      platformId: "B08WC9RQYD",
-      name: "SAUDEEP INDIA Vastu Feng Shui Crystal Turtle Tortoise with Plate for Good Luck Feng Shui Tortoise Turtle (Regular Quality)",
-      brand: "SAUDEEP INDIA",
-      price: 376,
-      rating: 4.3,
-      reviewCount: 1288,
-      imageUrl: null,
-      url: "https://amzn.to/4ruOdKE",
-      affiliateUrl:
-        "https://www.amazon.in/dp/B08WC9RQYD?tag=bestpickr-21&linkCode=ll2&linkId=0940b6aa9d41a50bb4d71b5efea535e6&ref_=as_li_ss_tl",
+      platformId: "B0CCLMLRY8",
+      name: "LEMBOSE Plastic Fridge Storage Refrigerator Organizer Container with Lid - 5L, Transparent",
+      brand: "LEMBOSE",
+      price: 249,
+      rating: 4.5,
+      reviewCount: 41200,
+      imageUrl:
+        "https://m.media-amazon.com/images/I/71WqBJFa2TL._SX342_SY445_.jpg",
+      url: `https://www.amazon.in/dp/B0CCLMLRY8`,
+      affiliateUrl: `https://www.amazon.in/dp/B0CCLMLRY8?tag=${tag}&linkCode=ll2&linkId=3224d39e3ae39a53dc87cfaca0257221&ref_=as_li_ss_tl`,
       inStock: true,
       positivePct: 84,
       currency: "INR",
     },
     {
       platform: "Amazon",
-      platformId: "B0756CYWWD",
-      name: "Premium Head Scalp Electric Massager Comb | Scalp Massaging Brush with 3 In 1 Hair Oil Applicator | IPX7 Water Resistant,Portable Deep Massager For Hair & Head Relaxation at Home | Shiatsu Massage for Hair Growth/Stress Relax (Multicolor)",
-      brand: "Soulemo",
-      price: 1599,
-      rating: 4.3,
-      reviewCount: 9100,
-      imageUrl: null,
-      url: "https://amzn.to/3ZJ30Fs",
-      affiliateUrl:
-        "https://www.amazon.in/Yeipis-Massaging-Applicator-Relaxation-Multicolor/dp/B0GJFWZ76G?1&linkCode=ll2&tag=bestpickr-21&linkId=27333c88680ac5a12e7bb551e69b9c1a&ref_=as_li_ss_tl",
+      platformId: "B07DQXH8JZ",
+      name: "Scotch-Brite Microfiber Polishing Wipe for cleaning TV, Mobile, Laptop, Tablet screens & Spectacles (Pack of 1, Grey)",
+      brand: "Scotch-Brite",
+      price: 169,
+      rating: 4.2,
+      reviewCount: 3665,
+      imageUrl:
+        "https://m.media-amazon.com/images/I/61RI+lFf3HL._SX342_SY445_.jpg",
+      url: `https://www.amazon.in/dp/B07DQXH8JZ`,
+      affiliateUrl: `https://www.amazon.in/dp/B07DQXH8JZ?tag=${tag}&linkCode=ll2&linkId=87747a090d2be209a3f34aed820729aa&ref_=as_li_ss_tl`,
       inStock: true,
       positivePct: 79,
+      currency: "INR",
+    },
+    {
+      platform: "Amazon",
+      platformId: "B0C591TT8F",
+      name: "Cubic Classic A5 Journal – 160 Pages, 80 gsm | PU Leather Hardbound Notebook with Pen Loop | Black Diary",
+      brand: "Cubic",
+      price: 167,
+      rating: 4.2,
+      reviewCount: 780,
+      imageUrl:
+        "https://m.media-amazon.com/images/I/71k3o+gJgFL._SX342_SY445_.jpg",
+      url: `https://www.amazon.in/dp/B0C591TT8F`,
+      affiliateUrl: `https://www.amazon.in/dp/B0C591TT8F?tag=${tag}&linkCode=ll2&linkId=2657a6de8c2932c182b76deb8e749024&ref_=as_li_ss_tl`,
+      inStock: true,
+      positivePct: 76,
       currency: "INR",
     },
   ];
