@@ -1,7 +1,56 @@
 // src/pages/DetailPage.jsx
-import { useState } from "react";
+// ✅ FIXED: Product image now shows with graceful error fallback (category emoji)
+import { useState, useEffect } from "react";
 
 const PLT_ICONS = { Amazon: "🛒", Flipkart: "🔵", Myntra: "🛍️" };
+
+// ── CATEGORY EMOJI MAP ────────────────────────────────────────────
+const CATEGORY_EMOJIS = {
+  headphones: '🎧', earbuds: '🎧', audio: '🎧', speaker: '🔊',
+  mobile: '📱', phone: '📱', smartphone: '📱',
+  laptop: '💻', computer: '💻', tablet: '📱',
+  tv: '📺', television: '📺', camera: '📷',
+  watch: '⌚', smartwatch: '⌚',
+  shoe: '👟', shoes: '👟', sneaker: '👟',
+  bag: '👜', backpack: '🎒', book: '📚',
+  gaming: '🎮', controller: '🎮',
+  kitchen: '🍳', airfryer: '🍳', fryer: '🍳',
+  vacuum: '🌀', cleaner: '🌀', printer: '🖨️',
+  mouse: '🖱️', keyboard: '⌨️',
+}
+function getCategoryEmoji(product) {
+  const text = `${product.name} ${product.category || ''}`.toLowerCase()
+  for (const [key, emoji] of Object.entries(CATEGORY_EMOJIS)) {
+    if (text.includes(key)) return emoji
+  }
+  return '📦'
+}
+
+// ✅ Smart product image with graceful error fallback
+function ProductImage({ product, className, style }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { setFailed(false) }, [product.imageUrl])
+
+  if (!product.imageUrl || failed) {
+    return (
+      <div
+        className={className}
+        style={{ ...style, display:'flex', alignItems:'center', justifyContent:'center', background:'var(--paper2)', borderRadius:'var(--r2)', fontSize: 52 }}
+      >
+        {getCategoryEmoji(product)}
+      </div>
+    )
+  }
+  return (
+    <img
+      src={product.imageUrl}
+      alt={product.name}
+      className={className}
+      onError={() => setFailed(true)}
+      style={{ ...style, objectFit:'contain', background:'#fff', borderRadius:'var(--r2)' }}
+    />
+  )
+}
 const fmt = (n) => (n ? `₹${Number(n).toLocaleString("en-IN")}` : "—");
 
 export default function DetailPage({ product: p, allResults, onBack, onHome }) {
@@ -78,20 +127,10 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
           <div className="dh">
             <div className="dh-top">
               <div className="dh-emoji">
-                {p.imageUrl ? (
-                  <img
-                    src={p.imageUrl}
-                    alt={p.name}
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "contain",
-                      borderRadius: "var(--r2)",
-                    }}
-                  />
-                ) : (
-                  <span>📦</span>
-                )}
+                <ProductImage
+                  product={p}
+                  style={{ width: "100%", height: "100%" }}
+                />
               </div>
               <div className="dh-info">
                 <div className="dh-brand">{p.brand}</div>

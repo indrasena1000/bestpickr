@@ -1,13 +1,5 @@
 // ─────────────────────────────────────────────────────────────────
-// bestpickr — Prisma Database Schema
-// Database: PostgreSQL
-//
-// TABLES:
-//   Product       → cached product data per platform
-//   SearchCache   → cached search results (avoid hitting APIs repeatedly)
-//   Review        → aggregated review data
-//   PriceHistory  → price over time per product per platform
-//   Wishlist      → user saved products (future auth feature)
+// bestpickr — Prisma Schema (Prisma 5.22 compatible)
 // ─────────────────────────────────────────────────────────────────
 
 generator client {
@@ -20,45 +12,35 @@ datasource db {
 }
 
 // ── PRODUCT ───────────────────────────────────────────────────────
-// One row per product per platform.
-// Same physical product appears as multiple rows (one per store).
-// We link them via productGroupId (same item, different stores).
 model Product {
   id              String    @id @default(uuid())
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  // Product identity
   name            String
   brand           String?
   category        String?
   imageUrl        String?
   description     String?
 
-  // Platform-specific
   platform        Platform
-  platformId      String          // ASIN for Amazon, SKU for Flipkart, etc.
-  platformUrl     String          // Affiliate link to buy
-  affiliateUrl    String?         // With affiliate tag
+  platformId      String
+  platformUrl     String
+  affiliateUrl    String?
 
-  // Pricing
   currentPrice    Float
   originalPrice   Float?
   currency        String          @default("INR")
   inStock         Boolean         @default(true)
 
-  // Ratings from this platform
-  platformRating  Float?          // e.g., 4.8
+  platformRating  Float?
   reviewCount     Int             @default(0)
 
-  // bestpickr AI score
-  aiScore         Float?          // 0-10
+  aiScore         Float?
   lastScored      DateTime?
 
-  // Group: same product across platforms
-  productGroupId  String?         // UUID shared across platforms for same item
+  productGroupId  String?
 
-  // Relations
   reviews         Review[]
   priceHistory    PriceHistory[]
 
@@ -80,16 +62,14 @@ model Review {
   totalCount      Int       @default(0)
   averageRating   Float?
 
-  // Sentiment analysis results
   positiveCount   Int       @default(0)
   neutralCount    Int       @default(0)
   negativeCount   Int       @default(0)
   positivePct     Float?
   negativePct     Float?
 
-  // LLM-generated summaries
-  praiseSummary   String?   // "Best ANC, great battery..."
-  complaintSummary String?  // "Expensive, no IP rating..."
+  praiseSummary    String?
+  complaintSummary String?
 
   analyzedAt      DateTime?
 
@@ -111,8 +91,6 @@ model PriceHistory {
 }
 
 // ── SEARCH CACHE ──────────────────────────────────────────────────
-// Cache search results so we don't hammer APIs on every search.
-// TTL is set via backend config (default: 1 hour).
 model SearchCache {
   id          String    @id @default(uuid())
   createdAt   DateTime  @default(now())
@@ -120,7 +98,7 @@ model SearchCache {
 
   query       String
   category    String?
-  resultJson  Json      // Full ranked results array stored as JSON
+  resultJson  Json
   hitCount    Int       @default(1)
 
   @@unique([query, category])
@@ -129,11 +107,11 @@ model SearchCache {
 
 // ── CATEGORY ──────────────────────────────────────────────────────
 model Category {
-  id          String    @id @default(uuid())
-  slug        String    @unique
-  name        String
-  emoji       String
-  productCount Int      @default(0)
+  id           String  @id @default(uuid())
+  slug         String  @unique
+  name         String
+  emoji        String
+  productCount Int     @default(0)
 }
 
 // ── ENUMS ─────────────────────────────────────────────────────────
@@ -143,24 +121,35 @@ enum Platform {
   MYNTRA
 }
 
-// ── ANALYTICS ──────────────────────────────────────────────────────
+// ── ANALYTICS ─────────────────────────────────────────────────────
 model PageView {
-  id          String   @id @default(uuid())
-  createdAt   DateTime @default(now())
-  sessionId   String
-  visitorId   String
-  eventType   String   // page_view | search | affiliate_click | product_view
-  page        String?
-  query       String?
-  productName String?
-  productId   String?
+  id           String   @id @default(uuid())
+  createdAt    DateTime @default(now())
+  sessionId    String
+  visitorId    String
+  eventType    String
+  page         String?
+  query        String?
+  productName  String?
+  productId    String?
   affiliateUrl String?
-  referrer    String?
-  userAgent   String?
-  screenWidth Int?
-  path        String?
+  referrer     String?
+  userAgent    String?
+  screenWidth  Int?
+  path         String?
 
   @@index([createdAt])
   @@index([visitorId])
   @@index([eventType])
+}
+
+// ── SITE CONFIG ───────────────────────────────────────────────────
+// Persistent key-value store for admin settings (maintenance mode etc.)
+model SiteConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
 }

@@ -1,5 +1,8 @@
 // src/pages/ResultsPage.jsx
-import { useEffect, useState } from 'react'
+// ✅ FIXED: Product images now display properly with graceful fallback
+//           when image fails to load (shows category-aware emoji instead of broken image)
+
+import { useEffect, useState, useRef } from 'react'
 import { useSearch }      from '../hooks/useSearch'
 import { ResultSkeleton } from '../components/Skeleton.jsx'
 
@@ -7,6 +10,72 @@ const RANK_CLASS = ['','g','s','b','n','n','n','n','n','n','n']
 const PLT_COLOR  = { Amazon:'', Flipkart:'color:var(--accent2)', Myntra:'color:#9B2FAE' }
 const PLT_ICONS  = { Amazon:'🛒', Flipkart:'🔵', Myntra:'🛍️' }
 const fmt = (n) => n ? `₹${Number(n).toLocaleString('en-IN')}` : '—'
+
+// ── CATEGORY EMOJI MAP ─────────────────────────────────────────────
+const CATEGORY_EMOJIS = {
+  headphones: '🎧', earbuds: '🎧', audio: '🎧', speaker: '🔊',
+  mobile: '📱', phone: '📱', smartphone: '📱',
+  laptop: '💻', computer: '💻',
+  tablet: '📱', ipad: '📱',
+  tv: '📺', television: '📺',
+  camera: '📷',
+  watch: '⌚', smartwatch: '⌚',
+  shoe: '👟', shoes: '👟', sneaker: '👟',
+  bag: '👜', backpack: '🎒',
+  book: '📚', kindle: '📚',
+  gaming: '🎮', controller: '🎮',
+  kitchen: '🍳', airfryer: '🍳', fryer: '🍳',
+  vacuum: '🌀', cleaner: '🌀',
+  printer: '🖨️',
+  mouse: '🖱️', keyboard: '⌨️',
+}
+
+function getCategoryEmoji(product) {
+  const text = `${product.name} ${product.category || ''}`.toLowerCase()
+  for (const [key, emoji] of Object.entries(CATEGORY_EMOJIS)) {
+    if (text.includes(key)) return emoji
+  }
+  return '📦'
+}
+
+// ── PRODUCT IMAGE with graceful error fallback ─────────────────────
+function ProductImage({ product }) {
+  const [failed, setFailed] = useState(false)
+  const imgRef = useRef(null)
+
+  // If imageUrl changes, reset failed state
+  useEffect(() => { setFailed(false) }, [product.imageUrl])
+
+  if (!product.imageUrl || failed) {
+    return (
+      <div style={{
+        width: '100%', height: '100%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--paper2)',
+        borderRadius: 'var(--r2)',
+        fontSize: 36,
+      }}>
+        {getCategoryEmoji(product)}
+      </div>
+    )
+  }
+
+  return (
+    <img
+      ref={imgRef}
+      src={product.imageUrl}
+      alt={product.name}
+      onError={() => setFailed(true)}
+      style={{
+        width: '100%',
+        height: '100%',
+        objectFit: 'contain',
+        borderRadius: 'var(--r2)',
+        background: '#fff',
+      }}
+    />
+  )
+}
 
 // Filter helpers
 function applyFilters(results, filters) {
@@ -36,10 +105,9 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
     if (sort === 'price_asc')  return (a.lowestPrice||Infinity) - (b.lowestPrice||Infinity)
     if (sort === 'price_desc') return (b.lowestPrice||0) - (a.lowestPrice||0)
     if (sort === 'rating')     return b.avgRating - a.avgRating
-    return b.aiScore - a.aiScore  // default: best match
+    return b.aiScore - a.aiScore
   })
 
-  // Build AI summary from results
   const top     = results[0]
   const bestVal = results.reduce((best, p) => (!best || (p.lowestPrice < best.lowestPrice && p.aiScore > 7)) ? p : best, null)
 
@@ -240,12 +308,12 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
     <div className={`rcard ${isTop ? 'best' : ''}`} onClick={onClick}>
       <div className="rcard-top">
         <div className={`rcard-rank rank ${RANK_CLASS[rank]}`}>#{rank}</div>
+
+        {/* ✅ Product image with smart fallback — no more broken images or plain icons */}
         <div className="rcard-emoji">
-          {p.imageUrl
-            ? <img src={p.imageUrl} alt={p.name} style={{ width:'100%', height:'100%', objectFit:'contain', borderRadius:'var(--r2)' }}/>
-            : <span style={{ fontSize:32 }}>📦</span>
-          }
+          <ProductImage product={p} />
         </div>
+
         <div className="rcard-info">
           <div className="rcard-brand">{p.brand}</div>
           <div className="rcard-name">{p.name}</div>

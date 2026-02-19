@@ -202,7 +202,7 @@ function getMockData(query) {
       reviewCount: 1288,
       imageUrl: null,
       url: "https://amzn.to/4ruOdKE",
-      affiliateUrl: "https://amzn.to/4ruOdKE",
+      affiliateUrl: "https://amzn.to/4qPDxoT",
       inStock: true,
       positivePct: 84,
       currency: "INR",

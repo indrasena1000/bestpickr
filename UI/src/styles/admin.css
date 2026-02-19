@@ -1,6 +1,412 @@
-/* ─── ADMIN DASHBOARD STYLES ─────────────────────── */
-/* Already defined in global.css — this file for any overrides */
+/* ─── ADMIN DASHBOARD — WHITE / LIGHT THEME ────────────────────── */
+/* ✅ REPLACED: Dark (#0F172A) theme → clean white/light theme       */
 
-.admin-wrap table { font-family: 'DM Mono', monospace; }
-.admin-wrap code { font-family: 'DM Mono', monospace; font-size: 12px; }
-.admin-wrap ol li::marker { color: #3B82F6; font-weight: 700; }
+/* ── LAYOUT ──────────────────────────────────────────────────────── */
+.admin-wrap {
+  min-height: 100vh;
+  background: #F1F5F9;
+  color: #1E293B;
+  font-family: 'Inter', 'DM Sans', sans-serif;
+}
+
+/* ── LOGIN ───────────────────────────────────────────────────────── */
+.admin-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+  background: linear-gradient(135deg, #EFF6FF 0%, #F8FAFC 100%);
+}
+.admin-login-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 20px;
+  padding: 44px 40px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.06);
+}
+.admin-login-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0F172A;
+  margin-bottom: 6px;
+}
+.admin-login-sub {
+  font-size: 13px;
+  color: #94A3B8;
+  margin-bottom: 28px;
+}
+.admin-login-err {
+  color: #EF4444;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.admin-login-btn {
+  width: 100%;
+  background: #3B82F6;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 13px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s;
+  font-family: inherit;
+}
+.admin-login-btn:hover { background: #2563EB; }
+.admin-back-btn {
+  color: #94A3B8;
+  font-size: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ── NAV BAR ─────────────────────────────────────────────────────── */
+.admin-nav {
+  background: #FFFFFF;
+  border-bottom: 1px solid #E2E8F0;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 58px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.04);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.admin-nav-logo {
+  font-size: 17px;
+  font-weight: 800;
+  color: #0F172A;
+  flex: 1;
+}
+.admin-nav-logo span { color: #3B82F6; }
+.admin-nav-live {
+  font-size: 12px;
+  color: #64748B;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.admin-nav-divider {
+  width: 1px;
+  height: 20px;
+  background: #E2E8F0;
+}
+.admin-nav-logout {
+  font-size: 12px;
+  color: #64748B;
+  cursor: pointer;
+  padding: 6px 12px;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  background: #fff;
+  transition: all .15s;
+  font-family: inherit;
+}
+.admin-nav-logout:hover { border-color: #3B82F6; color: #3B82F6; }
+.admin-nav-close {
+  font-size: 12px;
+  color: #94A3B8;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* ── CONTENT AREA ────────────────────────────────────────────────── */
+.admin-content {
+  padding: 28px 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.admin-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0F172A;
+  margin-bottom: 4px;
+}
+.admin-sub {
+  font-size: 13px;
+  color: #94A3B8;
+  margin-bottom: 24px;
+}
+
+/* ── STAT GRID ───────────────────────────────────────────────────── */
+.admin-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.admin-stat {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  transition: transform .12s, box-shadow .12s;
+}
+.admin-stat:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.07); }
+.admin-stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  color: #94A3B8;
+  margin-bottom: 10px;
+}
+.admin-stat-val {
+  font-size: 32px;
+  font-weight: 800;
+  color: #0F172A;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.admin-stat-sub { font-size: 12px; color: #94A3B8; }
+
+/* Stat color accents */
+.admin-stat.blue  .admin-stat-val { color: #2563EB; }
+.admin-stat.green .admin-stat-val { color: #16A34A; }
+.admin-stat.orange .admin-stat-val { color: #EA580C; }
+.admin-stat.purple .admin-stat-val { color: #7C3AED; }
+.admin-stat.teal  .admin-stat-val { color: #0891B2; }
+.admin-stat.pink  .admin-stat-val { color: #DB2777; }
+
+/* ── CARDS ───────────────────────────────────────────────────────── */
+.admin-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+.admin-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0F172A;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.admin-card-subtitle {
+  font-size: 12px;
+  color: #94A3B8;
+  font-weight: 400;
+}
+
+/* Maintenance card states */
+.maintenance-card { border-left: 4px solid #22C55E; }
+.maintenance-card.maintenance-on { border-left: 4px solid #EF4444; background: #FFF5F5; }
+
+/* ── TABLES ──────────────────────────────────────────────────────── */
+.admin-table { width: 100%; border-collapse: collapse; }
+.admin-table th {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  color: #94A3B8;
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 2px solid #F1F5F9;
+  background: #F8FAFC;
+}
+.admin-table th:first-child { border-radius: 8px 0 0 8px; }
+.admin-table th:last-child  { border-radius: 0 8px 8px 0; }
+.admin-table td {
+  font-size: 13px;
+  color: #334155;
+  padding: 11px 12px;
+  border-bottom: 1px solid #F1F5F9;
+}
+.admin-table tr:last-child td { border-bottom: none; }
+.admin-table tr:hover td { background: #F8FAFC; }
+.admin-td-muted { color: #94A3B8 !important; }
+.admin-td-truncate { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── BADGES ──────────────────────────────────────────────────────── */
+.admin-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 20px;
+}
+.admin-badge.green  { background: #DCFCE7; color: #16A34A; }
+.admin-badge.blue   { background: #DBEAFE; color: #1D4ED8; }
+.admin-badge.red    { background: #FEE2E2; color: #DC2626; }
+.admin-badge.orange { background: #FFEDD5; color: #C2410C; }
+
+/* ── CHART BAR ───────────────────────────────────────────────────── */
+.admin-chart-bar {
+  height: 8px;
+  background: #3B82F6;
+  border-radius: 4px;
+  transition: width .5s;
+  opacity: .75;
+}
+
+/* ── LIVE DOT ─────────────────────────────────────────────────────── */
+.admin-live-dot {
+  width: 8px;
+  height: 8px;
+  background: #22C55E;
+  border-radius: 50%;
+  display: inline-block;
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
+
+/* ── BUTTONS ─────────────────────────────────────────────────────── */
+.admin-refresh-btn {
+  font-size: 12px;
+  color: #3B82F6;
+  cursor: pointer;
+  padding: 6px 12px;
+  border: 1px solid #BFDBFE;
+  border-radius: 8px;
+  background: #EFF6FF;
+  font-family: inherit;
+  transition: all .15s;
+}
+.admin-refresh-btn:hover { background: #DBEAFE; }
+
+.admin-btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  transition: all .15s;
+}
+.admin-btn-danger    { background: #EF4444; color: #fff; }
+.admin-btn-danger:hover { background: #DC2626; }
+.admin-btn-success   { background: #22C55E; color: #fff; }
+.admin-btn-success:hover { background: #16A34A; }
+.admin-btn-disabled  { background: #F1F5F9; color: #CBD5E1; cursor: not-allowed; }
+
+/* ── FORM ELEMENTS ───────────────────────────────────────────────── */
+.admin-field { margin-bottom: 14px; }
+.admin-label {
+  font-size: 12px;
+  color: #64748B;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 6px;
+}
+.admin-input {
+  width: 100%;
+  background: #F8FAFC;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #1E293B;
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color .15s;
+}
+.admin-input:focus { border-color: #3B82F6; background: #fff; }
+.admin-textarea {
+  width: 100%;
+  background: #F8FAFC;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #1E293B;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color .15s;
+}
+.admin-textarea:focus { border-color: #3B82F6; background: #fff; }
+
+/* ── MAINTENANCE BADGE IN NAV ────────────────────────────────────── */
+.admin-maintenance-badge {
+  background: #FEE2E2;
+  border: 1px solid #FECACA;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #DC2626;
+  font-weight: 700;
+}
+
+/* ── FEEDBACK / ALERTS ───────────────────────────────────────────── */
+.admin-feedback {
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+.admin-feedback.success { background: #F0FDF4; color: #16A34A; border: 1px solid #BBF7D0; }
+.admin-feedback.error   { background: #FFF5F5; color: #DC2626; border: 1px solid #FECACA; }
+
+.admin-alert-box {
+  margin-top: 12px;
+  background: #FFF5F5;
+  border: 1px solid #FECACA;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+.admin-alert-title { font-size: 12px; color: #DC2626; font-weight: 700; }
+.admin-alert-sub   { font-size: 11px; color: #EF4444; margin-top: 3px; }
+
+/* ── HINT / TIP TEXT ─────────────────────────────────────────────── */
+.admin-hint-text { font-size: 13px; color: #64748B; margin-bottom: 16px; line-height: 1.6; }
+.admin-tip-text  { margin-top: 14px; font-size: 11px; color: #94A3B8; line-height: 1.6; }
+
+/* ── CODE INLINE ─────────────────────────────────────────────────── */
+.admin-code {
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: #1D4ED8;
+}
+
+/* ── ORDERED LIST ────────────────────────────────────────────────── */
+.admin-ol {
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.admin-ol li::marker { color: #3B82F6; font-weight: 700; }
+
+/* ── MONOSPACE OVERRIDE FOR TABLES ───────────────────────────────── */
+.admin-wrap table { font-family: inherit; }
+.admin-wrap code  { font-family: 'DM Mono', monospace; font-size: 12px; }
+
+/* ── RESPONSIVE ──────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .admin-stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .admin-nav { gap: 10px; padding: 0 16px; }
+  .admin-content { padding: 20px 16px; }
+}
+@media (max-width: 480px) {
+  .admin-stat-grid { grid-template-columns: 1fr 1fr; }
+  .admin-stat-val  { font-size: 26px; }
+}

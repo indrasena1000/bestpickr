@@ -1,4 +1,7 @@
 // src/pages/AdminDashboard.jsx
+// ✅ FIXED: White/light theme throughout
+// ✅ FIXED: Analytics fetched from DB (persistent, not lost on refresh)
+// ✅ FIXED: Maintenance state persists to DB via backend
 import { useState, useEffect, useCallback } from "react";
 import "../styles/admin.css";
 
@@ -23,6 +26,12 @@ function MaintenancePanel({ maintenance, onMaintenanceChange, adminToken }) {
   );
   const [eta, setEta] = useState(maintenance.eta || "");
   const [feedback, setFeedback] = useState("");
+
+  // Sync message/eta when parent state changes
+  useEffect(() => {
+    if (maintenance.message) setMessage(maintenance.message);
+    if (maintenance.eta !== undefined) setEta(maintenance.eta);
+  }, [maintenance.message, maintenance.eta]);
 
   async function toggle(enable) {
     setToggling(true);
@@ -59,187 +68,75 @@ function MaintenancePanel({ maintenance, onMaintenanceChange, adminToken }) {
   const isOn = maintenance.enabled;
 
   return (
-    <div
-      className="admin-card"
-      style={{ border: isOn ? "2px solid #F87171" : "1px solid #1E293B" }}
-    >
+    <div className={`admin-card maintenance-card ${isOn ? "maintenance-on" : ""}`}>
       <div className="admin-card-title">
         🔧 Maintenance Mode
-        <span
-          className={`admin-badge ${isOn ? "red" : "green"}`}
-          style={{ marginLeft: 8 }}
-        >
+        <span className={`admin-badge ${isOn ? "red" : "green"}`} style={{ marginLeft: 8 }}>
           {isOn ? "● SITE DOWN" : "● SITE LIVE"}
         </span>
       </div>
 
-      <p
-        style={{
-          fontSize: 13,
-          color: "#94A3B8",
-          marginBottom: 16,
-          lineHeight: 1.6,
-        }}
-      >
+      <p className="admin-hint-text">
         When turned ON, all visitors see a "We'll be back shortly" page instead
         of bestpickr. You (the admin) can still access everything normally.
       </p>
 
-      {/* Custom message input */}
-      <div style={{ marginBottom: 12 }}>
-        <label
-          style={{
-            fontSize: 12,
-            color: "#64748B",
-            display: "block",
-            marginBottom: 5,
-          }}
-        >
-          Message shown to visitors:
-        </label>
+      <div className="admin-field">
+        <label className="admin-label">Message shown to visitors:</label>
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           rows={2}
-          style={{
-            width: "100%",
-            background: "#0F172A",
-            border: "1px solid #334155",
-            borderRadius: 6,
-            padding: "10px 12px",
-            color: "#E2E8F0",
-            fontSize: 13,
-            fontFamily: "inherit",
-            resize: "vertical",
-            boxSizing: "border-box",
-          }}
+          className="admin-textarea"
         />
       </div>
 
-      {/* ETA input */}
-      <div style={{ marginBottom: 20 }}>
-        <label
-          style={{
-            fontSize: 12,
-            color: "#64748B",
-            display: "block",
-            marginBottom: 5,
-          }}
-        >
+      <div className="admin-field" style={{ marginBottom: 20 }}>
+        <label className="admin-label">
           Estimated time back (optional — e.g. "30 minutes", "2 hours"):
         </label>
         <input
           value={eta}
           onChange={(e) => setEta(e.target.value)}
           placeholder="e.g. 30 minutes"
-          style={{
-            width: "100%",
-            background: "#0F172A",
-            border: "1px solid #334155",
-            borderRadius: 6,
-            padding: "10px 12px",
-            color: "#E2E8F0",
-            fontSize: 13,
-            fontFamily: "inherit",
-            boxSizing: "border-box",
-          }}
+          className="admin-input"
         />
       </div>
 
-      {/* Toggle buttons */}
       <div style={{ display: "flex", gap: 10 }}>
         <button
           onClick={() => toggle(true)}
           disabled={toggling || isOn}
-          style={{
-            flex: 1,
-            padding: "12px",
-            borderRadius: 8,
-            border: "none",
-            cursor: isOn ? "not-allowed" : "pointer",
-            background: isOn ? "#1E293B" : "#EF4444",
-            color: isOn ? "#64748B" : "#fff",
-            fontSize: 14,
-            fontWeight: 700,
-            fontFamily: "inherit",
-            transition: "all .15s",
-          }}
+          className={`admin-btn ${isOn ? "admin-btn-disabled" : "admin-btn-danger"}`}
         >
           {toggling ? "..." : "🔴 Put Site Into Maintenance"}
         </button>
         <button
           onClick={() => toggle(false)}
           disabled={toggling || !isOn}
-          style={{
-            flex: 1,
-            padding: "12px",
-            borderRadius: 8,
-            border: "none",
-            cursor: !isOn ? "not-allowed" : "pointer",
-            background: !isOn ? "#1E293B" : "#22C55E",
-            color: !isOn ? "#64748B" : "#fff",
-            fontSize: 14,
-            fontWeight: 700,
-            fontFamily: "inherit",
-            transition: "all .15s",
-          }}
+          className={`admin-btn ${!isOn ? "admin-btn-disabled" : "admin-btn-success"}`}
         >
           {toggling ? "..." : "🟢 Bring Site Back Live"}
         </button>
       </div>
 
       {feedback && (
-        <div
-          style={{
-            marginTop: 12,
-            fontSize: 13,
-            color: feedback.startsWith("✅") ? "#34D399" : "#F87171",
-            lineHeight: 1.5,
-          }}
-        >
+        <div className={`admin-feedback ${feedback.startsWith("✅") ? "success" : "error"}`}>
           {feedback}
         </div>
       )}
 
       {isOn && (
-        <div
-          style={{
-            marginTop: 12,
-            background: "#450A0A",
-            border: "1px solid #7F1D1D",
-            borderRadius: 8,
-            padding: "10px 14px",
-          }}
-        >
-          <div style={{ fontSize: 12, color: "#FCA5A5", fontWeight: 700 }}>
-            ⚠️ Site is currently DOWN for visitors
-          </div>
-          <div style={{ fontSize: 11, color: "#EF4444", marginTop: 3 }}>
-            Click "Bring Site Back Live" to restore access.
-          </div>
+        <div className="admin-alert-box">
+          <div className="admin-alert-title">⚠️ Site is currently DOWN for visitors</div>
+          <div className="admin-alert-sub">Click "Bring Site Back Live" to restore access.</div>
         </div>
       )}
 
-      <div
-        style={{
-          marginTop: 14,
-          fontSize: 11,
-          color: "#475569",
-          lineHeight: 1.6,
-        }}
-      >
+      <div className="admin-tip-text">
         💡 Tip: To access the site yourself while maintenance is ON, add{" "}
-        <code
-          style={{ background: "#0F172A", padding: "1px 5px", borderRadius: 3 }}
-        >
-          ?admin=1
-        </code>{" "}
-        to the URL. Example:{" "}
-        <code
-          style={{ background: "#0F172A", padding: "1px 5px", borderRadius: 3 }}
-        >
-          https://bestpickr.in?admin=1
-        </code>
+        <code className="admin-code">?admin=1</code> to the URL. Example:{" "}
+        <code className="admin-code">https://bestpickr.in?admin=1</code>
       </div>
     </div>
   );
@@ -288,14 +185,11 @@ export default function AdminDashboard({
     setLoading(true);
     try {
       const [statsRes, eventsRes] = await Promise.all([
-        fetch(`${API_BASE}/analytics/stats`)
-          .then((r) => r.json())
-          .catch(() => null),
-        fetch(`${API_BASE}/analytics/events?limit=50`)
-          .then((r) => r.json())
-          .catch(() => null),
+        fetch(`${API_BASE}/analytics/stats`).then((r) => r.json()).catch(() => null),
+        fetch(`${API_BASE}/analytics/events?limit=50`).then((r) => r.json()).catch(() => null),
       ]);
-      setStats(statsRes);
+      if (statsRes && !statsRes.error) setStats(statsRes);
+      else setStats(MOCK_STATS);
       setEvents(eventsRes?.events || []);
       setLastRefresh(new Date());
       setLiveCount(Math.floor(Math.random() * 8) + 1);
@@ -321,11 +215,9 @@ export default function AdminDashboard({
       <div className="admin-wrap">
         <div className="admin-login">
           <div className="admin-login-card">
-            <div style={{ fontSize: 32, marginBottom: 16 }}>🔐</div>
+            <div style={{ fontSize: 36, marginBottom: 16 }}>🔐</div>
             <div className="admin-login-title">bestpickr Admin</div>
-            <div className="admin-login-sub">
-              Dashboard access · Authorized users only
-            </div>
+            <div className="admin-login-sub">Dashboard access · Authorized users only</div>
             <form onSubmit={handleLogin}>
               <input
                 className="admin-input"
@@ -342,29 +234,13 @@ export default function AdminDashboard({
                 onChange={(e) => setPass(e.target.value)}
                 autoComplete="current-password"
               />
-              {err && (
-                <div
-                  style={{ color: "#F87171", fontSize: 13, marginBottom: 12 }}
-                >
-                  {err}
-                </div>
-              )}
+              {err && <div className="admin-login-err">{err}</div>}
               <button className="admin-login-btn" type="submit">
                 Sign In →
               </button>
             </form>
             <div style={{ marginTop: 16, textAlign: "center" }}>
-              <button
-                onClick={onClose}
-                style={{
-                  color: "#475569",
-                  fontSize: 12,
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                }}
-              >
+              <button onClick={onClose} className="admin-back-btn">
                 ← Back to site
               </button>
             </div>
@@ -376,6 +252,9 @@ export default function AdminDashboard({
 
   const s = stats || MOCK_STATS;
   const ev = events.length > 0 ? events : MOCK_EVENTS;
+  const convRate = s.totalPageViews
+    ? ((s.affiliateClicks / s.totalPageViews) * 100).toFixed(1) + "%"
+    : "0%";
 
   // ── DASHBOARD ───────────────────────────────────────────────────
   return (
@@ -385,67 +264,21 @@ export default function AdminDashboard({
         <div className="admin-nav-logo">
           bestpickr <span>Admin</span>
         </div>
-        <div
-          style={{
-            fontSize: 12,
-            color: "#64748B",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
+        <div className="admin-nav-live">
           <span className="admin-live-dot" /> {liveCount} live now
         </div>
         {maintenance.enabled && (
-          <div
-            style={{
-              background: "#450A0A",
-              border: "1px solid #7F1D1D",
-              borderRadius: 6,
-              padding: "3px 10px",
-              fontSize: 11,
-              color: "#F87171",
-              fontWeight: 700,
-            }}
-          >
-            ⚠️ MAINTENANCE ON
-          </div>
+          <div className="admin-maintenance-badge">⚠️ MAINTENANCE ON</div>
         )}
-        <div
-          style={{
-            width: 1,
-            height: 20,
-            background: "#334155",
-            margin: "0 8px",
-          }}
-        />
+        <div className="admin-nav-divider" />
         <button className="admin-refresh-btn" onClick={fetchData}>
           {loading ? "..." : "⟳ Refresh"}
         </button>
-        <div
-          style={{
-            width: 1,
-            height: 20,
-            background: "#334155",
-            margin: "0 8px",
-          }}
-        />
+        <div className="admin-nav-divider" />
         <button onClick={handleLogout} className="admin-nav-logout">
           Logout
         </button>
-        <button
-          onClick={onClose}
-          style={{
-            marginLeft: 8,
-            fontSize: 12,
-            color: "#64748B",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-          }}
-        >
-          ✕ Close
-        </button>
+        <button onClick={onClose} className="admin-nav-close">✕ Close</button>
       </div>
 
       <div className="admin-content">
@@ -457,7 +290,7 @@ export default function AdminDashboard({
           · Auto-refreshes every 30s
         </div>
 
-        {/* ── MAINTENANCE MODE — top of dashboard ── */}
+        {/* ── MAINTENANCE MODE ── */}
         <MaintenancePanel
           maintenance={maintenance}
           onMaintenanceChange={onMaintenanceChange}
@@ -467,49 +300,16 @@ export default function AdminDashboard({
         {/* ── STAT CARDS ── */}
         <div className="admin-stat-grid">
           {[
-            {
-              label: "Total Visitors",
-              val: s.totalVisitors,
-              sub: "All time unique",
-              cls: "blue",
-            },
-            {
-              label: "Page Views",
-              val: s.totalPageViews,
-              sub: "All sessions",
-              cls: "green",
-            },
-            {
-              label: "Affiliate Clicks",
-              val: s.affiliateClicks,
-              sub: "Amazon buy clicks",
-              cls: "orange",
-            },
-            {
-              label: "Searches",
-              val: s.totalSearches,
-              sub: "Total queries",
-              cls: "purple",
-            },
-            {
-              label: "Today's Visitors",
-              val: s.todayVisitors,
-              sub: "Since midnight IST",
-              extraStyle: { color: "#34D399" },
-            },
-            {
-              label: "Conversion Rate",
-              val: s.totalPageViews
-                ? ((s.affiliateClicks / s.totalPageViews) * 100).toFixed(1) +
-                  "%"
-                : "0%",
-              sub: "Clicks / Page views",
-              extraStyle: { color: "#FB923C" },
-            },
-          ].map(({ label, val, sub, cls, extraStyle }) => (
-            <div key={label} className={`admin-stat ${cls || ""}`}>
+            { label: "Total Visitors", val: s.totalVisitors, sub: "All time unique", cls: "blue" },
+            { label: "Page Views", val: s.totalPageViews, sub: "All sessions", cls: "green" },
+            { label: "Affiliate Clicks", val: s.affiliateClicks, sub: "Amazon buy clicks", cls: "orange" },
+            { label: "Searches", val: s.totalSearches, sub: "Total queries", cls: "purple" },
+            { label: "Today's Visitors", val: s.todayVisitors, sub: "Since midnight IST", cls: "teal" },
+            { label: "Conversion Rate", val: convRate, sub: "Clicks / Page views", cls: "pink" },
+          ].map(({ label, val, sub, cls }) => (
+            <div key={label} className={`admin-stat ${cls}`}>
               <div className="admin-stat-label">{label}</div>
-              <div className="admin-stat-val" style={extraStyle}>
+              <div className="admin-stat-val">
                 {typeof val === "number" ? val.toLocaleString() : val}
               </div>
               <div className="admin-stat-sub">{sub}</div>
@@ -533,34 +333,21 @@ export default function AdminDashboard({
               </tr>
             </thead>
             <tbody>
-              {(s.topProducts || MOCK_STATS.topProducts).map((p, i) => (
+              {(s.topProducts?.length ? s.topProducts : MOCK_STATS.topProducts).map((p, i) => (
                 <tr key={i}>
-                  <td style={{ color: "#64748B" }}>#{i + 1}</td>
+                  <td className="admin-td-muted">#{i + 1}</td>
                   <td>{p.name}</td>
+                  <td><span className="admin-badge blue">{p.clicks}</span></td>
                   <td>
-                    <span className="admin-badge blue">{p.clicks}</span>
-                  </td>
-                  <td>
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 8 }}
-                    >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <div
                         className="admin-chart-bar"
                         style={{
-                          width:
-                            Math.max(
-                              20,
-                              (p.clicks / (s.topProducts[0]?.clicks || 1)) *
-                                120,
-                            ) + "px",
+                          width: Math.max(20, (p.clicks / (s.topProducts[0]?.clicks || 1)) * 120) + "px",
                         }}
                       />
-                      <span style={{ fontSize: 11, color: "#64748B" }}>
-                        {(
-                          (p.clicks / (s.topProducts[0]?.clicks || 1)) *
-                          100
-                        ).toFixed(0)}
-                        %
+                      <span className="admin-td-muted" style={{ fontSize: 11 }}>
+                        {((p.clicks / (s.topProducts[0]?.clicks || 1)) * 100).toFixed(0)}%
                       </span>
                     </div>
                   </td>
@@ -582,13 +369,11 @@ export default function AdminDashboard({
               </tr>
             </thead>
             <tbody>
-              {(s.topSearches || MOCK_STATS.topSearches).map((q, i) => (
+              {(s.topSearches?.length ? s.topSearches : MOCK_STATS.topSearches).map((q, i) => (
                 <tr key={i}>
-                  <td style={{ color: "#64748B" }}>#{i + 1}</td>
+                  <td className="admin-td-muted">#{i + 1}</td>
                   <td>{q.query}</td>
-                  <td>
-                    <span className="admin-badge blue">{q.count}</span>
-                  </td>
+                  <td><span className="admin-badge blue">{q.count}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -599,9 +384,7 @@ export default function AdminDashboard({
         <div className="admin-card">
           <div className="admin-card-title">
             📋 Recent Events{" "}
-            <span style={{ fontSize: 12, color: "#64748B", fontWeight: 400 }}>
-              (last 50)
-            </span>
+            <span className="admin-card-subtitle">(last 50)</span>
           </div>
           <table className="admin-table">
             <thead>
@@ -615,27 +398,16 @@ export default function AdminDashboard({
             <tbody>
               {ev.map((e, i) => (
                 <tr key={i}>
-                  <td style={{ color: "#64748B", fontSize: 11 }}>
-                    {fmtTime(e.timestamp)}
-                  </td>
+                  <td className="admin-td-muted" style={{ fontSize: 11 }}>{fmtTime(e.timestamp)}</td>
                   <td>
-                    <span
-                      className={`admin-badge ${e.eventType === "affiliate_click" ? "green" : "blue"}`}
-                    >
+                    <span className={`admin-badge ${e.eventType === "affiliate_click" ? "green" : "blue"}`}>
                       {e.eventType}
                     </span>
                   </td>
-                  <td
-                    style={{
-                      maxWidth: 280,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
+                  <td className="admin-td-truncate">
                     {e.query || e.productName || e.page || e.path || "—"}
                   </td>
-                  <td style={{ color: "#64748B", fontSize: 11 }}>
+                  <td className="admin-td-muted" style={{ fontSize: 11 }}>
                     {e.screenWidth ? `${e.screenWidth}px` : "—"}
                   </td>
                 </tr>
@@ -647,58 +419,24 @@ export default function AdminDashboard({
         {/* ── TELEGRAM SETUP ── */}
         <div className="admin-card">
           <div className="admin-card-title">🤖 Telegram Notifications</div>
-          <div style={{ fontSize: 13, color: "#94A3B8", lineHeight: 1.7 }}>
+          <div className="admin-hint-text" style={{ lineHeight: 1.7 }}>
             <p style={{ marginBottom: 8 }}>
-              Your site sends daily analytics reports to Telegram. To set this
-              up:
+              Your site sends daily analytics reports to Telegram. To set this up:
             </p>
-            <ol
-              style={{
-                paddingLeft: 20,
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
+            <ol className="admin-ol">
               <li>
-                Create a bot via{" "}
-                <strong style={{ color: "#60A5FA" }}>@BotFather</strong> on
+                Create a bot via <strong style={{ color: "#3B82F6" }}>@BotFather</strong> on
                 Telegram → get your <strong>BOT_TOKEN</strong>
               </li>
               <li>
                 Message your bot once, then visit:{" "}
-                <code
-                  style={{
-                    background: "#0F172A",
-                    padding: "2px 6px",
-                    borderRadius: 4,
-                  }}
-                >
-                  https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates
-                </code>{" "}
+                <code className="admin-code">https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code>{" "}
                 to get your <strong>CHAT_ID</strong>
               </li>
               <li>
                 Add to Vercel env vars:{" "}
-                <code
-                  style={{
-                    background: "#0F172A",
-                    padding: "2px 6px",
-                    borderRadius: 4,
-                  }}
-                >
-                  TELEGRAM_BOT_TOKEN
-                </code>{" "}
-                and{" "}
-                <code
-                  style={{
-                    background: "#0F172A",
-                    padding: "2px 6px",
-                    borderRadius: 4,
-                  }}
-                >
-                  TELEGRAM_CHAT_ID
-                </code>
+                <code className="admin-code">TELEGRAM_BOT_TOKEN</code> and{" "}
+                <code className="admin-code">TELEGRAM_CHAT_ID</code>
               </li>
               <li>Daily reports fire at 9:30 AM IST automatically 📊</li>
             </ol>
@@ -709,49 +447,29 @@ export default function AdminDashboard({
   );
 }
 
-// ── MOCK DATA ──────────────────────────────────────────────────────
+// ── MOCK DATA (shown when DB is unreachable) ───────────────────────
 const MOCK_STATS = {
-  totalVisitors: 142,
+  totalVisitors:  142,
   totalPageViews: 489,
   affiliateClicks: 37,
-  totalSearches: 201,
-  todayVisitors: 14,
+  totalSearches:  201,
+  todayVisitors:  14,
   topProducts: [
-    { name: "boAt Airdopes 141", clicks: 18 },
-    { name: "Redmi A4 5G", clicks: 11 },
-    { name: "Amazon Echo Dot 5th Gen", clicks: 8 },
+    { name: "boAt Airdopes 141",         clicks: 18 },
+    { name: "Redmi A4 5G",               clicks: 11 },
+    { name: "Amazon Echo Dot 5th Gen",   clicks: 8  },
   ],
   topSearches: [
-    { query: "noise cancelling headphones", count: 34 },
-    { query: "best mobiles india 2026", count: 28 },
-    { query: "gaming mouse", count: 22 },
-    { query: "air fryer", count: 18 },
-    { query: "laptop for students", count: 15 },
+    { query: "noise cancelling headphones",  count: 34 },
+    { query: "best mobiles india 2026",      count: 28 },
+    { query: "gaming mouse",                 count: 22 },
+    { query: "air fryer",                    count: 18 },
+    { query: "laptop for students",          count: 15 },
   ],
 };
 const MOCK_EVENTS = [
-  {
-    timestamp: new Date().toISOString(),
-    eventType: "page_view",
-    page: "home",
-    screenWidth: 1440,
-  },
-  {
-    timestamp: new Date(Date.now() - 60000).toISOString(),
-    eventType: "search",
-    query: "best mobiles 2026",
-    screenWidth: 375,
-  },
-  {
-    timestamp: new Date(Date.now() - 120000).toISOString(),
-    eventType: "affiliate_click",
-    productName: "boAt Airdopes 141",
-    screenWidth: 768,
-  },
-  {
-    timestamp: new Date(Date.now() - 200000).toISOString(),
-    eventType: "product_view",
-    productName: "Sony WH-1000XM5",
-    screenWidth: 1280,
-  },
+  { timestamp: new Date().toISOString(),               eventType: "page_view",       page: "home",                   screenWidth: 1440 },
+  { timestamp: new Date(Date.now() - 60000).toISOString(),  eventType: "search",          query: "best mobiles 2026",     screenWidth: 375  },
+  { timestamp: new Date(Date.now() - 120000).toISOString(), eventType: "affiliate_click", productName: "boAt Airdopes 141", screenWidth: 768  },
+  { timestamp: new Date(Date.now() - 200000).toISOString(), eventType: "product_view",    productName: "Sony WH-1000XM5",  screenWidth: 1280 },
 ];

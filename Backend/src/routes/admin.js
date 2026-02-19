@@ -1,61 +1,82 @@
-// src/routes/admin.js — bestpickr Admin Controls API
-// ─────────────────────────────────────────────────────────────────
-// Simple in-memory maintenance mode toggle.
-// The admin dashboard calls these endpoints to put the site
-// into maintenance mode — all visitors see a "we'll be back" page.
-// ─────────────────────────────────────────────────────────────────
+// Backend/src/routes/admin.js
+// ✅ Prisma 7 compatible — uses prisma instance from app.locals (set in server.js)
+// ✅ Maintenance mode persisted to DB via SiteConfig table
+
 const express = require('express')
 const router  = express.Router()
 
-// In-memory state — persists as long as server is running
-// If you restart the backend, maintenance mode resets to OFF
-let maintenanceState = {
-  enabled:   false,
-  message:   'We are performing scheduled maintenance. We\'ll be back shortly.',
-  eta:       '',        // e.g. "30 minutes" — shown to visitors
-  enabledAt: null,
-  enabledBy: 'admin',
+const MAINTENANCE_KEY = 'maintenance'
+
+function db(req) {
+  return req.app.locals.prisma
+}
+
+async function getMaintenanceState(prisma) {
+  try {
+    const row = await prisma.siteConfig.findUnique({ where: { key: MAINTENANCE_KEY } })
+    if (!row) {
+      return {
+        enabled:   false,
+        message:   "We're performing scheduled maintenance. We'll be back shortly.",
+        eta:       '',
+        enabledAt: null,
+      }
+    }
+    return JSON.parse(row.value)
+  } catch (e) {
+    console.error('[Admin] getMaintenanceState error:', e)
+    return { enabled: false, message: "We're performing scheduled maintenance.", eta: '', enabledAt: null }
+  }
+}
+
+async function setMaintenanceState(prisma, state) {
+  await prisma.siteConfig.upsert({
+    where:  { key: MAINTENANCE_KEY },
+    update: { value: JSON.stringify(state) },
+    create: { key: MAINTENANCE_KEY, value: JSON.stringify(state) },
+  })
 }
 
 // ── GET /api/admin/status ──────────────────────────────────────────
-// Called by the frontend on every page load to check maintenance status
-// Also called by admin dashboard to see current state
-router.get('/status', (req, res) => {
-  res.json({
-    maintenance: maintenanceState.enabled,
-    message:     maintenanceState.message,
-    eta:         maintenanceState.eta,
-    enabledAt:   maintenanceState.enabledAt,
-  })
+router.get('/status', async (req, res) => {
+  try {
+    const state = await getMaintenanceState(db(req))
+    res.json({
+      maintenance: state.enabled,
+      message:     state.message,
+      eta:         state.eta,
+      enabledAt:   state.enabledAt,
+    })
+  } catch (err) {
+    console.error('[Admin] status error:', err)
+    res.status(500).json({ error: err.message })
+  }
 })
 
 // ── POST /api/admin/maintenance ────────────────────────────────────
-// Toggle maintenance mode on/off from the admin dashboard
-// Body: { enabled: true/false, message?: string, eta?: string, token: string }
-router.post('/maintenance', (req, res) => {
-  const { enabled, message, eta, token } = req.body
+router.post('/maintenance', async (req, res) => {
+  try {
+    const { enabled, message, eta, token } = req.body
+    const adminToken = process.env.ADMIN_TOKEN || 'bestpickr-admin-2025'
+    if (token !== adminToken) return res.status(401).json({ error: 'Unauthorized' })
 
-  // Basic token check — must match env var
-  const adminToken = process.env.ADMIN_TOKEN || 'bestpickr-admin-2025'
-  if (token !== adminToken) {
-    return res.status(401).json({ error: 'Unauthorized' })
+    const current  = await getMaintenanceState(db(req))
+    const newState = {
+      enabled:   Boolean(enabled),
+      message:   message || current.message,
+      eta:       eta || '',
+      enabledAt: enabled ? new Date().toISOString() : null,
+      enabledBy: 'admin',
+    }
+
+    await setMaintenanceState(db(req), newState)
+    console.log(`[Admin] Maintenance mode ${enabled ? 'ENABLED' : 'DISABLED'}`)
+
+    res.json({ ok: true, maintenance: newState.enabled, message: newState.message })
+  } catch (err) {
+    console.error('[Admin] maintenance toggle error:', err)
+    res.status(500).json({ error: err.message })
   }
-
-  maintenanceState = {
-    enabled:   Boolean(enabled),
-    message:   message || maintenanceState.message,
-    eta:       eta || '',
-    enabledAt: enabled ? new Date().toISOString() : null,
-    enabledBy: 'admin',
-  }
-
-  console.log(`[Admin] Maintenance mode ${enabled ? 'ENABLED' : 'DISABLED'}`)
-
-  res.json({
-    ok: true,
-    maintenance: maintenanceState.enabled,
-    message: maintenanceState.message,
-  })
 })
 
 module.exports = router

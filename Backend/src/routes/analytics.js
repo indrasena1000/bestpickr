@@ -1,179 +1,206 @@
 // Backend/src/routes/analytics.js
-// Tracks visitor events and sends daily Telegram reports
+// ✅ Prisma 7 compatible — uses prisma instance from app.locals (set in server.js)
+// ✅ All analytics persisted to PostgreSQL — no data loss on refresh/restart
 
 const express = require('express')
 const router  = express.Router()
 
-// In-memory store (replace with DB in production)
-// For Vercel serverless, use a DB or external store like Upstash Redis
-let events    = []
-let stats     = {
-  totalVisitors:  0,
-  totalPageViews: 0,
-  affiliateClicks: 0,
-  totalSearches:  0,
-  todayVisitors:  0,
-  visitorIds:     new Set(),
-  todayVisitorIds: new Set(),
-  topProducts:    {},  // { name: count }
-  topSearches:    {},  // { query: count }
-  lastReset:      new Date().toDateString(),
-}
-
-function resetDailyIfNeeded() {
-  const today = new Date().toDateString()
-  if (stats.lastReset !== today) {
-    stats.todayVisitors   = 0
-    stats.todayVisitorIds = new Set()
-    stats.lastReset       = today
-  }
+// Helper: get prisma from request context (set on app.locals in server.js)
+function db(req) {
+  return req.app.locals.prisma
 }
 
 // ── POST /api/analytics/event ──────────────────────────────────────
-router.post('/event', express.json(), (req, res) => {
+router.post('/event', express.json(), async (req, res) => {
   try {
     const event = req.body
     if (!event || !event.eventType) return res.status(400).json({ ok: false })
 
-    resetDailyIfNeeded()
+    await db(req).pageView.create({
+      data: {
+        sessionId:    event.sessionId    || 'unknown',
+        visitorId:    event.visitorId    || 'unknown',
+        eventType:    event.eventType,
+        page:         event.page         || null,
+        query:        event.query        || null,
+        productName:  event.productName  || null,
+        productId:    event.productId    || null,
+        affiliateUrl: event.affiliateUrl || null,
+        referrer:     event.referrer     || null,
+        userAgent:    event.userAgent    || null,
+        screenWidth:  event.screenWidth  ? Number(event.screenWidth) : null,
+        path:         event.path         || null,
+      },
+    })
 
-    // Store event (keep last 500 in memory)
-    events.unshift({ ...event, receivedAt: new Date().toISOString() })
-    if (events.length > 500) events = events.slice(0, 500)
-
-    // Update stats
-    const vid = event.visitorId
-    if (vid) {
-      if (!stats.visitorIds.has(vid)) {
-        stats.visitorIds.add(vid)
-        stats.totalVisitors++
-      }
-      if (!stats.todayVisitorIds.has(vid)) {
-        stats.todayVisitorIds.add(vid)
-        stats.todayVisitors++
-      }
-    }
-
-    if (event.eventType === 'page_view') {
-      stats.totalPageViews++
-    }
-
-    if (event.eventType === 'affiliate_click') {
-      stats.affiliateClicks++
-      if (event.productName) {
-        stats.topProducts[event.productName] = (stats.topProducts[event.productName] || 0) + 1
-        // Alert Telegram immediately on affiliate click!
-        sendTelegram(
-          `🛒 *Affiliate Click!*\n` +
-          `Product: ${event.productName}\n` +
-          `Screen: ${event.screenWidth}px\n` +
-          `Time: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`
-        )
-      }
-    }
-
-    if (event.eventType === 'search') {
-      stats.totalSearches++
-      if (event.query) {
-        const q = event.query.toLowerCase().trim()
-        stats.topSearches[q] = (stats.topSearches[q] || 0) + 1
-      }
+    if (event.eventType === 'affiliate_click' && event.productName) {
+      sendTelegramMsg(
+        `🛒 *Affiliate Click!*\n` +
+        `Product: ${event.productName}\n` +
+        `Screen: ${event.screenWidth}px\n` +
+        `Time: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`
+      )
     }
 
     res.json({ ok: true })
   } catch (err) {
     console.error('Analytics event error:', err)
-    res.status(500).json({ ok: false })
+    res.status(500).json({ ok: false, error: err.message })
   }
 })
 
 // ── GET /api/analytics/stats ───────────────────────────────────────
-router.get('/stats', (req, res) => {
-  resetDailyIfNeeded()
+router.get('/stats', async (req, res) => {
+  try {
+    const prisma     = db(req)
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
 
-  // Convert top products/searches to sorted arrays
-  const topProducts = Object.entries(stats.topProducts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([name, clicks]) => ({ name, clicks }))
+    const [
+      totalVisitorsRaw,
+      totalPageViews,
+      affiliateClicks,
+      totalSearches,
+      todayVisitorsRaw,
+      topProductsRaw,
+      topSearchesRaw,
+    ] = await Promise.all([
+      prisma.pageView.groupBy({ by: ['visitorId'], _count: true }),
+      prisma.pageView.count({ where: { eventType: 'page_view' } }),
+      prisma.pageView.count({ where: { eventType: 'affiliate_click' } }),
+      prisma.pageView.count({ where: { eventType: 'search' } }),
+      prisma.pageView.groupBy({
+        by: ['visitorId'],
+        where: { createdAt: { gte: todayStart } },
+        _count: true,
+      }),
+      prisma.pageView.groupBy({
+        by: ['productName'],
+        where: { eventType: 'affiliate_click', productName: { not: null } },
+        _count: { productName: true },
+        orderBy: { _count: { productName: 'desc' } },
+        take: 10,
+      }),
+      prisma.pageView.groupBy({
+        by: ['query'],
+        where: { eventType: 'search', query: { not: null } },
+        _count: { query: true },
+        orderBy: { _count: { query: 'desc' } },
+        take: 10,
+      }),
+    ])
 
-  const topSearches = Object.entries(stats.topSearches)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([query, count]) => ({ query, count }))
-
-  res.json({
-    totalVisitors:   stats.totalVisitors,
-    totalPageViews:  stats.totalPageViews,
-    affiliateClicks: stats.affiliateClicks,
-    totalSearches:   stats.totalSearches,
-    todayVisitors:   stats.todayVisitors,
-    topProducts,
-    topSearches,
-  })
+    res.json({
+      totalVisitors:   totalVisitorsRaw.length,
+      totalPageViews,
+      affiliateClicks,
+      totalSearches,
+      todayVisitors:   todayVisitorsRaw.length,
+      topProducts: topProductsRaw.map(r => ({ name: r.productName, clicks: r._count.productName })),
+      topSearches: topSearchesRaw.map(r => ({ query: r.query,       count:  r._count.query       })),
+    })
+  } catch (err) {
+    console.error('Analytics stats error:', err)
+    res.status(500).json({ error: err.message })
+  }
 })
 
 // ── GET /api/analytics/events ──────────────────────────────────────
-router.get('/events', (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 50, 200)
-  res.json({ events: events.slice(0, limit), total: events.length })
+router.get('/events', async (req, res) => {
+  try {
+    const limit  = Math.min(parseInt(req.query.limit) || 50, 200)
+    const events = await db(req).pageView.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    })
+    res.json({
+      events: events.map(e => ({
+        timestamp:   e.createdAt,
+        eventType:   e.eventType,
+        page:        e.page,
+        query:       e.query,
+        productName: e.productName,
+        path:        e.path,
+        screenWidth: e.screenWidth,
+        visitorId:   e.visitorId,
+        sessionId:   e.sessionId,
+      })),
+      total: events.length,
+    })
+  } catch (err) {
+    console.error('Analytics events error:', err)
+    res.status(500).json({ error: err.message })
+  }
 })
 
 // ── POST /api/analytics/telegram-test ─────────────────────────────
 router.post('/telegram-test', async (req, res) => {
-  const ok = await sendTelegram('✅ bestpickr Telegram connected! You will receive daily analytics here.')
+  const ok = await sendTelegramMsg('✅ bestpickr Telegram connected! You will receive daily analytics here.')
   res.json({ ok })
 })
 
+// ── POST /api/analytics/daily-report ──────────────────────────────
+router.post('/daily-report', async (req, res) => {
+  try {
+    const prisma     = db(req)
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+
+    const [todayVisitorsRaw, totalPageViews, affiliateClicks, totalSearches, topProductsRaw] = await Promise.all([
+      prisma.pageView.groupBy({ by: ['visitorId'], where: { createdAt: { gte: todayStart } }, _count: true }),
+      prisma.pageView.count({ where: { eventType: 'page_view' } }),
+      prisma.pageView.count({ where: { eventType: 'affiliate_click' } }),
+      prisma.pageView.count({ where: { eventType: 'search' } }),
+      prisma.pageView.groupBy({
+        by: ['productName'],
+        where: { eventType: 'affiliate_click', productName: { not: null } },
+        _count: { productName: true },
+        orderBy: { _count: { productName: 'desc' } },
+        take: 3,
+      }),
+    ])
+
+    const topProducts = topProductsRaw
+      .map((r, i) => `${i + 1}. ${r.productName} — ${r._count.productName} clicks`)
+      .join('\n')
+
+    const msg =
+      `📊 *bestpickr Daily Report*\n` +
+      `Date: ${new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\n` +
+      `👥 Today's Visitors: *${todayVisitorsRaw.length}*\n` +
+      `📄 Total Page Views: *${totalPageViews}*\n` +
+      `🛒 Affiliate Clicks: *${affiliateClicks}*\n` +
+      `🔍 Total Searches: *${totalSearches}*\n\n` +
+      `🏆 Top Clicked Products:\n${topProducts || 'No clicks yet'}\n\n` +
+      `_bestpickr.vercel.app_`
+
+    const ok = await sendTelegramMsg(msg)
+    res.json({ ok, message: ok ? 'Report sent!' : 'Telegram not configured' })
+  } catch (err) {
+    console.error('Daily report error:', err)
+    res.status(500).json({ ok: false, error: err.message })
+  }
+})
+
 // ── TELEGRAM HELPER ───────────────────────────────────────────────
-async function sendTelegram(message) {
+async function sendTelegramMsg(message) {
   const token  = process.env.TELEGRAM_BOT_TOKEN
   const chatId = process.env.TELEGRAM_CHAT_ID
-
   if (!token || !chatId) {
-    console.log('[Telegram] Not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID')
+    console.log('[Telegram] Not configured — set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID')
     return false
   }
-
   try {
-    const url = `https://api.telegram.org/bot${token}/sendMessage`
-    const res = await fetch(url, {
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id:    chatId,
-        text:       message,
-        parse_mode: 'Markdown',
-      }),
+      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'Markdown' }),
     })
-    return res.ok
+    return r.ok
   } catch (e) {
     console.error('[Telegram] Send error:', e)
     return false
   }
 }
 
-// ── DAILY REPORT (called by a cron/scheduled job) ─────────────────
-router.post('/daily-report', async (req, res) => {
-  resetDailyIfNeeded()
-  const topProducts = Object.entries(stats.topProducts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([name, clicks], i) => `${i+1}. ${name} — ${clicks} clicks`)
-    .join('\n')
-
-  const msg =
-    `📊 *bestpickr Daily Report*\n` +
-    `Date: ${new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}\n\n` +
-    `👥 Today's Visitors: *${stats.todayVisitors}*\n` +
-    `📄 Total Page Views: *${stats.totalPageViews}*\n` +
-    `🛒 Affiliate Clicks: *${stats.affiliateClicks}*\n` +
-    `🔍 Total Searches: *${stats.totalSearches}*\n\n` +
-    `🏆 Top Clicked Products:\n${topProducts || 'No clicks yet'}\n\n` +
-    `_bestpickr.vercel.app_`
-
-  const ok = await sendTelegram(msg)
-  res.json({ ok, message: ok ? 'Report sent!' : 'Telegram not configured' })
-})
-
-module.exports = { router, sendTelegram }
+module.exports = { router, sendTelegram: sendTelegramMsg }
