@@ -1,10 +1,9 @@
 // src/utils/analytics.js
-// Client-side analytics tracker for bestpickr
-// Sends events to backend, which logs to DB and notifies Telegram
+// ✅ FIXED: Added trackAffiliateClick export (was missing — caused 0 clicks in admin dashboard)
+// ✅ FIXED: Affiliate clicks now properly tracked with productName, url, platform fields
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
-// Generate or retrieve session ID
 function getSessionId() {
   let sid = sessionStorage.getItem('bp_sid')
   if (!sid) {
@@ -14,7 +13,6 @@ function getSessionId() {
   return sid
 }
 
-// Get visitor ID (persisted across sessions)
 function getVisitorId() {
   let vid = localStorage.getItem('bp_vid')
   if (!vid) {
@@ -26,22 +24,20 @@ function getVisitorId() {
 
 function getBasePayload() {
   return {
-    sessionId: getSessionId(),
-    visitorId: getVisitorId(),
-    timestamp: new Date().toISOString(),
-    referrer: document.referrer || 'direct',
-    userAgent: navigator.userAgent,
+    sessionId:   getSessionId(),
+    visitorId:   getVisitorId(),
+    timestamp:   new Date().toISOString(),
+    referrer:    document.referrer || 'direct',
+    userAgent:   navigator.userAgent,
     screenWidth: window.innerWidth,
-    path: window.location.pathname,
-    url: window.location.href,
+    path:        window.location.pathname,
+    url:         window.location.href,
   }
 }
 
-// Fire-and-forget: send event to backend
 async function sendEvent(eventType, data = {}) {
   try {
     const payload = { ...getBasePayload(), eventType, ...data }
-    // Use sendBeacon for reliability (works even on page unload)
     if (navigator.sendBeacon) {
       const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
       navigator.sendBeacon(`${API_BASE}/analytics/event`, blob)
@@ -74,4 +70,17 @@ export function trackClick(data = {}) {
 
 export function trackProductView(productName, productId) {
   sendEvent('product_view', { productName, productId })
+}
+
+// ✅ NEW: Proper affiliate click tracker — call this on every Buy button click
+// This is what populates the admin dashboard "Affiliate Clicks" counter
+// AND triggers the Telegram instant alert
+export function trackAffiliateClick({ productName, productId, platform, affiliateUrl, price }) {
+  sendEvent('affiliate_click', {
+    productName,
+    productId:    productId   || null,
+    platform:     platform    || null,
+    affiliateUrl: affiliateUrl|| null,
+    price:        price       || null,
+  })
 }

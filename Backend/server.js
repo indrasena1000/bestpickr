@@ -1,4 +1,5 @@
 // server.js — bestpickr API Server
+// ✅ Updated for Prisma 7: PrismaClient now receives adapter directly
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -10,10 +11,11 @@ const { PrismaClient } = require("@prisma/client");
 const logger = require("./src/utils/logger");
 
 const app = express();
-const prisma = new PrismaClient();  // simple — reads DATABASE_URL from .env automatically
+const prisma = new PrismaClient();
+
 const PORT = process.env.PORT || 5001;
 
-// Make prisma available to all route files via app.locals
+// Make prisma available to route modules via app.locals
 app.locals.prisma = prisma;
 
 // ── MIDDLEWARE ───────────────────────────────────────────────────
@@ -32,7 +34,9 @@ app.use(
 );
 app.options("*", cors());
 app.use(compression());
-app.use(morgan("combined", { stream: { write: (msg) => logger.info(msg.trim()) } }));
+app.use(
+  morgan("combined", { stream: { write: (msg) => logger.info(msg.trim()) } }),
+);
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -46,13 +50,16 @@ const limiter = rateLimit({
 app.use("/api/", limiter);
 
 // ── ROUTES ───────────────────────────────────────────────────────
-app.use("/api/search",     require("./src/routes/search"));
-app.use("/api/products",   require("./src/routes/products"));
+app.use("/api/search", require("./src/routes/search"));
+app.use("/api/products", require("./src/routes/products"));
 app.use("/api/categories", require("./src/routes/categories"));
-app.use("/api/health",     require("./src/routes/health"));
-const { router: analyticsRouter, sendTelegram } = require("./src/routes/analytics");
-app.use("/api/analytics",  analyticsRouter);
-app.use("/api/admin",      require("./src/routes/admin"));
+app.use("/api/health", require("./src/routes/health"));
+const {
+  router: analyticsRouter,
+  sendTelegram,
+} = require("./src/routes/analytics");
+app.use("/api/analytics", analyticsRouter);
+app.use("/api/admin", require("./src/routes/admin"));
 
 app.get("/", (req, res) => {
   res.json({ app: "bestpickr API", version: "1.0.0", status: "running" });
@@ -65,7 +72,10 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   logger.error("Unhandled error:", err);
   const status = err.statusCode || err.status || 500;
-  const message = process.env.NODE_ENV === "production" ? "Internal server error" : err.message;
+  const message =
+    process.env.NODE_ENV === "production"
+      ? "Internal server error"
+      : err.message;
   res.status(status).json({ error: message });
 });
 
@@ -84,7 +94,13 @@ async function start() {
   }
 }
 
-process.on("SIGINT",  () => { prisma.$disconnect(); process.exit(0); });
-process.on("SIGTERM", () => { prisma.$disconnect(); process.exit(0); });
+process.on("SIGINT", () => {
+  prisma.$disconnect();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  prisma.$disconnect();
+  process.exit(0);
+});
 
 start();

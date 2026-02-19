@@ -1,56 +1,10 @@
 // src/pages/DetailPage.jsx
-// ✅ FIXED: Product image now shows with graceful error fallback (category emoji)
-import { useState, useEffect } from "react";
+// ✅ FIXED: Buy buttons now track affiliate clicks to admin dashboard
+// ✅ FIXED: Uses affiliateUrl (with your associate tag) not url (bare Amazon link)
+import { useState } from "react";
+import { trackAffiliateClick } from "../utils/analytics";
 
 const PLT_ICONS = { Amazon: "🛒", Flipkart: "🔵", Myntra: "🛍️" };
-
-// ── CATEGORY EMOJI MAP ────────────────────────────────────────────
-const CATEGORY_EMOJIS = {
-  headphones: '🎧', earbuds: '🎧', audio: '🎧', speaker: '🔊',
-  mobile: '📱', phone: '📱', smartphone: '📱',
-  laptop: '💻', computer: '💻', tablet: '📱',
-  tv: '📺', television: '📺', camera: '📷',
-  watch: '⌚', smartwatch: '⌚',
-  shoe: '👟', shoes: '👟', sneaker: '👟',
-  bag: '👜', backpack: '🎒', book: '📚',
-  gaming: '🎮', controller: '🎮',
-  kitchen: '🍳', airfryer: '🍳', fryer: '🍳',
-  vacuum: '🌀', cleaner: '🌀', printer: '🖨️',
-  mouse: '🖱️', keyboard: '⌨️',
-}
-function getCategoryEmoji(product) {
-  const text = `${product.name} ${product.category || ''}`.toLowerCase()
-  for (const [key, emoji] of Object.entries(CATEGORY_EMOJIS)) {
-    if (text.includes(key)) return emoji
-  }
-  return '📦'
-}
-
-// ✅ Smart product image with graceful error fallback
-function ProductImage({ product, className, style }) {
-  const [failed, setFailed] = useState(false)
-  useEffect(() => { setFailed(false) }, [product.imageUrl])
-
-  if (!product.imageUrl || failed) {
-    return (
-      <div
-        className={className}
-        style={{ ...style, display:'flex', alignItems:'center', justifyContent:'center', background:'var(--paper2)', borderRadius:'var(--r2)', fontSize: 52 }}
-      >
-        {getCategoryEmoji(product)}
-      </div>
-    )
-  }
-  return (
-    <img
-      src={product.imageUrl}
-      alt={product.name}
-      className={className}
-      onError={() => setFailed(true)}
-      style={{ ...style, objectFit:'contain', background:'#fff', borderRadius:'var(--r2)' }}
-    />
-  )
-}
 const fmt = (n) => (n ? `₹${Number(n).toLocaleString("en-IN")}` : "—");
 
 export default function DetailPage({ product: p, allResults, onBack, onHome }) {
@@ -94,16 +48,26 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
   const negativePct = Math.max(0, 100 - positivePct - 10);
   const neutralPct = Math.max(0, 100 - positivePct - negativePct);
 
-  function openPlatform(url, platformName) {
-    if (url) {
-      // In production: track click for analytics, then open affiliate link
-      window.open(url, "_blank");
-    } else {
-      alert(
-        `In a real app, this would take you to ${platformName}'s product page.`,
-      );
+  // ✅ FIXED: Always use affiliateUrl (contains your associate tag) not plain url
+  // ✅ FIXED: Track every click so admin dashboard + Telegram get notified
+  function openPlatform(plt) {
+    if (!plt) return;
+
+    // Use affiliateUrl first (has associate tag), fall back to url
+    const destination = plt.affiliateUrl || plt.url;
+
+    // Track the click BEFORE opening — sendBeacon works even if page navigates
+    trackAffiliateClick({
+      productName:  p.name,
+      productId:    p.platformId || null,
+      platform:     plt.name,
+      affiliateUrl: destination,
+      price:        plt.price,
+    });
+
+    if (destination) {
+      window.open(destination, "_blank", "noopener,noreferrer");
     }
-    // In production: track click for analytics, then open affiliate link
   }
 
   return (
@@ -127,10 +91,20 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
           <div className="dh">
             <div className="dh-top">
               <div className="dh-emoji">
-                <ProductImage
-                  product={p}
-                  style={{ width: "100%", height: "100%" }}
-                />
+                {p.imageUrl ? (
+                  <img
+                    src={p.imageUrl}
+                    alt={p.name}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "contain",
+                      borderRadius: "var(--r2)",
+                    }}
+                  />
+                ) : (
+                  <span>📦</span>
+                )}
               </div>
               <div className="dh-info">
                 <div className="dh-brand">{p.brand}</div>
@@ -353,7 +327,7 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
                           <td>
                             <button
                               className="buy-link"
-                              onClick={() => openPlatform(plt.url, plt.name)}
+                              onClick={() => openPlatform(plt)}
                             >
                               Buy →
                             </button>
@@ -382,7 +356,7 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
                           <button
                             className="buy-link"
                             style={{ background: "var(--ink4)" }}
-                            onClick={() => openPlatform(null, name)}
+                            onClick={() => openPlatform({ name, url: null, affiliateUrl: null })}
                           >
                             Check →
                           </button>
@@ -613,9 +587,7 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
             <div className="buy-card-body">
               <button
                 className="buy-card-main-btn"
-                onClick={() =>
-                  openPlatform(bestPlt?.url, bestPlt?.name || "Amazon")
-                }
+                onClick={() => openPlatform(bestPlt)}
               >
                 Buy on {bestPlt?.name || "Amazon"} →
               </button>
@@ -671,7 +643,7 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
                         <span className="pq-price">{fmt(plt.price)}</span>
                         <span
                           className="pq-btn"
-                          onClick={() => openPlatform(plt.url, plt.name)}
+                          onClick={() => openPlatform(plt)}
                         >
                           Buy
                         </span>
@@ -689,7 +661,7 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
                         </span>
                         <span
                           className="pq-btn"
-                          onClick={() => openPlatform(null, name)}
+                          onClick={() => openPlatform({ name, url: null, affiliateUrl: null })}
                         >
                           Go
                         </span>

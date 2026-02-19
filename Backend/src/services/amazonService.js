@@ -148,14 +148,39 @@ async function searchProducts(query, category = "All") {
   }
 }
 
+// ── YOUR AFFILIATE URLS ───────────────────────────────────────────
+// Add your Amazon Associates links here, keyed by ASIN.
+// Get the full URL from Associates portal, then remove:
+//   social_share=..., badgeInsights=..., th=1
+// Keep: tag=, linkCode=, linkId=, ref_=
+//
+// These are used when the API returns a product matching this ASIN.
+const MANUAL_AFFILIATE_URLS = {
+  // Product 1 — Fridge Organizer — your full link (cleaned)
+  B08WC9RQYD:
+    "https://www.amazon.in/dp/B08WC9RQYD?tag=bestpickr-21&linkCode=ll2&linkId=0940b6aa9d41a50bb4d71b5efea535e6&ref_=as_li_ss_tl",
+  // Add more below as you generate links from Amazon Associates:
+  // "B0XXXXXXXXX": "https://www.amazon.in/dp/B0XXXXXXXXX?tag=bestpickr-21&linkCode=ll2&linkId=YOUR_LINK_ID&ref_=as_li_ss_tl",
+};
+
+// Build the affiliate URL: manual link first, then auto-generated fallback
+function buildAffiliateUrl(asin, detailPageUrl) {
+  if (MANUAL_AFFILIATE_URLS[asin]) return MANUAL_AFFILIATE_URLS[asin];
+  if (asin && AMAZON_ASSOCIATE_TAG) {
+    return `https://www.amazon.in/dp/${asin}?tag=${AMAZON_ASSOCIATE_TAG}&linkCode=ll1&ref_=as_li_ss_tl`;
+  }
+  return detailPageUrl;
+}
+
 // ── NORMALIZE: Amazon → bestpickr format ─────────────────────────
 function normalizeAmazonItem(item) {
   const price = item.Offers?.Listings?.[0]?.Price?.Amount;
   const reviews = item.CustomerReviews;
+  const asin = item.ASIN;
 
   return {
     platform: "Amazon",
-    platformId: item.ASIN,
+    platformId: asin,
     name: item.ItemInfo?.Title?.DisplayValue || "Unknown Product",
     brand: item.ItemInfo?.ByLineInfo?.Brand?.DisplayValue,
     price: price ? parseFloat(price) : null,
@@ -166,9 +191,9 @@ function normalizeAmazonItem(item) {
     reviewCount: reviews?.Count?.Value ? parseInt(reviews.Count.Value) : 0,
     imageUrl: item.Images?.Primary?.Large?.URL,
     url: item.DetailPageURL,
-    affiliateUrl: item.DetailPageURL, // Already includes associate tag
+    affiliateUrl: buildAffiliateUrl(asin, item.DetailPageURL),
     inStock: item.Offers?.Listings?.[0]?.Availability?.Type === "Now",
-    positivePct: null, // Amazon doesn't give this directly; estimated in scorer
+    positivePct: null,
   };
 }
 
@@ -194,7 +219,7 @@ function getMockData(query) {
   return [
     {
       platform: "Amazon",
-      platformId: "B09XS7JWHH",
+      platformId: "B08WC9RQYD",
       name: "SAUDEEP INDIA Vastu Feng Shui Crystal Turtle Tortoise with Plate for Good Luck Feng Shui Tortoise Turtle (Regular Quality)",
       brand: "SAUDEEP INDIA",
       price: 376,
@@ -202,7 +227,8 @@ function getMockData(query) {
       reviewCount: 1288,
       imageUrl: null,
       url: "https://amzn.to/4ruOdKE",
-      affiliateUrl: "https://amzn.to/4qPDxoT",
+      affiliateUrl:
+        "https://www.amazon.in/dp/B08WC9RQYD?tag=bestpickr-21&linkCode=ll2&linkId=0940b6aa9d41a50bb4d71b5efea535e6&ref_=as_li_ss_tl",
       inStock: true,
       positivePct: 84,
       currency: "INR",
@@ -210,14 +236,15 @@ function getMockData(query) {
     {
       platform: "Amazon",
       platformId: "B0756CYWWD",
-      name: "Soulemo Women's Printed Nighty (Alpine) 1629",
+      name: "Premium Head Scalp Electric Massager Comb | Scalp Massaging Brush with 3 In 1 Hair Oil Applicator | IPX7 Water Resistant,Portable Deep Massager For Hair & Head Relaxation at Home | Shiatsu Massage for Hair Growth/Stress Relax (Multicolor)",
       brand: "Soulemo",
-      price: 945,
+      price: 1599,
       rating: 4.3,
-      reviewCount: 448,
+      reviewCount: 9100,
       imageUrl: null,
       url: "https://amzn.to/3ZJ30Fs",
-      affiliateUrl: "https://amzn.to/3ZJ30Fs",
+      affiliateUrl:
+        "https://www.amazon.in/Yeipis-Massaging-Applicator-Relaxation-Multicolor/dp/B0GJFWZ76G?1&linkCode=ll2&tag=bestpickr-21&linkId=27333c88680ac5a12e7bb551e69b9c1a&ref_=as_li_ss_tl",
       inStock: true,
       positivePct: 79,
       currency: "INR",
