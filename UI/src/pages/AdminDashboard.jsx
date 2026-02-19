@@ -1,22 +1,257 @@
 // src/pages/AdminDashboard.jsx
-// Static admin dashboard — login with hardcoded credentials
-// Protected by client-side auth (use proper auth for production)
-
 import { useState, useEffect, useCallback } from "react";
 import "../styles/admin.css";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
-// ⚠️ CHANGE THESE CREDENTIALS before deploying!
 const ADMIN_USER = "admin";
-const ADMIN_PASS = import.meta.env.VITE_ADMIN_PASSWORD || "admin123";
+const ADMIN_PASS = "admin@123";
 
 function fmtTime(iso) {
   if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: true });
+  return new Date(iso).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour12: true,
+  });
 }
 
-export default function AdminDashboard({ onClose }) {
+// ── MAINTENANCE TOGGLE PANEL ───────────────────────────────────────
+function MaintenancePanel({ maintenance, onMaintenanceChange, adminToken }) {
+  const [toggling, setToggling] = useState(false);
+  const [message, setMessage] = useState(
+    maintenance.message ||
+      "We're performing scheduled maintenance. We'll be back shortly.",
+  );
+  const [eta, setEta] = useState(maintenance.eta || "");
+  const [feedback, setFeedback] = useState("");
+
+  async function toggle(enable) {
+    setToggling(true);
+    setFeedback("");
+    try {
+      const r = await fetch(`${API_BASE}/admin/maintenance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: enable,
+          message,
+          eta,
+          token: adminToken,
+        }),
+      });
+      const data = await r.json();
+      if (r.ok) {
+        onMaintenanceChange({ enabled: data.maintenance, message, eta });
+        setFeedback(
+          enable
+            ? "✅ Maintenance mode ON — visitors now see the maintenance page."
+            : "✅ Site is LIVE — visitors can access bestpickr normally.",
+        );
+      } else {
+        setFeedback("❌ Error: " + (data.error || "Failed"));
+      }
+    } catch (e) {
+      setFeedback("❌ Could not reach backend — check if server is running.");
+    } finally {
+      setToggling(false);
+    }
+  }
+
+  const isOn = maintenance.enabled;
+
+  return (
+    <div
+      className="admin-card"
+      style={{ border: isOn ? "2px solid #F87171" : "1px solid #1E293B" }}
+    >
+      <div className="admin-card-title">
+        🔧 Maintenance Mode
+        <span
+          className={`admin-badge ${isOn ? "red" : "green"}`}
+          style={{ marginLeft: 8 }}
+        >
+          {isOn ? "● SITE DOWN" : "● SITE LIVE"}
+        </span>
+      </div>
+
+      <p
+        style={{
+          fontSize: 13,
+          color: "#94A3B8",
+          marginBottom: 16,
+          lineHeight: 1.6,
+        }}
+      >
+        When turned ON, all visitors see a "We'll be back shortly" page instead
+        of bestpickr. You (the admin) can still access everything normally.
+      </p>
+
+      {/* Custom message input */}
+      <div style={{ marginBottom: 12 }}>
+        <label
+          style={{
+            fontSize: 12,
+            color: "#64748B",
+            display: "block",
+            marginBottom: 5,
+          }}
+        >
+          Message shown to visitors:
+        </label>
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          rows={2}
+          style={{
+            width: "100%",
+            background: "#0F172A",
+            border: "1px solid #334155",
+            borderRadius: 6,
+            padding: "10px 12px",
+            color: "#E2E8F0",
+            fontSize: 13,
+            fontFamily: "inherit",
+            resize: "vertical",
+            boxSizing: "border-box",
+          }}
+        />
+      </div>
+
+      {/* ETA input */}
+      <div style={{ marginBottom: 20 }}>
+        <label
+          style={{
+            fontSize: 12,
+            color: "#64748B",
+            display: "block",
+            marginBottom: 5,
+          }}
+        >
+          Estimated time back (optional — e.g. "30 minutes", "2 hours"):
+        </label>
+        <input
+          value={eta}
+          onChange={(e) => setEta(e.target.value)}
+          placeholder="e.g. 30 minutes"
+          style={{
+            width: "100%",
+            background: "#0F172A",
+            border: "1px solid #334155",
+            borderRadius: 6,
+            padding: "10px 12px",
+            color: "#E2E8F0",
+            fontSize: 13,
+            fontFamily: "inherit",
+            boxSizing: "border-box",
+          }}
+        />
+      </div>
+
+      {/* Toggle buttons */}
+      <div style={{ display: "flex", gap: 10 }}>
+        <button
+          onClick={() => toggle(true)}
+          disabled={toggling || isOn}
+          style={{
+            flex: 1,
+            padding: "12px",
+            borderRadius: 8,
+            border: "none",
+            cursor: isOn ? "not-allowed" : "pointer",
+            background: isOn ? "#1E293B" : "#EF4444",
+            color: isOn ? "#64748B" : "#fff",
+            fontSize: 14,
+            fontWeight: 700,
+            fontFamily: "inherit",
+            transition: "all .15s",
+          }}
+        >
+          {toggling ? "..." : "🔴 Put Site Into Maintenance"}
+        </button>
+        <button
+          onClick={() => toggle(false)}
+          disabled={toggling || !isOn}
+          style={{
+            flex: 1,
+            padding: "12px",
+            borderRadius: 8,
+            border: "none",
+            cursor: !isOn ? "not-allowed" : "pointer",
+            background: !isOn ? "#1E293B" : "#22C55E",
+            color: !isOn ? "#64748B" : "#fff",
+            fontSize: 14,
+            fontWeight: 700,
+            fontFamily: "inherit",
+            transition: "all .15s",
+          }}
+        >
+          {toggling ? "..." : "🟢 Bring Site Back Live"}
+        </button>
+      </div>
+
+      {feedback && (
+        <div
+          style={{
+            marginTop: 12,
+            fontSize: 13,
+            color: feedback.startsWith("✅") ? "#34D399" : "#F87171",
+            lineHeight: 1.5,
+          }}
+        >
+          {feedback}
+        </div>
+      )}
+
+      {isOn && (
+        <div
+          style={{
+            marginTop: 12,
+            background: "#450A0A",
+            border: "1px solid #7F1D1D",
+            borderRadius: 8,
+            padding: "10px 14px",
+          }}
+        >
+          <div style={{ fontSize: 12, color: "#FCA5A5", fontWeight: 700 }}>
+            ⚠️ Site is currently DOWN for visitors
+          </div>
+          <div style={{ fontSize: 11, color: "#EF4444", marginTop: 3 }}>
+            Click "Bring Site Back Live" to restore access.
+          </div>
+        </div>
+      )}
+
+      <div
+        style={{
+          marginTop: 14,
+          fontSize: 11,
+          color: "#475569",
+          lineHeight: 1.6,
+        }}
+      >
+        💡 Tip: To access the site yourself while maintenance is ON, add{" "}
+        <code
+          style={{ background: "#0F172A", padding: "1px 5px", borderRadius: 3 }}
+        >
+          ?admin=1
+        </code>{" "}
+        to the URL. Example:{" "}
+        <code
+          style={{ background: "#0F172A", padding: "1px 5px", borderRadius: 3 }}
+        >
+          https://bestpickr.in?admin=1
+        </code>
+      </div>
+    </div>
+  );
+}
+
+// ── MAIN DASHBOARD ─────────────────────────────────────────────────
+export default function AdminDashboard({
+  onClose,
+  maintenance = {},
+  onMaintenanceChange,
+  adminToken,
+}) {
   const [authed, setAuthed] = useState(false);
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
@@ -27,10 +262,8 @@ export default function AdminDashboard({ onClose }) {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [liveCount, setLiveCount] = useState(0);
 
-  // Check session
   useEffect(() => {
-    const s = sessionStorage.getItem("bp_admin");
-    if (s === "yes") setAuthed(true);
+    if (sessionStorage.getItem("bp_admin") === "yes") setAuthed(true);
   }, []);
 
   function handleLogin(e) {
@@ -40,7 +273,7 @@ export default function AdminDashboard({ onClose }) {
       setAuthed(true);
       setErr("");
     } else {
-      setErr("Invalid credentials. Try again.");
+      setErr("Invalid credentials.");
     }
   }
 
@@ -65,11 +298,8 @@ export default function AdminDashboard({ onClose }) {
       setStats(statsRes);
       setEvents(eventsRes?.events || []);
       setLastRefresh(new Date());
-
-      // Simulate live users (random for demo)
       setLiveCount(Math.floor(Math.random() * 8) + 1);
-    } catch (err) {
-      // Use mock data if API not connected
+    } catch (_) {
       setStats(MOCK_STATS);
       setEvents(MOCK_EVENTS);
     } finally {
@@ -80,11 +310,12 @@ export default function AdminDashboard({ onClose }) {
   useEffect(() => {
     if (authed) {
       fetchData();
-      const interval = setInterval(fetchData, 3000000); // refresh every 30s
+      const interval = setInterval(fetchData, 30000);
       return () => clearInterval(interval);
     }
   }, [authed, fetchData]);
 
+  // ── LOGIN SCREEN ────────────────────────────────────────────────
   if (!authed) {
     return (
       <div className="admin-wrap">
@@ -122,14 +353,7 @@ export default function AdminDashboard({ onClose }) {
                 Sign In →
               </button>
             </form>
-            <div
-              style={{
-                marginTop: 16,
-                fontSize: 12,
-                color: "#475569",
-                textAlign: "center",
-              }}
-            >
+            <div style={{ marginTop: 16, textAlign: "center" }}>
               <button
                 onClick={onClose}
                 style={{
@@ -153,6 +377,7 @@ export default function AdminDashboard({ onClose }) {
   const s = stats || MOCK_STATS;
   const ev = events.length > 0 ? events : MOCK_EVENTS;
 
+  // ── DASHBOARD ───────────────────────────────────────────────────
   return (
     <div className="admin-wrap">
       {/* Nav */}
@@ -171,6 +396,21 @@ export default function AdminDashboard({ onClose }) {
         >
           <span className="admin-live-dot" /> {liveCount} live now
         </div>
+        {maintenance.enabled && (
+          <div
+            style={{
+              background: "#450A0A",
+              border: "1px solid #7F1D1D",
+              borderRadius: 6,
+              padding: "3px 10px",
+              fontSize: 11,
+              color: "#F87171",
+              fontWeight: 700,
+            }}
+          >
+            ⚠️ MAINTENANCE ON
+          </div>
+        )}
         <div
           style={{
             width: 1,
@@ -217,59 +457,70 @@ export default function AdminDashboard({ onClose }) {
           · Auto-refreshes every 30s
         </div>
 
-        {/* Stat Cards */}
+        {/* ── MAINTENANCE MODE — top of dashboard ── */}
+        <MaintenancePanel
+          maintenance={maintenance}
+          onMaintenanceChange={onMaintenanceChange}
+          adminToken={adminToken || "bestpickr-admin-2025"}
+        />
+
+        {/* ── STAT CARDS ── */}
         <div className="admin-stat-grid">
-          <div className="admin-stat blue">
-            <div className="admin-stat-label">Total Visitors</div>
-            <div className="admin-stat-val">
-              {(s.totalVisitors || 0).toLocaleString()}
+          {[
+            {
+              label: "Total Visitors",
+              val: s.totalVisitors,
+              sub: "All time unique",
+              cls: "blue",
+            },
+            {
+              label: "Page Views",
+              val: s.totalPageViews,
+              sub: "All sessions",
+              cls: "green",
+            },
+            {
+              label: "Affiliate Clicks",
+              val: s.affiliateClicks,
+              sub: "Amazon buy clicks",
+              cls: "orange",
+            },
+            {
+              label: "Searches",
+              val: s.totalSearches,
+              sub: "Total queries",
+              cls: "purple",
+            },
+            {
+              label: "Today's Visitors",
+              val: s.todayVisitors,
+              sub: "Since midnight IST",
+              extraStyle: { color: "#34D399" },
+            },
+            {
+              label: "Conversion Rate",
+              val: s.totalPageViews
+                ? ((s.affiliateClicks / s.totalPageViews) * 100).toFixed(1) +
+                  "%"
+                : "0%",
+              sub: "Clicks / Page views",
+              extraStyle: { color: "#FB923C" },
+            },
+          ].map(({ label, val, sub, cls, extraStyle }) => (
+            <div key={label} className={`admin-stat ${cls || ""}`}>
+              <div className="admin-stat-label">{label}</div>
+              <div className="admin-stat-val" style={extraStyle}>
+                {typeof val === "number" ? val.toLocaleString() : val}
+              </div>
+              <div className="admin-stat-sub">{sub}</div>
             </div>
-            <div className="admin-stat-sub">All time unique</div>
-          </div>
-          <div className="admin-stat green">
-            <div className="admin-stat-label">Page Views</div>
-            <div className="admin-stat-val">
-              {(s.totalPageViews || 0).toLocaleString()}
-            </div>
-            <div className="admin-stat-sub">All sessions</div>
-          </div>
-          <div className="admin-stat orange">
-            <div className="admin-stat-label">Affiliate Clicks</div>
-            <div className="admin-stat-val">
-              {(s.affiliateClicks || 0).toLocaleString()}
-            </div>
-            <div className="admin-stat-sub">Amazon buy clicks</div>
-          </div>
-          <div className="admin-stat purple">
-            <div className="admin-stat-label">Searches</div>
-            <div className="admin-stat-val">
-              {(s.totalSearches || 0).toLocaleString()}
-            </div>
-            <div className="admin-stat-sub">Total queries</div>
-          </div>
-          <div className="admin-stat">
-            <div className="admin-stat-label">Today's Visitors</div>
-            <div className="admin-stat-val" style={{ color: "#34D399" }}>
-              {(s.todayVisitors || 0).toLocaleString()}
-            </div>
-            <div className="admin-stat-sub">Since midnight IST</div>
-          </div>
-          <div className="admin-stat">
-            <div className="admin-stat-label">Conversion Rate</div>
-            <div className="admin-stat-val" style={{ color: "#FB923C" }}>
-              {s.totalPageViews
-                ? ((s.affiliateClicks / s.totalPageViews) * 100).toFixed(1)
-                : "0"}
-              %
-            </div>
-            <div className="admin-stat-sub">Clicks / Page views</div>
-          </div>
+          ))}
         </div>
 
-        {/* Top Products Clicked */}
+        {/* ── TOP PRODUCTS ── */}
         <div className="admin-card">
           <div className="admin-card-title">
-            🛒 Top Amazon Products Clicked
+            🛒 Top Amazon Products Clicked{" "}
             <span className="admin-badge green">Live</span>
           </div>
           <table className="admin-table">
@@ -319,7 +570,7 @@ export default function AdminDashboard({ onClose }) {
           </table>
         </div>
 
-        {/* Top Searches */}
+        {/* ── TOP SEARCHES ── */}
         <div className="admin-card">
           <div className="admin-card-title">🔍 Top Search Queries</div>
           <table className="admin-table">
@@ -344,7 +595,7 @@ export default function AdminDashboard({ onClose }) {
           </table>
         </div>
 
-        {/* Recent Events */}
+        {/* ── RECENT EVENTS ── */}
         <div className="admin-card">
           <div className="admin-card-title">
             📋 Recent Events{" "}
@@ -393,7 +644,7 @@ export default function AdminDashboard({ onClose }) {
           </table>
         </div>
 
-        {/* Telegram Setup Info */}
+        {/* ── TELEGRAM SETUP ── */}
         <div className="admin-card">
           <div className="admin-card-title">🤖 Telegram Notifications</div>
           <div style={{ fontSize: 13, color: "#94A3B8", lineHeight: 1.7 }}>
@@ -428,7 +679,7 @@ export default function AdminDashboard({ onClose }) {
                 to get your <strong>CHAT_ID</strong>
               </li>
               <li>
-                Add to your Vercel env vars:{" "}
+                Add to Vercel env vars:{" "}
                 <code
                   style={{
                     background: "#0F172A",
@@ -449,7 +700,7 @@ export default function AdminDashboard({ onClose }) {
                   TELEGRAM_CHAT_ID
                 </code>
               </li>
-              <li>Daily reports fire at 9 AM IST automatically 📊</li>
+              <li>Daily reports fire at 9:30 AM IST automatically 📊</li>
             </ol>
           </div>
         </div>
@@ -458,7 +709,7 @@ export default function AdminDashboard({ onClose }) {
   );
 }
 
-// ── MOCK DATA (shown when API not connected) ───────────────────────
+// ── MOCK DATA ──────────────────────────────────────────────────────
 const MOCK_STATS = {
   totalVisitors: 142,
   totalPageViews: 489,
@@ -472,10 +723,10 @@ const MOCK_STATS = {
   ],
   topSearches: [
     { query: "noise cancelling headphones", count: 34 },
+    { query: "best mobiles india 2026", count: 28 },
     { query: "gaming mouse", count: 22 },
     { query: "air fryer", count: 18 },
     { query: "laptop for students", count: 15 },
-    { query: "smartphone under 20000", count: 12 },
   ],
 };
 const MOCK_EVENTS = [
@@ -488,7 +739,7 @@ const MOCK_EVENTS = [
   {
     timestamp: new Date(Date.now() - 60000).toISOString(),
     eventType: "search",
-    query: "headphones",
+    query: "best mobiles 2026",
     screenWidth: 375,
   },
   {

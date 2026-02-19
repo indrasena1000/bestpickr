@@ -64,6 +64,7 @@ app.use("/api/health",    require("./src/routes/health"));
 // Analytics: track visitors, clicks, send Telegram reports
 const { router: analyticsRouter, sendTelegram } = require("./src/routes/analytics");
 app.use("/api/analytics", analyticsRouter);
+app.use("/api/admin", require("./src/routes/admin"));
 
 // ── ROOT ──────────────────────────────────────────────────────────
 app.get("/", (req, res) => {

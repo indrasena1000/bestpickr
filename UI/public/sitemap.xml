@@ -1,43 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://bestpickr.vercel.app/</loc>
-    <changefreq>daily</changefreq>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://bestpickr.vercel.app/#/about</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://bestpickr.vercel.app/#/blog</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://bestpickr.vercel.app/#/how-it-works</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://bestpickr.vercel.app/#/ai-score</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://bestpickr.vercel.app/#/price-alerts</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://bestpickr.vercel.app/#/privacy</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>https://bestpickr.vercel.app/#/terms</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
-  </url>
+
+  <!-- Core pages -->
+  <url><loc>https://bestpickr.in/</loc>                              <changefreq>daily</changefreq>   <priority>1.0</priority></url>
+  <url><loc>https://bestpickr.in/#/about</loc>                      <changefreq>monthly</changefreq> <priority>0.6</priority></url>
+  <url><loc>https://bestpickr.in/#/blog</loc>                       <changefreq>weekly</changefreq>  <priority>0.8</priority></url>
+  <url><loc>https://bestpickr.in/#/how-it-works</loc>               <changefreq>monthly</changefreq> <priority>0.6</priority></url>
+  <url><loc>https://bestpickr.in/#/ai-score</loc>                   <changefreq>monthly</changefreq> <priority>0.5</priority></url>
+  <url><loc>https://bestpickr.in/#/price-alerts</loc>               <changefreq>monthly</changefreq> <priority>0.5</priority></url>
+  <url><loc>https://bestpickr.in/#/privacy</loc>                    <changefreq>yearly</changefreq>  <priority>0.3</priority></url>
+  <url><loc>https://bestpickr.in/#/terms</loc>                      <changefreq>yearly</changefreq>  <priority>0.3</priority></url>
+
+  <!-- SEO Landing Pages — auto-trigger searches when visited -->
+  <url><loc>https://bestpickr.in/best-mobiles-india-2026</loc>      <changefreq>weekly</changefreq>  <priority>0.9</priority></url>
+  <url><loc>https://bestpickr.in/best-mobiles-under-20000</loc>     <changefreq>weekly</changefreq>  <priority>0.9</priority></url>
+  <url><loc>https://bestpickr.in/best-5g-phones-india-2026</loc>    <changefreq>weekly</changefreq>  <priority>0.8</priority></url>
+  <url><loc>https://bestpickr.in/best-headphones-india-2026</loc>   <changefreq>weekly</changefreq>  <priority>0.9</priority></url>
+  <url><loc>https://bestpickr.in/best-earbuds-india-2026</loc>      <changefreq>weekly</changefreq>  <priority>0.8</priority></url>
+  <url><loc>https://bestpickr.in/best-laptops-india-2026</loc>      <changefreq>weekly</changefreq>  <priority>0.9</priority></url>
+  <url><loc>https://bestpickr.in/best-laptops-for-students</loc>    <changefreq>weekly</changefreq>  <priority>0.8</priority></url>
+  <url><loc>https://bestpickr.in/best-gaming-mouse-india-2026</loc> <changefreq>weekly</changefreq>  <priority>0.7</priority></url>
+  <url><loc>https://bestpickr.in/best-air-fryer-india-2026</loc>    <changefreq>weekly</changefreq>  <priority>0.7</priority></url>
+  <url><loc>https://bestpickr.in/best-skincare-india-2026</loc>     <changefreq>weekly</changefreq>  <priority>0.7</priority></url>
+  <url><loc>https://bestpickr.in/best-smartwatch-india-2026</loc>   <changefreq>weekly</changefreq>  <priority>0.7</priority></url>
+
 </urlset>

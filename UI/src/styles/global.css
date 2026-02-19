@@ -350,6 +350,8 @@ footer{background:var(--paper);border-top:1px solid var(--line);padding:40px 0 2
 .admin-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px}
 .admin-badge.green{background:#064E3B;color:#34D399}
 .admin-badge.blue{background:#1E3A5F;color:#60A5FA}
+.admin-badge.red{background:#450A0A;color:#F87171}
+.admin-badge.orange{background:#431407;color:#FB923C}
 .admin-chart-bar{height:8px;background:#3B82F6;border-radius:4px;transition:width .5s}
 .admin-live-dot{width:8px;height:8px;background:#34D399;border-radius:50%;display:inline-block;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
