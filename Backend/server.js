@@ -29,6 +29,11 @@ const {
   triggerManually: triggerNightlyRefresh,
   getJobStatus: getNightlyJobStatus,
 } = require("./src/jobs/nightlyRefresh");
+const {
+  setPrisma: setTelegramPrisma,
+  startTelegramReport,
+  stopTelegramReport,
+} = require("./src/jobs/telegramReport");
 
 const app = express();
 const prisma = new PrismaClient();
@@ -165,6 +170,11 @@ async function start() {
       "✅ Nightly refresh job started (refreshes products + prices at 12:01 AM IST)",
     );
 
+    // Start Telegram daily report (runs at 9:00 AM IST)
+    setTelegramPrisma(prisma);
+    startTelegramReport();
+    logger.info("✅ Telegram daily report scheduled (9:00 AM IST)");
+
     app.listen(PORT, () => {
       logger.info(`bestpickr API on http://localhost:${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV}`);
@@ -178,6 +188,7 @@ async function start() {
 process.on("SIGINT", async () => {
   stopCron();
   stopNightlyRefresh();
+  stopTelegramReport();
   disconnectRedis();
   await disconnectMongoDB();
   await prisma.$disconnect();
@@ -186,6 +197,7 @@ process.on("SIGINT", async () => {
 process.on("SIGTERM", async () => {
   stopCron();
   stopNightlyRefresh();
+  stopTelegramReport();
   disconnectRedis();
   await disconnectMongoDB();
   await prisma.$disconnect();

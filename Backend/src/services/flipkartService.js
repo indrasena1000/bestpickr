@@ -73,8 +73,7 @@ async function searchProducts(query, category = '') {
 
     if (results.length === 0) {
       logger.warn(`Flipkart: 0 products parsed for "${query}" — selectors may be outdated`)
-      logger.info('Flipkart: ScraperAPI returned HTML but no products found — using mock data')
-      return getMockData(query, category)
+      return []
     }
 
     logger.info(`✅ Flipkart: ${results.length} products found for "${query}"`)
@@ -89,10 +88,9 @@ async function searchProducts(query, category = '') {
     else if (msg.includes('timeout'))logger.error(`Flipkart: timed out after ${TIMEOUT_MS/1000}s — ScraperAPI slow`)
     else                             logger.error(`Flipkart scrape error: ${msg}`)
 
-    // FIX: Return mock data so users still see relevant products
-    // Old code returned [] causing "no results found" on every scraper failure
-    logger.info(`Flipkart: using mock data fallback for "${query}"`)
-    return getMockData(query, category)
+    // Return empty — the ranking agent's 3-tier cache (Tier 2 category cache)
+    // will serve preloaded data if available
+    return []
   }
 }
 
@@ -299,42 +297,6 @@ const CATEGORY_HINTS = {
   fashion:     'clothing',
   books:       'book',
   appliances:  'kitchen appliance',
-}
-
-// ── MOCK DATA (fallback when scraping fails) ──────────────────────
-function getMockData(query, category) {
-  logger.info(`Flipkart mock data for: "${query}"`)
-  const q = query.toLowerCase()
-
-  if (q.includes('headphone') || q.includes('earphone') || q.includes('earbuds') || category === 'headphones') {
-    return [
-      { platform:'Flipkart', platformId:'FK_XM5', name:'Sony WH-1000XM5 Industry Leading Wireless Noise Cancelling Headphones', brand:'Sony', price:24990, mrp:29990, discount:17, currency:'INR', rating:4.6, reviewCount:1840, imageUrl:null, url:'https://www.flipkart.com/sony-wh-1000xm5/p/itm001', affiliateUrl:'https://www.flipkart.com/sony-wh-1000xm5/p/itm001', inStock:true, positivePct:88 },
-      { platform:'Flipkart', platformId:'FK_QC45', name:'Bose QuietComfort 45 Wireless Bluetooth Headphones', brand:'Bose', price:26500, mrp:32000, discount:17, currency:'INR', rating:4.5, reviewCount:920, imageUrl:null, url:'https://www.flipkart.com/bose-qc45/p/itm002', affiliateUrl:'https://www.flipkart.com/bose-qc45/p/itm002', inStock:true, positivePct:82 },
-      { platform:'Flipkart', platformId:'FK_BOAT', name:'boAt Rockerz 550 Bluetooth On-Ear Headphones with 20H Playtime', brand:'boAt', price:1299, mrp:3990, discount:67, currency:'INR', rating:4.1, reviewCount:42300, imageUrl:null, url:'https://www.flipkart.com/boat-rockerz-550/p/itm003', affiliateUrl:'https://www.flipkart.com/boat-rockerz-550/p/itm003', inStock:true, positivePct:70 },
-      { platform:'Flipkart', platformId:'FK_GAL', name:'Samsung Galaxy Buds 2 Pro True Wireless Earbuds ANC', brand:'Samsung', price:14990, mrp:17999, discount:17, currency:'INR', rating:4.3, reviewCount:2640, imageUrl:null, url:'https://www.flipkart.com/samsung-galaxy-buds-2-pro/p/itm004', affiliateUrl:'https://www.flipkart.com/samsung-galaxy-buds-2-pro/p/itm004', inStock:true, positivePct:75 },
-      { platform:'Flipkart', platformId:'FK_JBL', name:'JBL Tune 760NC Wireless Over-Ear Active Noise Cancellation', brand:'JBL', price:5999, mrp:8999, discount:33, currency:'INR', rating:4.2, reviewCount:8910, imageUrl:null, url:'https://www.flipkart.com/jbl-tune-760nc/p/itm005', affiliateUrl:'https://www.flipkart.com/jbl-tune-760nc/p/itm005', inStock:true, positivePct:74 },
-    ]
-  }
-
-  if (q.includes('phone') || q.includes('mobile') || q.includes('smartphone') || category === 'smartphones') {
-    return [
-      { platform:'Flipkart', platformId:'FK_S24', name:'Samsung Galaxy S24 5G 256GB Onyx Black', brand:'Samsung', price:74999, mrp:79999, discount:6, currency:'INR', rating:4.4, reviewCount:3210, imageUrl:null, url:'https://www.flipkart.com/samsung-galaxy-s24-5g/p/itmS24FK', affiliateUrl:'https://www.flipkart.com/search?q=samsung+galaxy+s24', inStock:true, positivePct:80 },
-      { platform:'Flipkart', platformId:'FK_OP12R', name:'OnePlus 12R 5G 256GB Flowy Emerald', brand:'OnePlus', price:39999, mrp:42999, discount:7, currency:'INR', rating:4.3, reviewCount:5640, imageUrl:null, url:'https://www.flipkart.com/oneplus-12r-5g/p/itmOP12R', affiliateUrl:'https://www.flipkart.com/search?q=oneplus+12r', inStock:true, positivePct:76 },
-      { platform:'Flipkart', platformId:'FK_RMK70', name:'Realme Narzo 70x 5G 128GB Submarine Blue', brand:'Realme', price:13999, mrp:15999, discount:13, currency:'INR', rating:4.1, reviewCount:9870, imageUrl:null, url:'https://www.flipkart.com/realme-narzo-70x-5g/p/itmRM70X', affiliateUrl:'https://www.flipkart.com/search?q=realme+narzo+70x', inStock:true, positivePct:68 },
-    ]
-  }
-
-  if (q.includes('shoe') || q.includes('sneaker') || q.includes('running') || category === 'footwear') {
-    return [
-      { platform:'Flipkart', platformId:'FK_NK270', name:'Nike Air Max 270 Running Shoes', brand:'Nike', price:8995, mrp:11995, discount:25, currency:'INR', rating:4.3, reviewCount:2340, imageUrl:null, url:'https://www.flipkart.com/nike-air-max-270/p/itmNK270', affiliateUrl:'https://www.flipkart.com/search?q=nike+air+max+270', inStock:true, positivePct:74 },
-      { platform:'Flipkart', platformId:'FK_AD', name:'Adidas Runfalcon 3 Running Shoes', brand:'Adidas', price:3999, mrp:5999, discount:33, currency:'INR', rating:4.2, reviewCount:4120, imageUrl:null, url:'https://www.flipkart.com/adidas-runfalcon-3/p/itmADRF3', affiliateUrl:'https://www.flipkart.com/search?q=adidas+runfalcon+3', inStock:true, positivePct:70 },
-    ]
-  }
-
-  // Generic fallback
-  return [
-    { platform:'Flipkart', platformId:'FK_GEN1', name:`Best ${query} on Flipkart`, brand:'Various', price:4999, mrp:6999, discount:28, currency:'INR', rating:4.1, reviewCount:1240, imageUrl:null, url:'https://www.flipkart.com/search?q='+encodeURIComponent(query), affiliateUrl:'https://www.flipkart.com/search?q='+encodeURIComponent(query), inStock:true, positivePct:70 },
-  ]
 }
 
 module.exports = { searchProducts }
