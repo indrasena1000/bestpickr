@@ -11,66 +11,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getCategories, searchProducts } from "../services/api.js";
 import { HomeTableSkeleton } from "../components/Skeleton.jsx";
-import { trackAffiliateClick } from "../utils/analytics.js";
 
-// ── CLEAN AFFILIATE LINKS ──────────────────────────────────────────
-const FEATURED_PRODUCTS = [
-  {
-    id: "fp1",
-    asin: "B0CCLMLRY8",
-    name: "LEMBOSE Plastic Fridge Storage Refrigerator Organizer Container with Lid - 5L, Transparent",
-    brand: "LEMBOSE",
-    emoji: "🧊",
-    imageUrl: "https://m.media-amazon.com/images/I/71WqBJFa2TL._SX342_SY445_.jpg",
-    price: 249,
-    oldPrice: 699,
-    discount: 64,
-    rating: 4.5,
-    reviewCount: 41200,
-    badge: "✅ Top Rated",
-    // BUG #9 FIX: Clean dp/ASIN URL — no search params that cause blank page
-    affiliateUrl: "https://www.amazon.in/dp/B0CCLMLRY8?tag=bestpickr-21&linkCode=ll2&linkId=3224d39e3ae39a53dc87cfaca0257221&ref_=as_li_ss_tl",
-    features: ["5 Litres", "Transparent", "With Lid"],
-    category: "Kitchen",
-    aiReason: "Highest rated fridge organizer with 41K+ verified reviews. 4.5★ across Amazon. Best value in its category.",
-  },
-  {
-    id: "fp2",
-    asin: "B0C591TT8F",
-    name: "Cubic Classic A5 Journal – 160 Pages, 80 gsm | PU Leather Hardbound Notebook with Pen Loop",
-    brand: "Cubic",
-    emoji: "📓",
-    imageUrl: "https://m.media-amazon.com/images/I/71k3o+gJgFL._SX342_SY445_.jpg",
-    price: 167,
-    oldPrice: 185,
-    discount: 10,
-    rating: 4.2,
-    reviewCount: 780,
-    badge: "🔥 Bestseller",
-    affiliateUrl: "https://www.amazon.in/dp/B0C591TT8F?tag=bestpickr-21&linkCode=ll2&linkId=2657a6de8c2932c182b76deb8e749024&ref_=as_li_ss_tl",
-    features: ["Hardbound", "A5 Size", "160 Pages"],
-    category: "Diaries",
-    aiReason: "Top-rated hardbound journal with PU leather cover. 4.2★ with consistent positive sentiment on build quality.",
-  },
-  {
-    id: "fp3",
-    asin: "B07DQXH8JZ",
-    name: "Scotch-Brite Microfiber Polishing Wipe for cleaning TV, Mobile, Laptop screens",
-    brand: "Scotch-Brite",
-    emoji: "🧹",
-    imageUrl: "https://m.media-amazon.com/images/I/61RI+lFf3HL._SX342_SY445_.jpg",
-    price: 169,
-    oldPrice: 179,
-    discount: 6,
-    rating: 4.2,
-    reviewCount: 3665,
-    badge: "⚡ Limited Deal",
-    affiliateUrl: "https://www.amazon.in/dp/B07DQXH8JZ?tag=bestpickr-21&linkCode=ll2&linkId=87747a090d2be209a3f34aed820729aa&ref_=as_li_ss_tl",
-    features: ["Microfiber", "Screen Safe", "Grey"],
-    category: "Cleaning",
-    aiReason: "Most reviewed microfiber wipe in India. Scotch-Brite brand trust + 3.6K reviews make this the safest pick.",
-  },
-];
 
 const RANK_CLASS = ["", "g", "s", "b", "n", "n", "n", "n", "n", "n", "n"];
 const SUGGESTS = [
@@ -84,13 +25,6 @@ const SUGGESTS = [
 ];
 const PLT_ICONS = { Amazon: "🛒", Flipkart: "🔵", Myntra: "🛍️" };
 
-// ── SESSION SAVED PRODUCTS (BUG #11) ──────────────────────────────
-function getSaved() {
-  try { return JSON.parse(sessionStorage.getItem('bp_saved') || '[]') } catch { return [] }
-}
-function setSaved(list) {
-  try { sessionStorage.setItem('bp_saved', JSON.stringify(list)) } catch {}
-}
 
 // ── HOVER TOOLTIP (BUG #18) ────────────────────────────────────────
 function AITooltip({ reason, children }) {
@@ -127,101 +61,6 @@ function AITooltip({ reason, children }) {
   )
 }
 
-function FeaturedProductCard({ product }) {
-  const [imgFailed, setImgFailed] = useState(false);
-  const [saved, setSavedState] = useState(() => getSaved().some(s => s.id === product.id));
-
-  function handleBuy(e) {
-    e.stopPropagation();
-    trackAffiliateClick({
-      productName: product.name,
-      productId: product.asin,
-      platform: "Amazon",
-      affiliateUrl: product.affiliateUrl,
-      price: product.price,
-    });
-    // BUG #9 FIX: proper window.open with noopener
-    window.open(product.affiliateUrl, "_blank", "noopener,noreferrer");
-  }
-
-  // BUG #11 FIX: Session-based save (no login needed)
-  function toggleSave(e) {
-    e.stopPropagation();
-    const list = getSaved();
-    const exists = list.some(s => s.id === product.id);
-    if (exists) {
-      setSaved(list.filter(s => s.id !== product.id));
-      setSavedState(false);
-    } else {
-      setSaved([...list, { id: product.id, name: product.name, price: product.price }]);
-      setSavedState(true);
-    }
-  }
-
-  return (
-    <div className="fcard">
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-        <div className="fcard-badge">{product.badge}</div>
-        {/* BUG #11: Save button - session based */}
-        <button
-          onClick={toggleSave}
-          title={saved ? "Remove from saved" : "Save for later"}
-          style={{
-            background:'none', border:'none', cursor:'pointer', padding:'4px 8px',
-            fontSize:16, color: saved ? 'var(--accent2)' : 'var(--ink4)',
-          }}
-        >{saved ? "🔖" : "📎"}</button>
-      </div>
-      <div className="fcard-img-placeholder" style={{ background:'#fff', display:'flex', alignItems:'center', justifyContent:'center' }}>
-        {product.imageUrl && !imgFailed ? (
-          <img
-            src={product.imageUrl}
-            alt={product.name}
-            onError={() => setImgFailed(true)}
-            style={{ width:'100%', height:'100%', objectFit:'contain' }}
-          />
-        ) : (
-          <span style={{ fontSize:48 }}>{product.emoji}</span>
-        )}
-      </div>
-      <div className="fcard-body">
-        <div className="fcard-brand">{product.brand} · {product.category}</div>
-        <div className="fcard-name">{product.name}</div>
-        <div className="fcard-rating">
-          <span className="fcard-stars">{"★".repeat(Math.round(product.rating))}</span>
-          {product.rating} · {product.reviewCount.toLocaleString()} reviews
-        </div>
-        <div style={{ display:'flex', flexWrap:'wrap', gap:4, marginTop:4 }}>
-          {product.features.map((f) => (
-            <span key={f} className="plt-pill" style={{ background:'var(--accent-bg)', color:'var(--accent)' }}>
-              {f}
-            </span>
-          ))}
-        </div>
-        <div className="fcard-meta">
-          <div>
-            <div className="fcard-price">₹{product.price.toLocaleString("en-IN")}</div>
-            <div style={{ display:'flex', gap:6, alignItems:'center', marginTop:2 }}>
-              <span className="fcard-old">₹{product.oldPrice.toLocaleString("en-IN")}</span>
-              <span className="fcard-discount">{product.discount}% off</span>
-            </div>
-          </div>
-          {/* BUG #18 FIX: AI reason tooltip */}
-          <AITooltip reason={product.aiReason}>
-            <div style={{
-              background:'var(--accent-bg)', color:'var(--accent)',
-              fontSize:10, fontWeight:700, padding:'3px 7px', borderRadius:4,
-              cursor:'help', border:'1px solid #C8E6D4',
-            }}>🤖 Why this?</div>
-          </AITooltip>
-        </div>
-        <button className="fcard-buy-btn" onClick={handleBuy}>
-          🛒 Buy on Amazon →
-        </button>
-      </div>
-    </div>
-  );
-}
 
 export default function HomePage({ onSearch, onViewProduct }) {
   const [q, setQ] = useState("");
@@ -450,21 +289,6 @@ export default function HomePage({ onSearch, onViewProduct }) {
               No products found. Try a different category or search above.
             </div>
           )}
-        </div>
-
-        {/* ── FEATURED PRODUCTS ──────────────────────── */}
-        <div className="section featured-section" style={{ paddingTop:0 }}>
-          <div className="section-head">
-            <div className="section-title">🔥 Hot Deals — Curated by bestpickr</div>
-            <div style={{ fontSize:11, color:'var(--ink4)', fontWeight:600 }}>
-              Affiliate links · Helps support us
-            </div>
-          </div>
-          <div className="featured-grid">
-            {FEATURED_PRODUCTS.map((p) => (
-              <FeaturedProductCard key={p.id} product={p} />
-            ))}
-          </div>
         </div>
 
         {/* ── SCORE EXPLAINER ─────────────────── */}

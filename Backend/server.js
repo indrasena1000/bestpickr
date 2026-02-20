@@ -8,8 +8,32 @@ const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 const { PrismaClient } = require("@prisma/client");
 const logger = require("./src/utils/logger");
-const { connectRedis, disconnectRedis, getCacheInfo } = require("./src/utils/redis");
-const { setSearchAgent, startCron, stopCron } = require("./src/cron/categoryPreloader");
+const {
+  connectRedis,
+  disconnectRedis,
+  getCacheInfo,
+} = require("./src/utils/redis");
+const {
+  connectMongoDB,
+  disconnectMongoDB,
+  getMongoStatus,
+} = require("./src/utils/mongodb");
+const {
+  setSearchAgent,
+  startCron,
+  stopCron,
+} = require("./src/cron/categoryPreloader");
+const {
+  startNightlyRefresh,
+  stopNightlyRefresh,
+  triggerManually: triggerNightlyRefresh,
+  getJobStatus: getNightlyJobStatus,
+} = require("./src/jobs/nightlyRefresh");
+const {
+  setPrisma: setTelegramPrisma,
+  startTelegramReport,
+  stopTelegramReport,
+} = require("./src/jobs/telegramReport");
 
 const app = express();
 const prisma = new PrismaClient();
@@ -74,10 +98,14 @@ app.get("/api/status", async (req, res) => {
   } catch (_) {}
 
   const cache = await getCacheInfo();
+  const mongo = getMongoStatus();
 
   res.json({
     status: "running",
-    database: dbOk ? "connected" : "disconnected",
+    database: {
+      postgres: dbOk ? "connected" : "disconnected",
+      mongodb: mongo.connected ? "connected" : mongo.status,
+    },
     redis: cache.connected ? "connected" : "disconnected",
     cachedQueries: cache.totalKeys || 0,
     env: process.env.NODE_ENV,
@@ -104,7 +132,7 @@ app.use((err, req, res, next) => {
 // ── START ─────────────────────────────────────────────────────────
 async function start() {
   try {
-    // Connect database
+    // Connect PostgreSQL (Prisma) — existing data layer
     await prisma.$connect();
     app.locals.prisma = prisma; // Share with routes that use req.app.locals.prisma
     logger.info("✅ Database (Postgres) connected");
@@ -117,6 +145,15 @@ async function start() {
     setPrisma(prisma);
     logger.info("✅ Prisma injected into rankingAgent");
 
+    // Connect MongoDB (Mongoose) — AI analysis layer (non-fatal)
+    // App works without it; AI features (analysis, price alerts) will be disabled
+    const mongoOk = await connectMongoDB();
+    if (mongoOk) {
+      logger.info("✅ MongoDB (Mongoose) connected — AI analysis layer active");
+    } else {
+      logger.warn("⚠️  MongoDB not connected — AI analysis features disabled");
+    }
+
     // Connect Redis (non-fatal — app works without it)
     await connectRedis();
 
@@ -126,6 +163,17 @@ async function start() {
     setSearchAgent(runSearchAgent);
     startCron();
     logger.info("✅ Cron scheduler started (preloads categories at 12 AM IST)");
+
+    // Start nightly product refresh (runs at 12:01 AM IST — 1 min after categoryPreloader)
+    startNightlyRefresh();
+    logger.info(
+      "✅ Nightly refresh job started (refreshes products + prices at 12:01 AM IST)",
+    );
+
+    // Start Telegram daily report (runs at 9:00 AM IST)
+    setTelegramPrisma(prisma);
+    startTelegramReport();
+    logger.info("✅ Telegram daily report scheduled (9:00 AM IST)");
 
     app.listen(PORT, () => {
       logger.info(`bestpickr API on http://localhost:${PORT}`);
@@ -139,13 +187,19 @@ async function start() {
 
 process.on("SIGINT", async () => {
   stopCron();
+  stopNightlyRefresh();
+  stopTelegramReport();
   disconnectRedis();
+  await disconnectMongoDB();
   await prisma.$disconnect();
   process.exit(0);
 });
 process.on("SIGTERM", async () => {
   stopCron();
+  stopNightlyRefresh();
+  stopTelegramReport();
   disconnectRedis();
+  await disconnectMongoDB();
   await prisma.$disconnect();
   process.exit(0);
 });
