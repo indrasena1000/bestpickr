@@ -10,6 +10,7 @@ import {
   publishBlogPost,
   unpublishBlogPost,
   generateBlogPosts,
+  getBlogAnalytics,
 } from "../services/api.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
@@ -24,12 +25,218 @@ function fmtTime(iso) {
   });
 }
 
+// ── BLOG ANALYTICS PANEL ──────────────────────────────────────────
+function BlogAnalyticsPanel({ adminToken }) {
+  const [stats,   setStats]   = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState("");
+
+  function loadStats() {
+    setLoading(true);
+    getBlogAnalytics(adminToken)
+      .then(d => { if (d.success) setStats(d.stats); else setError("Failed to load."); })
+      .catch(() => setError("Could not reach backend."))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { loadStats(); }, []); // eslint-disable-line
+
+  if (loading) return (
+    <div className="admin-card" style={{ textAlign: "center", padding: "32px 0", color: "var(--ink4)", fontSize: 13 }}>
+      Loading analytics…
+    </div>
+  );
+
+  if (error || !stats) return (
+    <div className="admin-card" style={{ textAlign: "center", padding: "32px 0" }}>
+      <div style={{ fontSize: 28, marginBottom: 10 }}>📊</div>
+      <div style={{ color: "var(--ink4)", fontSize: 13, marginBottom: 12 }}>
+        {error || "No data yet — analytics will appear once readers visit your blog posts."}
+      </div>
+      <button className="admin-btn" style={{ fontSize: 12, padding: "6px 16px" }} onClick={loadStats}>Retry</button>
+    </div>
+  );
+
+  const totalDevices = stats.devices.mobile + stats.devices.desktop || 1;
+  const totalSources = Object.values(stats.sources).reduce((s, n) => s + n, 0) || 1;
+
+  function pct(n) { return totalSources > 0 ? Math.round((n / totalSources) * 100) : 0; }
+
+  const SOURCE_META = {
+    instagram: { label: "Instagram",  color: "#C2185B", bg: "#FCE4EC", icon: "📸" },
+    google:    { label: "Google",     color: "#1565C0", bg: "#E3F2FD", icon: "🔍" },
+    direct:    { label: "Direct",     color: "#2E7D32", bg: "#E8F5E9", icon: "🔗" },
+    other:     { label: "Other",      color: "#546E7A", bg: "#ECEFF1", icon: "🌐" },
+  };
+
+  function fmtTime(iso) {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" });
+  }
+
+  return (
+    <>
+      {/* ── Summary stat row ── */}
+      <div className="admin-card" style={{ marginBottom: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div className="admin-card-title" style={{ marginBottom: 0 }}>📖 Reading Analytics</div>
+          <button className="admin-btn" style={{ fontSize: 11, padding: "4px 12px" }} onClick={loadStats}>⟳ Refresh</button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
+          {[
+            { label: "Total Views",     val: stats.totalViews,    icon: "👁", color: "#1A6B3C", bg: "#EEF7F2" },
+            { label: "Today",           val: stats.todayViews,    icon: "📅", color: "#1155CC", bg: "#EEF2FF" },
+            { label: "This Week",       val: stats.weekViews,     icon: "📆", color: "#6B3FAC", bg: "#F3EEFF" },
+            { label: "Unique Readers",  val: stats.uniqueReaders, icon: "👥", color: "#0D7C8C", bg: "#E8F6F8" },
+            { label: "Avg Read Depth",  val: stats.avgReadDepth + "%", icon: "📏", color: "#B8860B", bg: "#FEFBEC" },
+          ].map(({ label, val, icon, color, bg }) => (
+            <div key={label} style={{ background: bg, borderRadius: 10, padding: "14px 12px", textAlign: "center" }}>
+              <div style={{ fontSize: 22, marginBottom: 6 }}>{icon}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color, lineHeight: 1, marginBottom: 4 }}>
+                {typeof val === "number" ? val.toLocaleString() : val}
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 600, color, opacity: 0.75, textTransform: "uppercase", letterSpacing: "0.3px" }}>{label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Two-column detail section ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+
+          {/* Traffic Sources */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--ink4)", marginBottom: 10 }}>
+              Traffic Sources
+            </div>
+            {Object.entries(SOURCE_META).map(([key, meta]) => {
+              const count = stats.sources[key] || 0;
+              const p = pct(count);
+              if (count === 0) return null;
+              return (
+                <div key={key} style={{ marginBottom: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--ink2)" }}>
+                      <span style={{ fontSize: 14 }}>{meta.icon}</span> {meta.label}
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: meta.color }}>{p}% <span style={{ color: "var(--ink4)", fontWeight: 400 }}>({count})</span></span>
+                  </div>
+                  <div style={{ height: 6, background: "var(--paper2)", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: p + "%", background: meta.color, borderRadius: 3, transition: "width 0.4s ease" }} />
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Device split */}
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--ink4)", marginBottom: 10 }}>
+                Device Split
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                {[
+                  { label: "Mobile",  val: stats.devices.mobile,  icon: "📱", color: "#1A6B3C" },
+                  { label: "Desktop", val: stats.devices.desktop, icon: "💻", color: "#1155CC" },
+                ].map(({ label, val, icon, color }) => (
+                  <div key={label} style={{ flex: 1, textAlign: "center", padding: "10px 8px", background: "var(--paper2)", borderRadius: 8 }}>
+                    <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color }}>{Math.round((val / totalDevices) * 100)}%</div>
+                    <div style={{ fontSize: 10, color: "var(--ink4)", fontWeight: 600 }}>{label} · {val}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Top Posts */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--ink4)", marginBottom: 10 }}>
+              Top Posts by Views
+            </div>
+            {stats.topPosts.length === 0 ? (
+              <div style={{ color: "var(--ink4)", fontSize: 12, padding: "20px 0", textAlign: "center" }}>
+                No post views yet — publish a post and share it!
+              </div>
+            ) : stats.topPosts.map((p, i) => {
+              const maxViews = stats.topPosts[0].views;
+              return (
+                <div key={p.slug} style={{ marginBottom: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink2)", flex: 1, marginRight: 8, lineHeight: 1.35 }}>
+                      <span style={{ color: "var(--ink4)", fontWeight: 700, marginRight: 5 }}>#{i + 1}</span>
+                      {p.title || p.slug}
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap" }}>{p.views}v</span>
+                  </div>
+                  <div style={{ height: 5, background: "var(--paper2)", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: Math.round((p.views / maxViews) * 100) + "%", background: "var(--accent)", borderRadius: 3 }} />
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Read depth note */}
+            {stats.readDepthSamples > 0 && (
+              <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)", fontSize: 12, color: "var(--ink3)" }}>
+                📏 Based on <strong>{stats.readDepthSamples}</strong> sessions, readers scroll through an average of{" "}
+                <strong style={{ color: "var(--accent)" }}>{stats.avgReadDepth}%</strong> of your articles.
+                {stats.avgReadDepth >= 70 && " 🔥 Excellent engagement!"}
+                {stats.avgReadDepth >= 40 && stats.avgReadDepth < 70 && " Good — keep headlines tight."}
+                {stats.avgReadDepth < 40 && " Try shorter intros to hook readers faster."}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Live Activity Feed ── */}
+      {stats.recentActivity.length > 0 && (
+        <div className="admin-card" style={{ marginTop: 16 }}>
+          <div className="admin-card-title" style={{ marginBottom: 12 }}>
+            🔴 Recent Blog Activity <span className="admin-card-subtitle">(last 20 events)</span>
+          </div>
+          <table className="admin-table">
+            <thead>
+              <tr><th>Time</th><th>Event</th><th>Post</th><th>Detail</th><th>Source</th></tr>
+            </thead>
+            <tbody>
+              {stats.recentActivity.map((e, i) => {
+                const isView  = e.type === "blog_view";
+                const ref     = (e.source || "direct").toLowerCase();
+                const srcLabel = ref.includes("instagram") ? "📸 IG" : ref.includes("google") ? "🔍 Google" : ref === "direct" || !ref ? "🔗 Direct" : "🌐 Other";
+                return (
+                  <tr key={i}>
+                    <td className="admin-td-muted" style={{ fontSize: 11 }}>{fmtTime(e.time)}</td>
+                    <td>
+                      <span className={`admin-badge ${isView ? "blue" : "green"}`}>
+                        {isView ? "👁 view" : "📏 depth"}
+                      </span>
+                    </td>
+                    <td className="admin-td-truncate" style={{ maxWidth: 180, fontSize: 12 }}>
+                      {e.title || e.slug || "—"}
+                    </td>
+                    <td className="admin-td-muted" style={{ fontSize: 11 }}>
+                      {isView ? (e.category || "—") : (e.depth != null ? e.depth + "%" : "—")}
+                    </td>
+                    <td className="admin-td-muted" style={{ fontSize: 11 }}>{srcLabel}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ── BLOG ADMIN PANEL ──────────────────────────────────────────────
 function BlogAdminPanel({ adminToken }) {
-  const [posts,      setPosts]      = useState([]);
-  const [generating, setGenerating] = useState(false);
-  const [feedback,   setFeedback]   = useState("");
-  const [loading,    setLoading]    = useState(true);
+  const [posts,       setPosts]      = useState([]);
+  const [generating,  setGenerating] = useState(false);
+  const [feedback,    setFeedback]   = useState("");
+  const [loading,     setLoading]    = useState(true);
+  const [previewPost, setPreviewPost] = useState(null);
 
   function loadPosts() {
     setLoading(true);
@@ -109,7 +316,14 @@ function BlogAdminPanel({ adminToken }) {
             <span>{fmtDate(post.createdAt)}</span>
           </div>
         </div>
-        <div className="blog-admin-actions">
+        <div className="blog-admin-actions" style={{ display: "flex", gap: 8 }}>
+          <button
+            className="admin-btn"
+            style={{ padding: "6px 14px", fontSize: 12, background: "#EEF2FF", color: "#1155CC", border: "1px solid #C7D7F5" }}
+            onClick={() => setPreviewPost(post)}
+          >
+            👁 Review
+          </button>
           {isDraft ? (
             <button className="admin-btn admin-btn-success" style={{ padding: "6px 14px", fontSize: 12 }}
               onClick={() => handlePublish(post._id)}>Publish</button>
@@ -123,57 +337,259 @@ function BlogAdminPanel({ adminToken }) {
   }
 
   return (
-    <div className="admin-card">
-      {/* Top bar */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <div className="admin-card-title" style={{ marginBottom: 4 }}>📝 Blog Posts</div>
-          <div style={{ fontSize: 12, color: "var(--ink4)" }}>
-            {drafts.length} draft{drafts.length !== 1 ? "s" : ""} · {published.length} published
+    <>
+      <div className="admin-card">
+        {/* Top bar */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div className="admin-card-title" style={{ marginBottom: 4 }}>📝 Blog Posts</div>
+            <div style={{ fontSize: 12, color: "var(--ink4)" }}>
+              {drafts.length} draft{drafts.length !== 1 ? "s" : ""} · {published.length} published
+            </div>
           </div>
+          <button
+            className={`admin-btn ${generating ? "admin-btn-disabled" : "admin-btn-success"}`}
+            onClick={handleGenerate}
+            disabled={generating}
+          >
+            {generating ? "⏳ Generating…" : "✨ Generate 3 New Drafts"}
+          </button>
         </div>
-        <button
-          className={`admin-btn ${generating ? "admin-btn-disabled" : "admin-btn-success"}`}
-          onClick={handleGenerate}
-          disabled={generating}
-        >
-          {generating ? "⏳ Generating…" : "✨ Generate 3 New Drafts"}
-        </button>
+
+        {feedback && (
+          <div className={`admin-feedback ${feedback.startsWith("✅") ? "success" : "error"}`} style={{ marginBottom: 16 }}>
+            {feedback}
+          </div>
+        )}
+
+        {loading ? (
+          <div style={{ color: "var(--ink4)", fontSize: 13, padding: "20px 0", textAlign: "center" }}>Loading posts…</div>
+        ) : posts.length === 0 ? (
+          <div style={{ color: "var(--ink4)", fontSize: 13, padding: "20px 0", textAlign: "center" }}>
+            No posts yet. Click "Generate 3 New Drafts" to create your first batch.
+          </div>
+        ) : (
+          <>
+            {drafts.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--ink4)", marginBottom: 10 }}>
+                  Drafts ({drafts.length})
+                </div>
+                {drafts.map(p => <PostRow key={p._id} post={p} isDraft={true} />)}
+              </>
+            )}
+            {published.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--ink4)", margin: "20px 0 10px" }}>
+                  Published ({published.length})
+                </div>
+                {published.map(p => <PostRow key={p._id} post={p} isDraft={false} />)}
+              </>
+            )}
+          </>
+        )}
       </div>
 
-      {feedback && (
-        <div className={`admin-feedback ${feedback.startsWith("✅") ? "success" : "error"}`} style={{ marginBottom: 16 }}>
-          {feedback}
-        </div>
-      )}
+      {/* ── PREVIEW DRAWER ──────────────────────────────────────────── */}
+      {previewPost && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 2000, display: "flex" }}>
+          {/* Backdrop */}
+          <div
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)" }}
+            onClick={() => setPreviewPost(null)}
+          />
 
-      {loading ? (
-        <div style={{ color: "var(--ink4)", fontSize: 13, padding: "20px 0", textAlign: "center" }}>Loading posts…</div>
-      ) : posts.length === 0 ? (
-        <div style={{ color: "var(--ink4)", fontSize: 13, padding: "20px 0", textAlign: "center" }}>
-          No posts yet. Click "Generate 3 New Drafts" to create your first batch.
+          {/* Drawer panel — slides in from right */}
+          <div style={{
+            position: "relative", zIndex: 1, marginLeft: "auto",
+            width: "min(780px, 100vw)", height: "100%",
+            background: "var(--paper)", overflowY: "auto",
+            boxShadow: "-12px 0 48px rgba(0,0,0,0.22)",
+            display: "flex", flexDirection: "column",
+          }}>
+
+            {/* Sticky header with actions */}
+            <div style={{
+              position: "sticky", top: 0, zIndex: 10,
+              background: "var(--paper)", borderBottom: "1px solid var(--line)",
+              padding: "12px 20px", display: "flex", alignItems: "center",
+              justifyContent: "space-between", gap: 12, flexWrap: "wrap",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink2)" }}>
+                  {previewPost.status === "draft" ? "📋 Draft Preview" : "✅ Published Post"}
+                </span>
+                {previewPost.status === "draft" ? (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#C84B11", background: "#FDF2EC", padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" }}>Draft</span>
+                ) : (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#1A6B3C", background: "#EEF7F2", padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" }}>Live</span>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {previewPost.status === "draft" ? (
+                  <button
+                    className="admin-btn admin-btn-success"
+                    style={{ padding: "7px 18px", fontSize: 12 }}
+                    onClick={async () => {
+                      await handlePublish(previewPost._id);
+                      setPreviewPost(p => ({ ...p, status: "published" }));
+                    }}
+                  >
+                    ✅ Publish Now
+                  </button>
+                ) : (
+                  <button
+                    className="admin-btn"
+                    style={{ padding: "7px 18px", fontSize: 12, background: "#FDF2EC", color: "#C84B11", border: "1px solid #F4C9A8" }}
+                    onClick={async () => {
+                      await handleUnpublish(previewPost._id);
+                      setPreviewPost(p => ({ ...p, status: "draft" }));
+                    }}
+                  >
+                    Unpublish
+                  </button>
+                )}
+                <button
+                  style={{ background: "none", border: "1px solid var(--line)", borderRadius: 6, fontSize: 16, cursor: "pointer", color: "var(--ink4)", padding: "5px 10px", lineHeight: 1 }}
+                  onClick={() => setPreviewPost(null)}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Cover image */}
+            {previewPost.coverImage && (
+              <div style={{ height: 260, overflow: "hidden", flexShrink: 0, position: "relative" }}>
+                <img
+                  src={previewPost.coverImage}
+                  alt={previewPost.coverImageAlt || ""}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+                <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.45) 0%, transparent 60%)" }} />
+              </div>
+            )}
+
+            {/* Article body */}
+            <div style={{ padding: "28px 32px 64px", flex: 1 }}>
+              {/* Meta row */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+                {previewPost.category && (() => {
+                  const cat = CAT_COLORS[previewPost.category] || CAT_COLORS["Industry News"];
+                  return (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: cat.color, background: cat.bg, padding: "2px 10px", borderRadius: 4 }}>
+                      {previewPost.category}
+                    </span>
+                  );
+                })()}
+                <span style={{ fontSize: 12, color: "var(--ink4)" }}>{fmtDate(previewPost.createdAt)}</span>
+                {previewPost.readTimeMinutes && (
+                  <span style={{ fontSize: 12, color: "var(--ink4)" }}>{previewPost.readTimeMinutes} min read</span>
+                )}
+              </div>
+
+              {/* Title */}
+              <h1 style={{ fontSize: "clamp(20px,3vw,26px)", fontWeight: 800, letterSpacing: "-0.5px", color: "var(--ink)", marginBottom: 14, lineHeight: 1.25 }}>
+                {previewPost.title}
+              </h1>
+
+              {/* Excerpt */}
+              {previewPost.excerpt && (
+                <p style={{ fontSize: 15, fontStyle: "italic", color: "var(--ink3)", borderLeft: "3px solid var(--accent)", paddingLeft: 14, marginBottom: 24, lineHeight: 1.65, margin: "0 0 24px" }}>
+                  {previewPost.excerpt}
+                </p>
+              )}
+
+              {/* Tags */}
+              {previewPost.tags?.length > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 24 }}>
+                  {previewPost.tags.map(tag => (
+                    <span key={tag} style={{ fontSize: 11, color: "var(--ink4)", background: "var(--paper2)", border: "1px solid var(--line)", borderRadius: 4, padding: "2px 8px" }}>
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <hr style={{ border: "none", borderTop: "1px solid var(--line)", margin: "0 0 24px" }} />
+
+              {/* Full rendered content */}
+              <div
+                className="blog-content"
+                dangerouslySetInnerHTML={{ __html: previewPost.content }}
+              />
+            </div>
+
+            {/* Bottom action bar */}
+            <div style={{
+              position: "sticky", bottom: 0, background: "var(--paper)",
+              borderTop: "1px solid var(--line)", padding: "12px 20px",
+              display: "flex", gap: 10, alignItems: "center",
+            }}>
+              {previewPost.status === "draft" ? (
+                <button
+                  className="admin-btn admin-btn-success"
+                  style={{ padding: "10px 24px", fontSize: 13 }}
+                  onClick={async () => {
+                    await handlePublish(previewPost._id);
+                    setPreviewPost(p => ({ ...p, status: "published" }));
+                  }}
+                >
+                  ✅ Publish This Post
+                </button>
+              ) : (
+                <button
+                  className="admin-btn"
+                  style={{ padding: "10px 24px", fontSize: 13, background: "#FDF2EC", color: "#C84B11", border: "1px solid #F4C9A8" }}
+                  onClick={async () => {
+                    await handleUnpublish(previewPost._id);
+                    setPreviewPost(p => ({ ...p, status: "draft" }));
+                  }}
+                >
+                  Move to Drafts
+                </button>
+              )}
+              <button
+                className="admin-btn"
+                style={{ padding: "10px 24px", fontSize: 13 }}
+                onClick={() => setPreviewPost(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
-      ) : (
-        <>
-          {drafts.length > 0 && (
-            <>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--ink4)", marginBottom: 10 }}>
-                Drafts ({drafts.length})
-              </div>
-              {drafts.map(p => <PostRow key={p._id} post={p} isDraft={true} />)}
-            </>
-          )}
-          {published.length > 0 && (
-            <>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--ink4)", margin: "20px 0 10px" }}>
-                Published ({published.length})
-              </div>
-              {published.map(p => <PostRow key={p._id} post={p} isDraft={false} />)}
-            </>
-          )}
-        </>
       )}
-    </div>
+    </>
+  );
+}
+
+// ── BLOG TAB VIEW — sub-tabs: Analytics | Posts ───────────────────
+function BlogTabView({ adminToken }) {
+  const [blogTab, setBlogTab] = useState("analytics"); // "analytics" | "posts"
+  return (
+    <>
+      {/* Sub-tab bar */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid var(--line)", paddingBottom: 0 }}>
+        {[["analytics", "📊 Reading Stats"], ["posts", "📝 Manage Posts"]].map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setBlogTab(key)}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              padding: "8px 16px", fontSize: 13, fontWeight: 700,
+              color: blogTab === key ? "var(--accent)" : "var(--ink4)",
+              borderBottom: blogTab === key ? "2px solid var(--accent)" : "2px solid transparent",
+              marginBottom: -1, transition: "all 0.15s",
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {blogTab === "analytics" && <BlogAnalyticsPanel adminToken={adminToken} />}
+      {blogTab === "posts"     && <BlogAdminPanel     adminToken={adminToken} />}
+    </>
   );
 }
 
@@ -465,7 +881,7 @@ export default function AdminDashboard({
         </div>
 
         {activeTab === "blog" && (
-          <BlogAdminPanel adminToken={adminToken || "bestpickr-admin-2025"} />
+          <BlogTabView adminToken={adminToken || "bestpickr-admin-2025"} />
         )}
 
         {activeTab === "analytics" && <>

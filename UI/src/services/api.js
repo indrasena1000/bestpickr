@@ -107,4 +107,9 @@ export const generateBlogPosts = (token) =>
     .post("/blog/admin/generate", {}, { headers: { Authorization: `Bearer ${token}` } })
     .then((r) => r.data);
 
+export const getBlogAnalytics = (token) =>
+  api
+    .get("/blog/admin/analytics", { headers: { Authorization: `Bearer ${token}` } })
+    .then((r) => r.data);
+
 export default api;

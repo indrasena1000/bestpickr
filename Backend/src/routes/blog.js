@@ -231,4 +231,150 @@ router.delete('/admin/posts/:id', authCheck, async (req, res) => {
   }
 });
 
+// ── ADMIN: GET /admin/analytics ───────────────────────────────────
+// Aggregates blog-specific events from PostgreSQL (via Prisma) so the
+// admin dashboard can show per-post views, traffic sources, read depth,
+// device split, and trending posts — everything a blog publisher needs.
+//
+// Event conventions stored in the PageView table:
+//   eventType = 'blog_view'       → query=slug, productName=title, page=category
+//   eventType = 'blog_read_depth' → query=slug, screenWidth=depth% (0-100)
+router.get('/admin/analytics', authCheck, async (req, res) => {
+  try {
+    const prisma = req.app.locals.prisma;
+    if (!prisma) {
+      return res.json({ success: true, stats: null, message: 'Prisma not connected' });
+    }
+
+    const weekAgo    = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const [
+      totalViews,
+      weekViews,
+      todayViews,
+      uniqueReaders,
+      topPosts,
+      trafficSources,
+      depthStats,
+      mobileCount,
+      desktopCount,
+      recentEvents,
+    ] = await Promise.all([
+      // ① Total all-time blog views
+      prisma.pageView.count({ where: { eventType: 'blog_view' } }),
+
+      // ② Views this week
+      prisma.pageView.count({
+        where: { eventType: 'blog_view', createdAt: { gte: weekAgo } },
+      }),
+
+      // ③ Views today
+      prisma.pageView.count({
+        where: { eventType: 'blog_view', createdAt: { gte: todayStart } },
+      }),
+
+      // ④ Unique readers (distinct visitorIds)
+      prisma.pageView.groupBy({
+        by: ['visitorId'],
+        where: { eventType: 'blog_view' },
+      }),
+
+      // ⑤ Top 5 posts by view count (query = slug, productName = title)
+      prisma.pageView.groupBy({
+        by: ['query', 'productName'],
+        where: { eventType: 'blog_view', query: { not: null } },
+        _count: { query: true },
+        orderBy: { _count: { query: 'desc' } },
+        take: 5,
+      }),
+
+      // ⑥ Traffic sources (referrer field)
+      prisma.pageView.groupBy({
+        by: ['referrer'],
+        where: { eventType: 'blog_view' },
+        _count: { referrer: true },
+        orderBy: { _count: { referrer: 'desc' } },
+        take: 30,
+      }),
+
+      // ⑦ Average read depth across all sessions
+      prisma.pageView.aggregate({
+        where: { eventType: 'blog_read_depth', screenWidth: { not: null } },
+        _avg:   { screenWidth: true },
+        _count: { screenWidth: true },
+      }),
+
+      // ⑧ Mobile readers (screenWidth < 768 on blog_view events)
+      prisma.pageView.count({
+        where: { eventType: 'blog_view', screenWidth: { lt: 768, not: null } },
+      }),
+
+      // ⑨ Desktop readers (screenWidth >= 768)
+      prisma.pageView.count({
+        where: { eventType: 'blog_view', screenWidth: { gte: 768 } },
+      }),
+
+      // ⑩ Last 20 blog events for live feed
+      prisma.pageView.findMany({
+        where: { eventType: { in: ['blog_view', 'blog_read_depth'] } },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          createdAt:   true,
+          eventType:   true,
+          query:       true,
+          productName: true,
+          page:        true,
+          screenWidth: true,
+          referrer:    true,
+        },
+      }),
+    ]);
+
+    // Bucket referrers into meaningful sources
+    const sourceMap = { instagram: 0, google: 0, direct: 0, other: 0 };
+    trafficSources.forEach(s => {
+      const ref = (s.referrer || 'direct').toLowerCase();
+      const n   = s._count.referrer;
+      if (!ref || ref === 'direct')                              sourceMap.direct    += n;
+      else if (ref.includes('instagram') || ref.includes('t.co')) sourceMap.instagram += n;
+      else if (ref.includes('google') || ref.includes('bing') || ref.includes('yahoo')) sourceMap.google += n;
+      else                                                       sourceMap.other     += n;
+    });
+
+    res.json({
+      success: true,
+      stats: {
+        totalViews,
+        weekViews,
+        todayViews,
+        uniqueReaders:   uniqueReaders.length,
+        avgReadDepth:    Math.round(depthStats._avg.screenWidth || 0),
+        readDepthSamples: depthStats._count.screenWidth || 0,
+        topPosts: topPosts.map(p => ({
+          slug:  p.query,
+          title: p.productName || p.query,
+          views: p._count.query,
+        })),
+        sources: sourceMap,
+        devices: { mobile: mobileCount, desktop: desktopCount },
+        recentActivity: recentEvents.map(e => ({
+          time:     e.createdAt,
+          type:     e.eventType,
+          slug:     e.query,
+          title:    e.productName,
+          category: e.page,
+          depth:    e.eventType === 'blog_read_depth' ? e.screenWidth : null,
+          source:   e.referrer || 'direct',
+        })),
+      },
+    });
+  } catch (err) {
+    logger.error('[Blog] GET /admin/analytics error', { error: err.message });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

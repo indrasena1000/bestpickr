@@ -1,8 +1,9 @@
 // src/pages/BlogPostPage.jsx
 // Individual blog post page — route: /#/blog/:slug
 // Cover hero, reading progress bar, article, share buttons, CTA, related posts
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { getBlogPosts, getBlogPost } from '../services/api.js'
+import { trackBlogView, trackBlogReadDepth } from '../utils/analytics.js'
 import BlogCard from '../components/BlogCard.jsx'
 import '../styles/blog.css'
 
@@ -35,15 +36,39 @@ export default function BlogPostPage({ slug, onSearch, onHome, maintenanceMode =
   const [ctaQ,     setCtaQ]     = useState('')
   const [progress, setProgress] = useState(0)
 
+  // Refs so the unmount cleanup always has the latest values
+  const progressRef  = useRef(0)
+  const slugRef      = useRef(resolvedSlug)
+  const postRef      = useRef(null)
+
   // ── Reading progress bar ─────────────────────────────────────────
   useEffect(() => {
     function onScroll() {
       const docH = document.documentElement.scrollHeight - window.innerHeight
-      setProgress(docH > 0 ? Math.min(100, Math.round((window.scrollY / docH) * 100)) : 0)
+      const pct  = docH > 0 ? Math.min(100, Math.round((window.scrollY / docH) * 100)) : 0
+      setProgress(pct)
+      progressRef.current = pct
     }
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
+
+  // ── Track blog view when post loads ─────────────────────────────
+  useEffect(() => {
+    if (!post) return
+    slugRef.current = resolvedSlug
+    postRef.current = post
+    trackBlogView(resolvedSlug, post.title, post.category)
+  }, [post?._id]) // eslint-disable-line
+
+  // ── Track read depth on unmount ──────────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (postRef.current && progressRef.current > 5) {
+        trackBlogReadDepth(slugRef.current, progressRef.current)
+      }
+    }
+  }, []) // intentionally empty — runs only on unmount
 
   // ── Fetch post + related ─────────────────────────────────────────
   useEffect(() => {

@@ -84,3 +84,25 @@ export function trackAffiliateClick({ productName, productId, platform, affiliat
     price:        price       || null,
   })
 }
+
+// ── BLOG ANALYTICS ──────────────────────────────────────────────────
+// Called once when a blog post is loaded. Stores slug (query), title
+// (productName) and category (page) so admin can group by post later.
+export function trackBlogView(slug, title, category) {
+  sendEvent('blog_view', {
+    query:       slug     || null,
+    productName: title    || null,
+    page:        category || 'Uncategorized',
+  })
+}
+
+// Called when the reader leaves the blog post page (component unmount).
+// We reuse the screenWidth column to store the scroll depth % (0–100).
+// Since we filter by eventType = 'blog_read_depth', there's no collision
+// with the normal meaning of screenWidth in page_view events.
+export function trackBlogReadDepth(slug, depthPct) {
+  sendEvent('blog_read_depth', {
+    query:       slug                   || null,
+    screenWidth: Math.round(depthPct)  || 0,
+  })
+}
