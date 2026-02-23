@@ -1,5 +1,15 @@
 // src/components/Footer.jsx
+import { useState, useEffect } from 'react'
+import { getLatestBlogPosts } from '../services/api.js'
+
 export default function Footer({ onSearch, onNav, onAdmin }) {
+  const [latestPosts, setLatestPosts] = useState([])
+
+  useEffect(() => {
+    getLatestBlogPosts()
+      .then(d => setLatestPosts((d.posts || []).slice(0, 3)))
+      .catch(() => {})
+  }, [])
   const popular = [
     'Best noise cancelling headphones India',
     'Best budget smartphone 2025',
@@ -54,6 +64,14 @@ export default function Footer({ onSearch, onNav, onAdmin }) {
             <div className="footer-links">
               <div className="footer-link" onClick={() => nav('about')}>About bestpickr</div>
               <div className="footer-link" onClick={() => nav('blog')}>Blog</div>
+              {latestPosts.map(post => (
+                <div key={post.slug} className="footer-link"
+                  onClick={() => onNav && onNav('blog/' + post.slug)}
+                  style={{ fontSize:11, paddingLeft:8, lineHeight:1.5, marginBottom:4, color:'var(--ink4)' }}
+                >
+                  → {post.title}
+                </div>
+              ))}
               <div className="footer-link">
                 <a href="mailto:hello@bestpickr.in" style={{ color:'inherit', textDecoration:'none' }}>hello@bestpickr.in</a>
               </div>

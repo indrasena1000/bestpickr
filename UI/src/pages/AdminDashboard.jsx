@@ -4,6 +4,13 @@
 // ✅ FIXED: Maintenance state persists to DB via backend
 import { useState, useEffect, useCallback } from "react";
 import "../styles/admin.css";
+import "../styles/blog.css";
+import {
+  getAdminBlogPosts,
+  publishBlogPost,
+  unpublishBlogPost,
+  generateBlogPosts,
+} from "../services/api.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 const ADMIN_USER = "admin";
@@ -15,6 +22,159 @@ function fmtTime(iso) {
     timeZone: "Asia/Kolkata",
     hour12: true,
   });
+}
+
+// ── BLOG ADMIN PANEL ──────────────────────────────────────────────
+function BlogAdminPanel({ adminToken }) {
+  const [posts,      setPosts]      = useState([]);
+  const [generating, setGenerating] = useState(false);
+  const [feedback,   setFeedback]   = useState("");
+  const [loading,    setLoading]    = useState(true);
+
+  function loadPosts() {
+    setLoading(true);
+    getAdminBlogPosts(adminToken)
+      .then(d => setPosts(d.posts || []))
+      .catch(() => setPosts([]))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { loadPosts(); }, []); // eslint-disable-line
+
+  async function handleGenerate() {
+    setGenerating(true);
+    setFeedback("");
+    try {
+      const d = await generateBlogPosts(adminToken);
+      setFeedback(`✅ Generated ${d.generated} draft${d.generated !== 1 ? "s" : ""}!`);
+      loadPosts();
+    } catch (e) {
+      setFeedback("❌ Generation failed — check backend logs.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handlePublish(id) {
+    try {
+      await publishBlogPost(id, adminToken);
+      setFeedback("✅ Post published.");
+      loadPosts();
+    } catch { setFeedback("❌ Publish failed."); }
+  }
+
+  async function handleUnpublish(id) {
+    try {
+      await unpublishBlogPost(id, adminToken);
+      setFeedback("✅ Post moved to drafts.");
+      loadPosts();
+    } catch { setFeedback("❌ Unpublish failed."); }
+  }
+
+  const drafts    = posts.filter(p => p.status === "draft");
+  const published = posts.filter(p => p.status === "published");
+
+  function fmtDate(d) {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  const CAT_COLORS = {
+    Smartphones: { color: "#1A6B3C", bg: "#EEF7F2" },
+    Laptops:     { color: "#1155CC", bg: "#EEF2FF" },
+    Audio:       { color: "#6B3FAC", bg: "#F3EEFF" },
+    Deals:       { color: "#C84B11", bg: "#FDF2EC" },
+    Wearables:   { color: "#0D7C8C", bg: "#E8F6F8" },
+    Televisions: { color: "#B8860B", bg: "#FEFBEC" },
+    "Industry News": { color: "#444", bg: "#F5F5F5" },
+  };
+
+  function PostRow({ post, isDraft }) {
+    const cat = CAT_COLORS[post.category] || CAT_COLORS["Industry News"];
+    return (
+      <div className="blog-admin-post-row">
+        <img
+          className="blog-admin-thumb"
+          src={post.coverImage || "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=200"}
+          alt=""
+        />
+        <div className="blog-admin-post-info">
+          <div className="blog-admin-post-title">{post.title}</div>
+          <div className="blog-admin-post-meta">
+            {post.category && (
+              <span style={{ fontSize: 10, fontWeight: 700, color: cat.color, background: cat.bg, padding: "1px 7px", borderRadius: 4 }}>
+                {post.category}
+              </span>
+            )}
+            <span>{fmtDate(post.createdAt)}</span>
+          </div>
+        </div>
+        <div className="blog-admin-actions">
+          {isDraft ? (
+            <button className="admin-btn admin-btn-success" style={{ padding: "6px 14px", fontSize: 12 }}
+              onClick={() => handlePublish(post._id)}>Publish</button>
+          ) : (
+            <button className="admin-btn" style={{ padding: "6px 14px", fontSize: 12, background: "#FDF2EC", color: "#C84B11", border: "1px solid #F4C9A8" }}
+              onClick={() => handleUnpublish(post._id)}>Unpublish</button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="admin-card">
+      {/* Top bar */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div className="admin-card-title" style={{ marginBottom: 4 }}>📝 Blog Posts</div>
+          <div style={{ fontSize: 12, color: "var(--ink4)" }}>
+            {drafts.length} draft{drafts.length !== 1 ? "s" : ""} · {published.length} published
+          </div>
+        </div>
+        <button
+          className={`admin-btn ${generating ? "admin-btn-disabled" : "admin-btn-success"}`}
+          onClick={handleGenerate}
+          disabled={generating}
+        >
+          {generating ? "⏳ Generating…" : "✨ Generate 3 New Drafts"}
+        </button>
+      </div>
+
+      {feedback && (
+        <div className={`admin-feedback ${feedback.startsWith("✅") ? "success" : "error"}`} style={{ marginBottom: 16 }}>
+          {feedback}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ color: "var(--ink4)", fontSize: 13, padding: "20px 0", textAlign: "center" }}>Loading posts…</div>
+      ) : posts.length === 0 ? (
+        <div style={{ color: "var(--ink4)", fontSize: 13, padding: "20px 0", textAlign: "center" }}>
+          No posts yet. Click "Generate 3 New Drafts" to create your first batch.
+        </div>
+      ) : (
+        <>
+          {drafts.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--ink4)", marginBottom: 10 }}>
+                Drafts ({drafts.length})
+              </div>
+              {drafts.map(p => <PostRow key={p._id} post={p} isDraft={true} />)}
+            </>
+          )}
+          {published.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--ink4)", margin: "20px 0 10px" }}>
+                Published ({published.length})
+              </div>
+              {published.map(p => <PostRow key={p._id} post={p} isDraft={false} />)}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 // ── MAINTENANCE TOGGLE PANEL ───────────────────────────────────────
@@ -158,6 +318,7 @@ export default function AdminDashboard({
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [liveCount, setLiveCount] = useState(0);
+  const [activeTab, setActiveTab] = useState("analytics"); // 'analytics' | 'blog'
 
   useEffect(() => {
     if (sessionStorage.getItem("bp_admin") === "yes") setAuthed(true);
@@ -282,13 +443,32 @@ export default function AdminDashboard({
       </div>
 
       <div className="admin-content">
-        <div className="admin-title">Analytics Dashboard</div>
+        <div className="admin-title">Admin Dashboard</div>
         <div className="admin-sub">
           {lastRefresh
             ? `Last updated: ${fmtTime(lastRefresh.toISOString())}`
             : "Loading…"}{" "}
           · Auto-refreshes every 30s
         </div>
+
+        {/* ── TAB BAR ── */}
+        <div style={{ display: "flex", gap: 4, borderBottom: "2px solid var(--line)", marginBottom: 24 }}>
+          {[["analytics", "📊 Analytics"], ["blog", "📝 Blog"]].map(([key, label]) => (
+            <button
+              key={key}
+              className={`admin-tab-btn ${activeTab === key ? "active" : ""}`}
+              onClick={() => setActiveTab(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "blog" && (
+          <BlogAdminPanel adminToken={adminToken || "bestpickr-admin-2025"} />
+        )}
+
+        {activeTab === "analytics" && <>
 
         {/* ── MAINTENANCE MODE ── */}
         <MaintenancePanel
@@ -442,6 +622,8 @@ export default function AdminDashboard({
             </ol>
           </div>
         </div>
+
+        </>}
       </div>
     </div>
   );

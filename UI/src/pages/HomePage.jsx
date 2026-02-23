@@ -11,6 +11,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getCategories, searchProducts } from "../services/api.js";
 import { HomeTableSkeleton } from "../components/Skeleton.jsx";
+import BlogCarousel from "../components/BlogCarousel.jsx";
 
 
 const RANK_CLASS = ["", "g", "s", "b", "n", "n", "n", "n", "n", "n", "n"];
@@ -317,6 +318,32 @@ export default function HomePage({ onSearch, onViewProduct }) {
               ))}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* ── BLOG SECTION ── */}
+      <div style={{ background:'var(--paper2)', borderTop:'1px solid var(--line)', padding:'40px 0 48px' }}>
+        <div className="wrap">
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:20, flexWrap:'wrap', gap:12 }}>
+            <div>
+              <div style={{ fontSize:11, fontWeight:700, letterSpacing:'.5px', textTransform:'uppercase', color:'var(--accent)', background:'var(--accent-bg)', borderRadius:'var(--r)', padding:'3px 10px', display:'inline-block', marginBottom:10 }}>
+                From our blog
+              </div>
+              <h2 style={{ fontSize:'clamp(18px,3vw,26px)', fontWeight:700, letterSpacing:'-.4px', color:'var(--ink)', margin:'0 0 4px', lineHeight:1.2 }}>
+                Latest from the bestpickr blog
+              </h2>
+              <p style={{ fontSize:13, color:'var(--ink3)', margin:0 }}>Expert buying guides updated daily</p>
+            </div>
+            <a
+              href='#/blog'
+              style={{ fontSize:13, fontWeight:600, color:'var(--accent)', textDecoration:'none', whiteSpace:'nowrap', padding:'8px 16px', border:'1px solid var(--accent)', borderRadius:'var(--r2)' }}
+              onMouseEnter={e => { e.target.style.background='var(--accent)'; e.target.style.color='white' }}
+              onMouseLeave={e => { e.target.style.background='transparent'; e.target.style.color='var(--accent)' }}
+            >
+              View all posts →
+            </a>
+          </div>
+          <BlogCarousel onNavigate={(path) => { window.location.hash = '/' + path }} />
         </div>
       </div>
 

@@ -50,7 +50,7 @@ const ALLOWED_ORIGINS = [
 app.use(
   cors({
     origin: ALLOWED_ORIGINS,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   }),
@@ -88,6 +88,9 @@ app.use("/api/analytics", analyticsRouter);
 
 // Admin (maintenance mode) — FIX: also missing
 app.use("/api/admin", require("./src/routes/admin"));
+
+// Blog — AI-generated content system
+app.use("/api/blog", require("./src/routes/blog"));
 
 // ── STATUS ENDPOINT ──────────────────────────────────────────────
 app.get("/api/status", async (req, res) => {
@@ -174,6 +177,12 @@ async function start() {
     setTelegramPrisma(prisma);
     startTelegramReport();
     logger.info("✅ Telegram daily report scheduled (9:00 AM IST)");
+
+    // Blog generation cron (3:30 AM UTC = 9:00 AM IST, daily)
+    const cron = require("node-cron");
+    const { runBlogGeneration } = require("./src/jobs/blogGenerator");
+    cron.schedule("30 3 * * *", runBlogGeneration);
+    logger.info("✅ Blog generation cron scheduled (3:30 AM UTC / 9:00 AM IST)");
 
     app.listen(PORT, () => {
       logger.info(`bestpickr API on http://localhost:${PORT}`);

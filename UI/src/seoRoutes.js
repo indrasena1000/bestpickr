@@ -114,6 +114,32 @@ export const SEO_ROUTES = {
     keywords:    'best skincare products india 2026, best serum india, best sunscreen india 2026, minimalist vs the ordinary india',
   },
 
+  // ── BLOG SEO LANDING PAGES ──────────────────────────────────────
+  'blog/smartphones': {
+    query:       'best smartphones india',
+    category:    'smartphones',
+    title:       `Smartphone Reviews & Buying Guides | bestpickr blog`,
+    h1:          `Smartphone Reviews & Buying Guides for India`,
+    description: `Expert smartphone reviews and buying guides for Indian buyers. Compare prices across Amazon & Flipkart with AI-powered analysis — updated ${CURRENT_MONTH} ${CURRENT_YEAR}.`,
+    keywords:    'smartphone review india 2026, best phone india, smartphone buying guide india, android review india',
+  },
+  'blog/laptops': {
+    query:       'best laptops india',
+    category:    'laptops',
+    title:       `Laptop Reviews & Buying Guides | bestpickr blog`,
+    h1:          `Laptop Reviews & Buying Guides for India`,
+    description: `In-depth laptop reviews and buying guides for Indian consumers. Best laptops for students, work & gaming — AI-analyzed across Amazon & Flipkart.`,
+    keywords:    'laptop review india 2026, best laptop india, laptop buying guide india, gaming laptop review india',
+  },
+  'blog/deals': {
+    query:       'best deals india',
+    category:    'Deals',
+    title:       `Best Tech Deals India | bestpickr blog`,
+    h1:          `Best Tech Deals & Offers in India`,
+    description: `Latest tech deals and discounts on Amazon.in and Flipkart. AI-curated best offers updated daily — save money on smartphones, laptops, earbuds & more.`,
+    keywords:    'tech deals india, amazon deals india today, flipkart offers india, best discount india 2026',
+  },
+
   // ── SMART HOME ──────────────────────────────────────────────────
   'best-smartwatch-india-2026': {
     query:       'best smartwatch india 2026',

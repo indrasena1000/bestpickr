@@ -123,6 +123,22 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
               className={`nav-lnk ${currentPage==='results' ? 'active':''}`}
               onClick={() => onSearch(q || 'best products india')}
             >Top Lists</div>
+            {/* Blog — highlighted pill */}
+            <div
+              onClick={() => { window.location.hash = '#/blog' }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                background: currentPage === 'blog' ? 'var(--accent)' : 'var(--accent-bg)',
+                color: currentPage === 'blog' ? 'white' : 'var(--accent)',
+                borderRadius: 100, padding: '5px 14px',
+                fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                border: '1px solid rgba(93,186,133,0.3)',
+                transition: 'all 0.15s',
+                flexShrink: 0,
+              }}
+            >
+              ✍️ Blog
+            </div>
           </div>
 
           {/* Mobile hamburger */}
@@ -171,9 +187,9 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
             style={{ padding:'11px 8px', fontSize:14, fontWeight:500, color:'var(--ink2)', cursor:'pointer', borderRadius:'var(--r)' }}
           >📊 Top Lists</div>
           <div
-            onClick={() => setMenu(false)}
-            style={{ padding:'11px 8px', fontSize:14, fontWeight:500, color:'var(--ink2)', cursor:'pointer', borderRadius:'var(--r)' }}
-          >🔖 Saved</div>
+            onClick={() => { window.location.hash = '#/blog'; setMenu(false) }}
+            style={{ padding:'11px 8px', fontSize:14, fontWeight:700, color: currentPage==='blog' ? 'var(--accent)' : 'var(--ink2)', cursor:'pointer', borderRadius:'var(--r)', display:'flex', alignItems:'center', gap:6 }}
+          >✍️ Blog</div>
         </div>
       )}
 

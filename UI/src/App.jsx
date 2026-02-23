@@ -23,12 +23,58 @@ import DetailPage      from './pages/DetailPage.jsx'
 import AdminDashboard  from './pages/AdminDashboard.jsx'
 import MaintenancePage from './pages/MaintenancePage.jsx'
 import {
-  AboutPage, BlogPage, HowItWorksPage,
+  AboutPage, HowItWorksPage,
   AIScorePage, PriceAlertsPage,
   PrivacyPage, TermsPage,
 } from './pages/StaticPage.jsx'
+import BlogPage     from './pages/BlogPage.jsx'
+import BlogPostPage from './pages/BlogPostPage.jsx'
 import { matchSeoRoute } from './seoRoutes.js'
 import { trackPageView, trackSearch } from './utils/analytics.js'
+
+// ── MAINTENANCE BLOG NAV ───────────────────────────────────────────
+// Shown instead of the main Navbar when maintenance is ON but user is
+// reading the blog. Keeps the experience dark + on-brand, with a clear
+// "← Launch page" escape hatch. No product search exposed.
+function MaintenanceBlogNav({ onBack }) {
+  return (
+    <nav style={{
+      background: '#080e0a',
+      borderBottom: '1px solid rgba(255,255,255,0.08)',
+      position: 'sticky', top: 0, zIndex: 100,
+    }}>
+      <div className="wrap" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 56 }}>
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 28, height: 28, background: '#1A6B3C', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="17" height="17" viewBox="0 0 17 17" fill="none">
+              <path d="M4 8.5L7 11.5L13 5.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <span style={{ fontWeight: 800, fontSize: 18, letterSpacing: '-0.5px', lineHeight: 1 }}>
+            <span style={{ color: '#5dba85' }}>best</span>
+            <span style={{ color: 'white' }}>pickr</span>
+            <span style={{ color: '#F4956B', fontSize: 22 }}>.</span>
+          </span>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', marginLeft: 4 }}>
+            blog
+          </span>
+        </div>
+        {/* Escape back to launch page */}
+        <button
+          onClick={onBack}
+          style={{
+            background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 100, padding: '6px 16px', fontSize: 12, fontWeight: 600,
+            color: 'rgba(255,255,255,0.6)', cursor: 'pointer', transition: 'all 0.15s',
+          }}
+        >
+          ← Launch page
+        </button>
+      </div>
+    </nav>
+  )
+}
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
@@ -68,7 +114,7 @@ const PAGE_TITLES = {
   '/':            'bestpickr — Best Rated Products in India | AI Comparison',
   'results':      'Search Results — bestpickr',
   'about':        'About bestpickr — AI Product Comparison India',
-  'blog':         'Blog — bestpickr',
+  'blog':         'bestpickr blog — Expert Tech Insights for Indian Buyers',
   'how-it-works': 'How It Works — bestpickr AI Rankings',
   'ai-score':     'AI Score Explained — bestpickr',
   'price-alerts': 'Price Alerts — bestpickr',
@@ -92,7 +138,7 @@ export default function App() {
   const [selectedProduct, setProduct]     = useState(initialSession.product)
   const [searchResults,   setResults]     = useState(initialSession.results)
   const [showAdmin,       setShowAdmin]   = useState(false)
-  const [maintenance,     setMaintenance] = useState({ enabled: false, message: '', eta: '' })
+  const [maintenance,     setMaintenance] = useState(null) // null = not yet fetched
   const [activeSeoMeta,   setSeoMeta]     = useState(seoMatch || null)
 
   // Whether this device is bypassing maintenance (admin access)
@@ -102,14 +148,17 @@ export default function App() {
   async function checkMaintenance() {
     try {
       const r    = await fetch(`${API_BASE}/admin/status`, { cache: 'no-store' })
-      if (!r.ok) return
+      if (!r.ok) { setMaintenance(m => m ?? { enabled: false, message: '', eta: '' }); return }
       const data = await r.json()
       setMaintenance({
         enabled: Boolean(data.maintenance) && !isAdminBypass,
         message: data.message || 'We are performing scheduled maintenance.',
         eta:     data.eta     || '',
       })
-    } catch (_) { /* Server offline — don't show maintenance mode */ }
+    } catch (_) {
+      // Server offline — don't show maintenance, but unblock the UI
+      setMaintenance({ enabled: false, message: '', eta: '' })
+    }
   }
 
   useEffect(() => {
@@ -207,6 +256,11 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  // ── RENDER: LOADING (awaiting first maintenance check) ─────────
+  if (maintenance === null) {
+    return <div style={{ minHeight: '100vh', background: '#080e0a' }} />
+  }
+
   // ── RENDER: ADMIN ──────────────────────────────────────────────
   if (showAdmin) {
     return (
@@ -219,17 +273,53 @@ export default function App() {
     )
   }
 
+  const { path, params } = route
+  const isHome     = path === '/' || path === ''
+  const isBlogRoute = path === 'blog' || path.startsWith('blog/')
+
   // ── RENDER: MAINTENANCE ────────────────────────────────────────
-  if (maintenance.enabled) {
+  // Blog routes are allowed through — Instagram visitors can read
+  // posts even while the main product app is locked down.
+  if (maintenance.enabled && !isBlogRoute) {
     return <MaintenancePage message={maintenance.message} eta={maintenance.eta} />
   }
 
-  const { path, params } = route
-  const isHome = path === '/' || path === ''
+  // ── RENDER: BLOG ROUTES ────────────────────────────────────────
+  // During maintenance: dark minimal nav + no footer + no product CTA.
+  // During normal mode: standard Navbar + Footer.
+  if (path === 'blog') {
+    return (
+      <>
+        {maintenance.enabled
+          ? <MaintenanceBlogNav onBack={() => { window.location.hash = '' }} />
+          : <Navbar currentPage='blog' currentQuery='' onSearch={handleSearch} onHome={() => navigate('home')} />
+        }
+        <BlogPage onSearch={handleSearch} onNav={navigate} maintenanceMode={maintenance.enabled} />
+        {!maintenance.enabled && <Footer onSearch={handleSearch} onNav={navigate} onAdmin={() => setShowAdmin(true)} />}
+      </>
+    )
+  }
+  if (path.startsWith('blog/')) {
+    const slug = path.slice(5)
+    return (
+      <>
+        {maintenance.enabled
+          ? <MaintenanceBlogNav onBack={() => { window.location.hash = '#/blog' }} />
+          : <Navbar currentPage='blog' currentQuery='' onSearch={handleSearch} onHome={() => navigate('home')} />
+        }
+        <BlogPostPage
+          slug={slug}
+          onSearch={handleSearch}
+          onHome={() => navigate('home')}
+          maintenanceMode={maintenance.enabled}
+        />
+        {!maintenance.enabled && <Footer onSearch={handleSearch} onNav={navigate} onAdmin={() => setShowAdmin(true)} />}
+      </>
+    )
+  }
 
   const staticPages = {
     'about':        <AboutPage        onHome={() => navigate('home')} onNav={navigate} />,
-    'blog':         <BlogPage         onHome={() => navigate('home')} onNav={navigate} />,
     'how-it-works': <HowItWorksPage   onHome={() => navigate('home')} />,
     'ai-score':     <AIScorePage      onHome={() => navigate('home')} />,
     'price-alerts': <PriceAlertsPage  onHome={() => navigate('home')} />,

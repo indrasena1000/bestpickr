@@ -118,7 +118,7 @@ export default function MaintenancePage({ message, eta }) {
           textAlign: "center",
         }}
       >
-        {/* Logo */}
+        {/* Logo — matches Navbar exactly */}
         <div
           style={{
             display: "inline-flex",
@@ -127,25 +127,37 @@ export default function MaintenancePage({ message, eta }) {
             marginBottom: 40,
           }}
         >
-          {/* AI pulse icon */}
           <div
             style={{
               width: 36,
               height: 36,
-              background: "linear-gradient(135deg, #1A6B3C, #2d9e5f)",
+              background: "#1A6B3C",
               borderRadius: 10,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              flexShrink: 0,
               boxShadow: "0 0 20px rgba(26,107,60,0.5)",
               animation: "bp-glow 2s ease-in-out infinite",
-              fontSize: 18,
             }}
           >
-            🏷️
+            <svg width="22" height="22" viewBox="0 0 17 17" fill="none">
+              <path
+                d="M4 8.5L7 11.5L13 5.5"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
           <span
-            style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.5px" }}
+            style={{
+              fontWeight: 800,
+              fontSize: 22,
+              letterSpacing: "-0.5px",
+              lineHeight: 1,
+            }}
           >
             <span style={{ color: "#5dba85" }}>best</span>
             <span style={{ color: "white" }}>pickr</span>
@@ -297,6 +309,39 @@ export default function MaintenancePage({ message, eta }) {
             <strong style={{ color: "white" }}>{eta}</strong>
           </div>
         )}
+
+        {/* ── Blog CTA — read while you wait ── */}
+        <a
+          href="/#/blog"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 12,
+            background: 'rgba(93,186,133,0.1)',
+            border: '1.5px solid rgba(93,186,133,0.35)',
+            borderRadius: 14,
+            padding: '14px 22px',
+            marginBottom: 36,
+            textDecoration: 'none',
+            cursor: 'pointer',
+            transition: 'background 0.2s, border-color 0.2s',
+            width: '100%',
+            boxSizing: 'border-box',
+            textAlign: 'left',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(93,186,133,0.18)'; e.currentTarget.style.borderColor = 'rgba(93,186,133,0.6)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(93,186,133,0.1)'; e.currentTarget.style.borderColor = 'rgba(93,186,133,0.35)' }}
+        >
+          <span style={{ fontSize: 28, lineHeight: 1, flexShrink: 0 }}>📖</span>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#5dba85', marginBottom: 3 }}>
+              Read our Tech Blog while we launch →
+            </div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', lineHeight: 1.5 }}>
+              Daily buying guides, deals & tech facts for Indian buyers
+            </div>
+          </div>
+        </a>
 
         {/* Social proof line */}
         <div

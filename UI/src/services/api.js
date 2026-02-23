@@ -68,4 +68,43 @@ export const getProduct = (id) =>
 
 export const checkHealth = () => api.get("/health").then((r) => r.data);
 
+// ── BLOG API ────────────────────────────────────────────────────────
+
+export const getBlogPosts = (params) =>
+  api.get("/blog/posts", { params }).then((r) => r.data);
+
+export const getLatestBlogPosts = () =>
+  api.get("/blog/posts/latest").then((r) => r.data);
+
+export const getWeeklyBlogPosts = () =>
+  api.get("/blog/posts/week").then((r) => r.data);
+
+export const getBlogPost = (slug) =>
+  api.get(`/blog/posts/${slug}`).then((r) => r.data);
+
+export const getAdminBlogPosts = (token) =>
+  api
+    .get("/blog/admin/posts", { headers: { Authorization: `Bearer ${token}` } })
+    .then((r) => r.data);
+
+export const publishBlogPost = (id, token) =>
+  api
+    .patch(`/blog/admin/posts/${id}/publish`, {}, { headers: { Authorization: `Bearer ${token}` } })
+    .then((r) => r.data);
+
+export const unpublishBlogPost = (id, token) =>
+  api
+    .patch(`/blog/admin/posts/${id}/unpublish`, {}, { headers: { Authorization: `Bearer ${token}` } })
+    .then((r) => r.data);
+
+export const deleteBlogPost = (id, token) =>
+  api
+    .delete(`/blog/admin/posts/${id}`, { headers: { Authorization: `Bearer ${token}` } })
+    .then((r) => r.data);
+
+export const generateBlogPosts = (token) =>
+  api
+    .post("/blog/admin/generate", {}, { headers: { Authorization: `Bearer ${token}` } })
+    .then((r) => r.data);
+
 export default api;
