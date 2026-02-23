@@ -89,6 +89,9 @@ app.use("/api/analytics", analyticsRouter);
 // Admin (maintenance mode) — FIX: also missing
 app.use("/api/admin", require("./src/routes/admin"));
 
+// News articles endpoint for blog/news page
+app.use("/api/news", require("./src/routes/news"));
+
 // ── STATUS ENDPOINT ──────────────────────────────────────────────
 app.get("/api/status", async (req, res) => {
   let dbOk = false;

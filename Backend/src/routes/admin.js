@@ -131,4 +131,110 @@ router.post('/preload-categories', async (req, res) => {
   }
 })
 
+// ── NEWS MANAGEMENT ENDPOINTS ─────────────────────────────────────
+function authToken(req) {
+  const adminToken = process.env.ADMIN_TOKEN || 'bestpickr-admin-2025'
+  const token = req.query.token || req.headers['x-admin-token'] || (req.body && req.body.token)
+  return token === adminToken
+}
+
+// GET /api/admin/news?status=Pending  (default: all statuses)
+router.get('/news', async (req, res) => {
+  if (!authToken(req)) return res.status(401).json({ error: 'Unauthorized' })
+  try {
+    const { status } = req.query
+    const where = status ? { status } : {}
+    const articles = await db(req).newsArticle.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, slug: true, title: true, summary: true, source: true,
+        status: true, visible: true, publishDate: true, scheduledAt: true,
+        trendScore: true, relevance: true, tags: true, imageUrl: true,
+        createdAt: true, updatedAt: true,
+      },
+    })
+    res.json(articles)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// GET /api/admin/news/:slug  — full article for editing
+router.get('/news/:slug', async (req, res) => {
+  if (!authToken(req)) return res.status(401).json({ error: 'Unauthorized' })
+  try {
+    const article = await db(req).newsArticle.findUnique({ where: { slug: req.params.slug } })
+    if (!article) return res.status(404).json({ error: 'Not found' })
+    res.json(article)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// PUT /api/admin/news/:slug  — edit title/summary/content/imageUrl/tags
+router.put('/news/:slug', async (req, res) => {
+  if (!authToken(req)) return res.status(401).json({ error: 'Unauthorized' })
+  const { slug } = req.params
+  const { title, summary, content, imageUrl, tags, token, ...rest } = req.body
+  try {
+    const data = {}
+    if (title     !== undefined) data.title     = title
+    if (summary   !== undefined) data.summary   = summary
+    if (content   !== undefined) data.content   = content
+    if (imageUrl  !== undefined) data.imageUrl  = imageUrl
+    if (tags      !== undefined) data.tags      = tags
+    const article = await db(req).newsArticle.update({ where: { slug }, data })
+    res.json(article)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// POST /api/admin/news/:slug/status  — change status (Approve/Reject/Archive)
+router.post('/news/:slug/status', async (req, res) => {
+  if (!authToken(req)) return res.status(401).json({ error: 'Unauthorized' })
+  const { slug } = req.params
+  const { status } = req.body
+  const validStatuses = ['Draft', 'Pending', 'Approved', 'Rejected', 'Published', 'Archived']
+  if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' })
+  try {
+    const data = { status }
+    // When publishing immediately, also set visible=true and publishDate=now
+    if (status === 'Published') {
+      data.visible = true
+      data.publishDate = new Date()
+    }
+    // When rejecting or archiving, hide from public
+    if (status === 'Rejected' || status === 'Archived') {
+      data.visible = false
+    }
+    const article = await db(req).newsArticle.update({ where: { slug }, data })
+    res.json(article)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// POST /api/admin/news/:slug/publish  — publish now or schedule
+router.post('/news/:slug/publish', async (req, res) => {
+  if (!authToken(req)) return res.status(401).json({ error: 'Unauthorized' })
+  const { slug } = req.params
+  const { immediately, scheduledAt } = req.body
+  try {
+    let data
+    if (immediately) {
+      data = { status: 'Published', visible: true, publishDate: new Date(), scheduledAt: null }
+    } else if (scheduledAt) {
+      data = { status: 'Approved', scheduledAt: new Date(scheduledAt), visible: false }
+    } else {
+      return res.status(400).json({ error: 'Provide immediately=true or scheduledAt' })
+    }
+    const article = await db(req).newsArticle.update({ where: { slug }, data })
+    res.json(article)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 module.exports = router

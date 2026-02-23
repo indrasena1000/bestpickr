@@ -227,9 +227,19 @@ export default function App() {
   const { path, params } = route
   const isHome = path === '/' || path === ''
 
+  // handle blog and blog/detail
+  if (path === 'blog' || path.startsWith('blog/')) {
+    const slug = path.startsWith('blog/') ? path.slice(5) : null;
+    return (
+      <>
+        <Navbar currentPage="blog" currentQuery='' onSearch={handleSearch} onHome={() => navigate('home')} />
+        <BlogPage onHome={() => navigate('home')} onNav={navigate} slug={slug} />
+        <Footer onSearch={handleSearch} onNav={navigate} onAdmin={() => setShowAdmin(true)} />
+      </>
+    )
+  }
   const staticPages = {
     'about':        <AboutPage        onHome={() => navigate('home')} onNav={navigate} />,
-    'blog':         <BlogPage         onHome={() => navigate('home')} onNav={navigate} />,
     'how-it-works': <HowItWorksPage   onHome={() => navigate('home')} />,
     'ai-score':     <AIScorePage      onHome={() => navigate('home')} />,
     'price-alerts': <PriceAlertsPage  onHome={() => navigate('home')} />,

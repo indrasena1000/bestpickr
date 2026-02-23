@@ -142,6 +142,204 @@ function MaintenancePanel({ maintenance, onMaintenanceChange, adminToken }) {
   );
 }
 
+// ── NEWS MANAGEMENT PANEL ────────────────────────────────────────
+const NEWS_STATUSES = ['Draft', 'Pending', 'Approved', 'Rejected', 'Published', 'Archived'];
+const STATUS_BADGE = { Draft:'blue', Pending:'orange', Approved:'teal', Rejected:'red', Published:'green', Archived:'purple' };
+
+function NewsPanel({ adminToken }) {
+  const token = adminToken || 'bestpickr-admin-2025';
+  const [tab, setTab] = useState('Pending');
+  const [articles, setArticles] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [editFields, setEditFields] = useState({});
+  const [scheduling, setScheduling] = useState(null);
+  const [schedDate, setSchedDate] = useState('');
+
+  async function fetchArticles(status) {
+    setBusy(true);
+    setFeedback('');
+    try {
+      const r = await fetch(`${API_BASE}/admin/news?status=${status}&token=${token}`);
+      const data = await r.json();
+      setArticles(Array.isArray(data) ? data : []);
+    } catch {
+      setFeedback('❌ Could not load articles — backend may be offline.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => { fetchArticles(tab); }, [tab]);
+
+  async function changeStatus(slug, status) {
+    setFeedback('');
+    try {
+      const r = await fetch(`${API_BASE}/admin/news/${slug}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, token }),
+      });
+      const data = await r.json();
+      if (r.ok) { setFeedback(`✅ "${data.title}" → ${status}`); fetchArticles(tab); }
+      else setFeedback('❌ ' + (data.error || 'Failed'));
+    } catch { setFeedback('❌ Network error'); }
+  }
+
+  async function publishNow(slug) {
+    setFeedback('');
+    try {
+      const r = await fetch(`${API_BASE}/admin/news/${slug}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ immediately: true, token }),
+      });
+      const data = await r.json();
+      if (r.ok) { setFeedback(`✅ "${data.title}" is now live!`); fetchArticles(tab); }
+      else setFeedback('❌ ' + (data.error || 'Failed'));
+    } catch { setFeedback('❌ Network error'); }
+  }
+
+  async function schedulePublish(slug) {
+    if (!schedDate) { setFeedback('❌ Pick a date/time first'); return; }
+    setFeedback('');
+    try {
+      const r = await fetch(`${API_BASE}/admin/news/${slug}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledAt: schedDate, token }),
+      });
+      const data = await r.json();
+      if (r.ok) {
+        setFeedback(`✅ Scheduled for ${new Date(schedDate).toLocaleString('en-IN')}`);
+        setScheduling(null); setSchedDate(''); fetchArticles(tab);
+      } else setFeedback('❌ ' + (data.error || 'Failed'));
+    } catch { setFeedback('❌ Network error'); }
+  }
+
+  function openEdit(article) {
+    setEditing(article.slug);
+    setEditFields({ title: article.title, summary: article.summary, content: article.content || '', imageUrl: article.imageUrl || '' });
+  }
+
+  async function saveEdit(slug) {
+    setFeedback('');
+    try {
+      const r = await fetch(`${API_BASE}/admin/news/${slug}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...editFields, token }),
+      });
+      const data = await r.json();
+      if (r.ok) { setFeedback(`✅ Saved "${data.title}"`); setEditing(null); fetchArticles(tab); }
+      else setFeedback('❌ ' + (data.error || 'Failed'));
+    } catch { setFeedback('❌ Network error'); }
+  }
+
+  return (
+    <div className="admin-card">
+      <div className="admin-card-title">📰 News Article Management</div>
+
+      {/* Status tab bar */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:16 }}>
+        {NEWS_STATUSES.map(s => (
+          <button
+            key={s}
+            onClick={() => setTab(s)}
+            className="admin-btn"
+            style={{ padding:'4px 14px', fontSize:12, opacity: tab === s ? 1 : 0.45, fontWeight: tab === s ? 700 : 400 }}
+          >{s}</button>
+        ))}
+        <button onClick={() => fetchArticles(tab)} className="admin-btn" style={{ marginLeft:'auto', padding:'4px 10px', fontSize:12 }}>⟳</button>
+      </div>
+
+      {feedback && (
+        <div className={`admin-feedback ${feedback.startsWith('✅') ? 'success' : 'error'}`}>{feedback}</div>
+      )}
+
+      {busy ? (
+        <div className="admin-hint-text">Loading…</div>
+      ) : articles.length === 0 ? (
+        <div className="admin-hint-text">No articles with status "{tab}".</div>
+      ) : (
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Source</th>
+              <th>Status</th>
+              <th>Published</th>
+              <th>Scheduled</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {articles.map(a => (
+              <>
+                <tr key={a.slug}>
+                  <td style={{ maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={a.title}>{a.title}</td>
+                  <td className="admin-td-muted">{a.source}</td>
+                  <td><span className={`admin-badge ${STATUS_BADGE[a.status] || 'blue'}`}>{a.status}</span></td>
+                  <td className="admin-td-muted" style={{ fontSize:11 }}>{a.publishDate ? new Date(a.publishDate).toLocaleDateString('en-IN') : '—'}</td>
+                  <td className="admin-td-muted" style={{ fontSize:11 }}>{a.scheduledAt ? new Date(a.scheduledAt).toLocaleString('en-IN') : '—'}</td>
+                  <td>
+                    <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+                      <button className="admin-btn" style={{ fontSize:11, padding:'2px 8px' }} onClick={() => editing === a.slug ? setEditing(null) : openEdit(a)}>✏️ Edit</button>
+                      {!['Approved','Published','Archived'].includes(a.status) && (
+                        <button className="admin-btn admin-btn-success" style={{ fontSize:11, padding:'2px 8px' }} onClick={() => changeStatus(a.slug, 'Approved')}>✅ Approve</button>
+                      )}
+                      {!['Rejected','Archived','Published'].includes(a.status) && (
+                        <button className="admin-btn admin-btn-danger" style={{ fontSize:11, padding:'2px 8px' }} onClick={() => changeStatus(a.slug, 'Rejected')}>✕ Reject</button>
+                      )}
+                      {a.status === 'Approved' && (
+                        <>
+                          <button className="admin-btn" style={{ fontSize:11, padding:'2px 8px', background:'#10b981', color:'#fff' }} onClick={() => publishNow(a.slug)}>🚀 Publish Now</button>
+                          <button className="admin-btn" style={{ fontSize:11, padding:'2px 8px' }} onClick={() => setScheduling(scheduling === a.slug ? null : a.slug)}>🕐 Schedule</button>
+                        </>
+                      )}
+                      {a.status !== 'Archived' && (
+                        <button className="admin-btn admin-btn-danger" style={{ fontSize:11, padding:'2px 8px', opacity:0.65 }} onClick={() => changeStatus(a.slug, 'Archived')}>🗄 Archive</button>
+                      )}
+                    </div>
+                    {scheduling === a.slug && (
+                      <div style={{ marginTop:6, display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+                        <input type="datetime-local" className="admin-input" style={{ fontSize:12, padding:'3px 6px', marginBottom:0, width:'auto' }} value={schedDate} onChange={e => setSchedDate(e.target.value)} />
+                        <button className="admin-btn" style={{ fontSize:11, padding:'3px 8px' }} onClick={() => schedulePublish(a.slug)}>Set</button>
+                        <button className="admin-btn admin-btn-danger" style={{ fontSize:11, padding:'3px 8px' }} onClick={() => { setScheduling(null); setSchedDate(''); }}>✕</button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+                {editing === a.slug && (
+                  <tr key={a.slug + '-edit'}>
+                    <td colSpan={6} style={{ background:'#f8fafc', padding:'12px 16px', borderTop:'1px solid #e5e7eb' }}>
+                      <div style={{ display:'flex', flexDirection:'column', gap:8, maxWidth:700 }}>
+                        <label style={{ fontSize:12, fontWeight:600, color:'#374151' }}>Title</label>
+                        <input className="admin-input" style={{ marginBottom:0 }} value={editFields.title || ''} onChange={e => setEditFields(f => ({ ...f, title: e.target.value }))} />
+                        <label style={{ fontSize:12, fontWeight:600, color:'#374151' }}>Summary</label>
+                        <textarea className="admin-textarea" rows={3} value={editFields.summary || ''} onChange={e => setEditFields(f => ({ ...f, summary: e.target.value }))} />
+                        <label style={{ fontSize:12, fontWeight:600, color:'#374151' }}>Full Content</label>
+                        <textarea className="admin-textarea" rows={7} value={editFields.content || ''} onChange={e => setEditFields(f => ({ ...f, content: e.target.value }))} />
+                        <label style={{ fontSize:12, fontWeight:600, color:'#374151' }}>Image URL</label>
+                        <input className="admin-input" style={{ marginBottom:0 }} value={editFields.imageUrl || ''} onChange={e => setEditFields(f => ({ ...f, imageUrl: e.target.value }))} />
+                        <div style={{ display:'flex', gap:8, marginTop:4 }}>
+                          <button className="admin-btn" onClick={() => saveEdit(a.slug)}>💾 Save</button>
+                          <button className="admin-btn admin-btn-danger" onClick={() => setEditing(null)}>Cancel</button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 // ── MAIN DASHBOARD ─────────────────────────────────────────────────
 export default function AdminDashboard({
   onClose,
@@ -296,6 +494,9 @@ export default function AdminDashboard({
           onMaintenanceChange={onMaintenanceChange}
           adminToken={adminToken || "bestpickr-admin-2025"}
         />
+
+        {/* ── NEWS MANAGEMENT ── */}
+        <NewsPanel adminToken={adminToken || "bestpickr-admin-2025"} />
 
         {/* ── STAT CARDS ── */}
         <div className="admin-stat-grid">

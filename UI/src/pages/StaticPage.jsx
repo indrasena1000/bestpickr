@@ -1,6 +1,6 @@
 // src/pages/StaticPage.jsx
 // All static pages: About, Blog, How it Works, AI Score, Price Alerts, Privacy, Terms
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const SITE_NAME = 'bestpickr'
 const SITE_URL  = 'https://bestpickr.vercel.app'
@@ -213,6 +213,26 @@ function BlogCard({ post, featured, onRead }) {
   )
 }
 
+// news card for left column
+function NewsCard({ article, onRead }) {
+  return (
+    <div onClick={onRead}
+      style={{
+        background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r3)', padding:'18px 20px',
+        cursor:'pointer', marginBottom:12, transition:'box-shadow .15s'
+      }}
+      onMouseEnter={e => e.currentTarget.style.boxShadow='0 4px 20px rgba(0,0,0,.07)'}
+      onMouseLeave={e => e.currentTarget.style.boxShadow=''}
+    >
+      {article.image && <img src={article.image} alt="" style={{ width:'100%', borderRadius:4, marginBottom:10 }} />}
+      <div style={{ fontSize:16, fontWeight:700, color:'var(--ink)', marginBottom:6 }}>{article.title}</div>
+      <div style={{ fontSize:13, color:'var(--ink3)', lineHeight:1.6, marginBottom:8 }}>{article.summary}</div>
+      <div style={{ fontSize:11, color:'var(--ink4)' }}>{article.source} · {new Date(article.publishDate).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}</div>
+      <div style={{ marginTop:8, fontSize:13, fontWeight:600, color:'var(--accent)' }}>Read More →</div>
+    </div>
+  )
+}
+
 function FeaturedBlogContent({ onHome }) {
   return (
     <Shell title="How bestpickr Ranks Products: A Deep Dive Into Our AI Engine"
@@ -283,29 +303,81 @@ function FeaturedBlogContent({ onHome }) {
   )
 }
 
-export function BlogPage({ onHome, onNav }) {
+export function BlogPage({ onHome, onNav, slug }) {
   const [reading, setReading] = useState(null)
+  const [articles, setArticles] = useState([]) // top tech news
 
-  if (reading === 'how-bestpickr-works') {
-    return <FeaturedBlogContent onHome={() => setReading(null)} />
+  function openArticle(article) {
+    setReading(article)
+    // update URL for deep link
+    window.history.pushState({}, '', `/blog/${article.slug}`)
+    document.title = article.title
+    const desc = document.querySelector('meta[name="description"]')
+    if (desc) desc.content = article.summary || ''
+    else {
+      const m = document.createElement('meta')
+      m.name = 'description'; m.content = article.summary || ''
+      document.head.appendChild(m)
+    }
+  }
+
+  // load approved & published posts from backend
+  useEffect(() => {
+    fetch('/api/news')
+      .then(r => r.json())
+      .then(data => setArticles(data || []))
+      .catch(() => setArticles([]))
+  }, [])
+
+  // if slug present when page loads, fetch detail
+  useEffect(() => {
+    if (slug) {
+      fetch(`/api/news/${slug}`)
+        .then(r => r.json())
+        .then(a => {
+          if (a && a.slug) openArticle(a)
+        })
+        .catch(() => {})
+    }
+  }, [slug])
+
+  if (reading) {
+    return (
+      <Shell title={reading.title} badge="News" subtitle={reading.source} onHome={() => { setReading(null); window.history.pushState({}, '', '/blog'); document.title = 'bestpickr Blog' }} wide>
+        <div>
+          <P><em>{reading.aiSummary}</em></P>
+          <P>{reading.content}</P>
+          {reading.tags && (
+            <div style={{ marginTop:16 }}>
+              {reading.tags.map(t => <Badge key={t}>{t}</Badge>)}
+            </div>
+          )}
+          <P style={{ marginTop:24, fontSize:12, color:'var(--ink4)' }}>
+            Source: <a href={reading.sourceLink} target="_blank" rel="noopener noreferrer">{reading.source}</a> · {new Date(reading.publishDate).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}
+          </P>
+        </div>
+      </Shell>
+    )
   }
 
   return (
-    <Shell title="bestpickr Blog" badge="Blog" subtitle="Guides, research, and deep-dives into AI-powered shopping for Indian consumers." onHome={onHome}>
-      <P>We write about product research, e-commerce trends in India, and how we're building bestpickr. No sponsored content. No brand reviews. Just honest writing about shopping smarter.</P>
+    <Shell title="bestpickr News" badge="News" subtitle="Top tech & e-commerce headlines" onHome={onHome}>
+      <div style={{ display:'flex', gap:24 }}>
+        {/* left column */}
+        <div style={{ flex:2 }}>
+          {articles.map(article => (
+            <NewsCard key={article.slug} article={article} onRead={() => openArticle(article)} />
+          ))}
+        </div>
 
-      {BLOG_POSTS.map((post) => (
-        <BlogCard
-          key={post.slug}
-          post={post}
-          featured={post.featured}
-          onRead={() => post.content ? setReading(post.slug) : null}
-        />
-      ))}
-
-      <div style={{ marginTop:24, padding:'18px 20px', background:'var(--paper2)', border:'1px solid var(--line)', borderRadius:'var(--r2)', textAlign:'center' }}>
-        <div style={{ fontSize:13, fontWeight:600, color:'var(--ink)', marginBottom:6 }}>Want to be notified when we publish?</div>
-        <div style={{ fontSize:12, color:'var(--ink3)' }}>Email us at <a href={`mailto:${CONTACT}`} style={{ color:'var(--accent)' }}>{CONTACT}</a> — we'll add you to the list manually. No spam, ever.</div>
+        {/* right column: methodology snippet */}
+        <div style={{ flex:1, position:'sticky', top:20, alignSelf:'flex-start' }}>
+          <h3 style={{ fontSize:16, fontWeight:700, color:'var(--ink)', marginBottom:8 }}>About Our Review Methodology</h3>
+          <P>Why trust us: independent AI‑driven rankings built on real customer data.</P>
+          <P>We evaluate products across platforms with sentiment analysis, price comparisons, and transparent scoring.</P>
+          <P>All data, all platforms, zero paid placements—our approach is completely open and repeatable.</P>
+          <button onClick={() => onNav && onNav('results')} style={{ background:'var(--accent)', color:'#fff', border:'none', borderRadius:'var(--r2)', padding:'10px 14px', fontSize:14, fontWeight:700, cursor:'pointer' }}>Explore Top Products</button>
+        </div>
       </div>
     </Shell>
   )

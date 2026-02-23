@@ -153,3 +153,39 @@ model SiteConfig {
 
   @@index([key])
 }
+
+// ── NEWS ARTICLE (for daily tech/e-commerce headlines) ─────────────
+model NewsArticle {
+  id            String      @id @default(uuid())
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  slug          String      @unique
+  title         String
+  summary       String
+  content       String?
+  imageUrl      String?
+  source        String
+  sourceLink    String
+  publishDate   DateTime
+  scheduledAt   DateTime?
+  trendScore    Float       @default(0)
+  relevance     Float       @default(0)
+  status        NewsStatus  @default(Draft)
+  visible       Boolean     @default(false)
+  aiSummary     String?
+  tags          String[]    @default([])
+
+  @@index([publishDate])
+  @@index([status])
+  @@index([visible])
+}
+
+enum NewsStatus {
+  Draft
+  Pending
+  Approved
+  Rejected
+  Published
+  Archived
+}
