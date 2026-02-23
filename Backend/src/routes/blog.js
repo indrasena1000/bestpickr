@@ -27,19 +27,11 @@ const express = require('express');
 const router  = express.Router();
 const logger  = require('../utils/logger');
 const { BlogPost } = require('../models/index.js');
-const { generateDailyBlogs } = require('../services/blogContentService.js');
+const { generateDailyBlogs, deduplicateExistingPosts } = require('../services/blogContentService.js');
 
 // ── HELPERS ──────────────────────────────────────────────────────
 
-function authCheck(req, res, next) {
-  const header = req.headers.authorization || '';
-  const token  = header.startsWith('Bearer ') ? header.slice(7) : header;
-  const valid  = process.env.ADMIN_TOKEN || 'bestpickr-admin-2025';
-  if (token !== valid) {
-    return res.status(401).json({ success: false, error: 'Unauthorized' });
-  }
-  next();
-}
+const verifyAdmin = require('../middleware/verifyAdmin')
 
 // Group an array of posts by their publishedAt date (YYYY-MM-DD)
 function groupByDate(posts) {
@@ -153,7 +145,7 @@ router.post('/cron/generate', async (req, res) => {
 
 // ── ADMIN: GET /admin/posts ───────────────────────────────────────
 // All posts including drafts
-router.get('/admin/posts', authCheck, async (req, res) => {
+router.get('/admin/posts', verifyAdmin, async (req, res) => {
   try {
     const posts = await BlogPost.find({})
       .sort({ createdAt: -1 })
@@ -171,7 +163,7 @@ router.get('/admin/posts', authCheck, async (req, res) => {
 
 // ── ADMIN: POST /admin/generate ───────────────────────────────────
 // Manually trigger generation (also used by admin dashboard button)
-router.post('/admin/generate', authCheck, async (req, res) => {
+router.post('/admin/generate', verifyAdmin, async (req, res) => {
   logger.info('[Blog] Admin triggered blog generation');
   try {
     const result = await generateDailyBlogs();
@@ -182,8 +174,22 @@ router.post('/admin/generate', authCheck, async (req, res) => {
   }
 });
 
+// ── ADMIN: POST /admin/deduplicate ──────────────────────────────
+// Scans all existing posts and deletes any >= 70% similar duplicates.
+// Keeps the oldest copy; removes newer near-duplicates.
+router.post('/admin/deduplicate', verifyAdmin, async (req, res) => {
+  logger.info('[Blog] Admin triggered deduplication');
+  try {
+    const result = await deduplicateExistingPosts();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    logger.error('[Blog] /admin/deduplicate error', { error: err.message });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ── ADMIN: PATCH /admin/posts/:id/publish ────────────────────────
-router.patch('/admin/posts/:id/publish', authCheck, async (req, res) => {
+router.patch('/admin/posts/:id/publish', verifyAdmin, async (req, res) => {
   try {
     const post = await BlogPost.findByIdAndUpdate(
       req.params.id,
@@ -201,7 +207,7 @@ router.patch('/admin/posts/:id/publish', authCheck, async (req, res) => {
 });
 
 // ── ADMIN: PATCH /admin/posts/:id/unpublish ──────────────────────
-router.patch('/admin/posts/:id/unpublish', authCheck, async (req, res) => {
+router.patch('/admin/posts/:id/unpublish', verifyAdmin, async (req, res) => {
   try {
     const post = await BlogPost.findByIdAndUpdate(
       req.params.id,
@@ -219,7 +225,7 @@ router.patch('/admin/posts/:id/unpublish', authCheck, async (req, res) => {
 });
 
 // ── ADMIN: DELETE /admin/posts/:id ───────────────────────────────
-router.delete('/admin/posts/:id', authCheck, async (req, res) => {
+router.delete('/admin/posts/:id', verifyAdmin, async (req, res) => {
   try {
     const post = await BlogPost.findByIdAndDelete(req.params.id).lean();
     if (!post) return res.status(404).json({ success: false, error: 'Post not found' });
@@ -239,7 +245,7 @@ router.delete('/admin/posts/:id', authCheck, async (req, res) => {
 // Event conventions stored in the PageView table:
 //   eventType = 'blog_view'       → query=slug, productName=title, page=category
 //   eventType = 'blog_read_depth' → query=slug, screenWidth=depth% (0-100)
-router.get('/admin/analytics', authCheck, async (req, res) => {
+router.get('/admin/analytics', verifyAdmin, async (req, res) => {
   try {
     const prisma = req.app.locals.prisma;
     if (!prisma) {

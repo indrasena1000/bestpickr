@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#F6FBF8"/>
+  <!-- Left accent bar -->
+  <rect width="8" height="630" fill="#1A6B3C"/>
+  <!-- Logo mark -->
+  <rect x="80" y="215" width="140" height="140" rx="28" fill="#1A6B3C"/>
+  <path d="M110 285L135 310L198 247" stroke="white" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Brand name -->
+  <text x="244" y="298" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="800" fill="#1A1A1A" letter-spacing="-2">bestpickr</text>
+  <!-- Tagline -->
+  <text x="244" y="352" font-family="system-ui, -apple-system, sans-serif" font-size="28" fill="#555" letter-spacing="0">AI-ranked products for Indian shoppers</text>
+  <!-- Bottom strip -->
+  <rect y="590" width="1200" height="40" fill="#1A6B3C" opacity="0.08"/>
+  <text x="600" y="615" text-anchor="middle" font-family="system-ui, sans-serif" font-size="18" fill="#1A6B3C" opacity="0.7">bestpickr.in — Free · No ads · Powered by AI</text>
+</svg>

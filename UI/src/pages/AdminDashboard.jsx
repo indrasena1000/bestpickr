@@ -2,6 +2,7 @@
 // ✅ FIXED: White/light theme throughout
 // ✅ FIXED: Analytics fetched from DB (persistent, not lost on refresh)
 // ✅ FIXED: Maintenance state persists to DB via backend
+// ✅ JWT auth: accessToken in memory + httpOnly refresh cookie (industry standard)
 import { useState, useEffect, useCallback } from "react";
 import "../styles/admin.css";
 import "../styles/blog.css";
@@ -11,11 +12,14 @@ import {
   unpublishBlogPost,
   generateBlogPosts,
   getBlogAnalytics,
+  adminLogin,
+  adminLogout,
+  adminRefresh,
+  setAccessToken,
+  clearAccessToken,
 } from "../services/api.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
-const ADMIN_USER = "admin";
-const ADMIN_PASS = "admin@123";
 
 function fmtTime(iso) {
   if (!iso) return "—";
@@ -26,14 +30,14 @@ function fmtTime(iso) {
 }
 
 // ── BLOG ANALYTICS PANEL ──────────────────────────────────────────
-function BlogAnalyticsPanel({ adminToken }) {
+function BlogAnalyticsPanel() {
   const [stats,   setStats]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
 
   function loadStats() {
     setLoading(true);
-    getBlogAnalytics(adminToken)
+    getBlogAnalytics()
       .then(d => { if (d.success) setStats(d.stats); else setError("Failed to load."); })
       .catch(() => setError("Could not reach backend."))
       .finally(() => setLoading(false));
@@ -231,16 +235,19 @@ function BlogAnalyticsPanel({ adminToken }) {
 }
 
 // ── BLOG ADMIN PANEL ──────────────────────────────────────────────
-function BlogAdminPanel({ adminToken }) {
+function BlogAdminPanel() {
   const [posts,       setPosts]      = useState([]);
   const [generating,  setGenerating] = useState(false);
   const [feedback,    setFeedback]   = useState("");
   const [loading,     setLoading]    = useState(true);
   const [previewPost, setPreviewPost] = useState(null);
+  const [searchQ,     setSearchQ]    = useState("");
+  const [sortBy,      setSortBy]     = useState("newest");
+  const [statusFilter, setStatusFilter] = useState("all"); // all | draft | published
 
   function loadPosts() {
     setLoading(true);
-    getAdminBlogPosts(adminToken)
+    getAdminBlogPosts()
       .then(d => setPosts(d.posts || []))
       .catch(() => setPosts([]))
       .finally(() => setLoading(false));
@@ -252,7 +259,7 @@ function BlogAdminPanel({ adminToken }) {
     setGenerating(true);
     setFeedback("");
     try {
-      const d = await generateBlogPosts(adminToken);
+      const d = await generateBlogPosts();
       setFeedback(`✅ Generated ${d.generated} draft${d.generated !== 1 ? "s" : ""}!`);
       loadPosts();
     } catch (e) {
@@ -264,7 +271,7 @@ function BlogAdminPanel({ adminToken }) {
 
   async function handlePublish(id) {
     try {
-      await publishBlogPost(id, adminToken);
+      await publishBlogPost(id);
       setFeedback("✅ Post published.");
       loadPosts();
     } catch { setFeedback("❌ Publish failed."); }
@@ -272,7 +279,7 @@ function BlogAdminPanel({ adminToken }) {
 
   async function handleUnpublish(id) {
     try {
-      await unpublishBlogPost(id, adminToken);
+      await unpublishBlogPost(id);
       setFeedback("✅ Post moved to drafts.");
       loadPosts();
     } catch { setFeedback("❌ Unpublish failed."); }
@@ -280,6 +287,26 @@ function BlogAdminPanel({ adminToken }) {
 
   const drafts    = posts.filter(p => p.status === "draft");
   const published = posts.filter(p => p.status === "published");
+
+  // ── Filtered + sorted view ─────────────────────────────────────────
+  const bq = searchQ.trim().toLowerCase();
+  const visiblePosts = posts
+    .filter(p => statusFilter === "all" || p.status === statusFilter)
+    .filter(p =>
+      !bq ||
+      (p.title   || "").toLowerCase().includes(bq) ||
+      (p.excerpt || "").toLowerCase().includes(bq) ||
+      (p.category|| "").toLowerCase().includes(bq)
+    )
+    .sort((a, b) => {
+      if (sortBy === "oldest") return new Date(a.createdAt) - new Date(b.createdAt);
+      if (sortBy === "alpha")  return (a.title || "").localeCompare(b.title || "");
+      if (sortBy === "zalpha") return (b.title || "").localeCompare(a.title || "");
+      return new Date(b.createdAt) - new Date(a.createdAt); // newest
+    });
+
+  const visibleDrafts    = visiblePosts.filter(p => p.status === "draft");
+  const visiblePublished = visiblePosts.filter(p => p.status === "published");
 
   function fmtDate(d) {
     if (!d) return "—";
@@ -340,7 +367,7 @@ function BlogAdminPanel({ adminToken }) {
     <>
       <div className="admin-card">
         {/* Top bar */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
           <div>
             <div className="admin-card-title" style={{ marginBottom: 4 }}>📝 Blog Posts</div>
             <div style={{ fontSize: 12, color: "var(--ink4)" }}>
@@ -356,6 +383,62 @@ function BlogAdminPanel({ adminToken }) {
           </button>
         </div>
 
+        {/* ── Filter bar ────────────────────────────────────────── */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
+          {/* Search */}
+          <div style={{ position: "relative", flex: "1 1 200px", minWidth: 0 }}>
+            <svg style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--ink4)", pointerEvents: "none" }}
+              width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              value={searchQ}
+              onChange={e => setSearchQ(e.target.value)}
+              placeholder="Search posts…"
+              style={{
+                width: "100%", paddingLeft: 28, paddingRight: 10, paddingTop: 7, paddingBottom: 7,
+                border: "1px solid var(--line)", borderRadius: "var(--r)",
+                background: "var(--paper2)", color: "var(--ink)", fontSize: 13,
+                outline: "none", boxSizing: "border-box",
+              }}
+            />
+          </div>
+          {/* Status filter */}
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            style={{ padding: "7px 10px", border: "1px solid var(--line)", borderRadius: "var(--r)", background: "var(--paper2)", color: "var(--ink)", fontSize: 13, cursor: "pointer" }}
+          >
+            <option value="all">All ({posts.length})</option>
+            <option value="draft">Drafts ({drafts.length})</option>
+            <option value="published">Published ({published.length})</option>
+          </select>
+          {/* Sort */}
+          <select
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value)}
+            style={{ padding: "7px 10px", border: "1px solid var(--line)", borderRadius: "var(--r)", background: "var(--paper2)", color: "var(--ink)", fontSize: 13, cursor: "pointer" }}
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="alpha">Title A → Z</option>
+            <option value="zalpha">Title Z → A</option>
+          </select>
+          {(searchQ || statusFilter !== "all" || sortBy !== "newest") && (
+            <button
+              onClick={() => { setSearchQ(""); setStatusFilter("all"); setSortBy("newest"); }}
+              style={{ padding: "7px 10px", border: "1px solid var(--line)", borderRadius: "var(--r)", background: "var(--paper2)", color: "var(--ink3)", fontSize: 12, cursor: "pointer" }}
+            >
+              ✕ Reset
+            </button>
+          )}
+          {(searchQ || statusFilter !== "all") && (
+            <span style={{ fontSize: 12, color: "var(--ink4)", marginLeft: 2 }}>
+              {visiblePosts.length} result{visiblePosts.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+
         {feedback && (
           <div className={`admin-feedback ${feedback.startsWith("✅") ? "success" : "error"}`} style={{ marginBottom: 16 }}>
             {feedback}
@@ -368,22 +451,26 @@ function BlogAdminPanel({ adminToken }) {
           <div style={{ color: "var(--ink4)", fontSize: 13, padding: "20px 0", textAlign: "center" }}>
             No posts yet. Click "Generate 3 New Drafts" to create your first batch.
           </div>
+        ) : visiblePosts.length === 0 ? (
+          <div style={{ color: "var(--ink4)", fontSize: 13, padding: "20px 0", textAlign: "center" }}>
+            No posts match your filter.
+          </div>
         ) : (
           <>
-            {drafts.length > 0 && (
+            {visibleDrafts.length > 0 && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--ink4)", marginBottom: 10 }}>
-                  Drafts ({drafts.length})
+                  Drafts ({visibleDrafts.length})
                 </div>
-                {drafts.map(p => <PostRow key={p._id} post={p} isDraft={true} />)}
+                {visibleDrafts.map(p => <PostRow key={p._id} post={p} isDraft={true} />)}
               </>
             )}
-            {published.length > 0 && (
+            {visiblePublished.length > 0 && (
               <>
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".5px", color: "var(--ink4)", margin: "20px 0 10px" }}>
-                  Published ({published.length})
+                  Published ({visiblePublished.length})
                 </div>
-                {published.map(p => <PostRow key={p._id} post={p} isDraft={false} />)}
+                {visiblePublished.map(p => <PostRow key={p._id} post={p} isDraft={false} />)}
               </>
             )}
           </>
@@ -565,7 +652,7 @@ function BlogAdminPanel({ adminToken }) {
 }
 
 // ── BLOG TAB VIEW — sub-tabs: Analytics | Posts ───────────────────
-function BlogTabView({ adminToken }) {
+function BlogTabView() {
   const [blogTab, setBlogTab] = useState("analytics"); // "analytics" | "posts"
   return (
     <>
@@ -587,14 +674,14 @@ function BlogTabView({ adminToken }) {
           </button>
         ))}
       </div>
-      {blogTab === "analytics" && <BlogAnalyticsPanel adminToken={adminToken} />}
-      {blogTab === "posts"     && <BlogAdminPanel     adminToken={adminToken} />}
+      {blogTab === "analytics" && <BlogAnalyticsPanel />}
+      {blogTab === "posts"     && <BlogAdminPanel     />}
     </>
   );
 }
 
 // ── MAINTENANCE TOGGLE PANEL ───────────────────────────────────────
-function MaintenancePanel({ maintenance, onMaintenanceChange, adminToken }) {
+function MaintenancePanel({ maintenance, onMaintenanceChange }) {
   const [toggling, setToggling] = useState(false);
   const [message, setMessage] = useState(
     maintenance.message ||
@@ -620,7 +707,6 @@ function MaintenancePanel({ maintenance, onMaintenanceChange, adminToken }) {
           enabled: enable,
           message,
           eta,
-          token: adminToken,
         }),
       });
       const data = await r.json();
@@ -723,36 +809,59 @@ export default function AdminDashboard({
   onClose,
   maintenance = {},
   onMaintenanceChange,
-  adminToken,
 }) {
-  const [authed, setAuthed] = useState(false);
-  const [user, setUser] = useState("");
-  const [pass, setPass] = useState("");
-  const [err, setErr] = useState("");
-  const [stats, setStats] = useState(null);
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [authed,      setAuthed]      = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);  // true while checking for existing session
+  const [user,        setUser]        = useState("");
+  const [pass,        setPass]        = useState("");
+  const [err,         setErr]         = useState("");
+  const [loginBusy,   setLoginBusy]   = useState(false);
+  const [stats,       setStats]       = useState(null);
+  const [events,      setEvents]      = useState([]);
+  const [loading,     setLoading]     = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const [liveCount, setLiveCount] = useState(0);
-  const [activeTab, setActiveTab] = useState("analytics"); // 'analytics' | 'blog'
+  const [liveCount,   setLiveCount]   = useState(0);
+  const [activeTab,   setActiveTab]   = useState("analytics");
 
+  // ── On mount: attempt silent refresh to restore session ──────────
   useEffect(() => {
-    if (sessionStorage.getItem("bp_admin") === "yes") setAuthed(true);
+    adminRefresh()
+      .then((d) => { setAccessToken(d.accessToken); setAuthed(true); })
+      .catch(() => { /* no valid session — show login */ })
+      .finally(() => setAuthLoading(false));
   }, []);
 
-  function handleLogin(e) {
+  // ── Listen for token expiry events from axios interceptor ────────
+  useEffect(() => {
+    function onExpired() {
+      clearAccessToken();
+      setAuthed(false);
+      setStats(null);
+      setEvents([]);
+      setErr("Session expired — please log in again.");
+    }
+    window.addEventListener("admin:session-expired", onExpired);
+    return () => window.removeEventListener("admin:session-expired", onExpired);
+  }, []);
+
+  async function handleLogin(e) {
     e.preventDefault();
-    if (user === ADMIN_USER && pass === ADMIN_PASS) {
-      sessionStorage.setItem("bp_admin", "yes");
+    setLoginBusy(true);
+    setErr("");
+    try {
+      const d = await adminLogin(user, pass);
+      setAccessToken(d.accessToken);
       setAuthed(true);
-      setErr("");
-    } else {
-      setErr("Invalid credentials.");
+    } catch (apiErr) {
+      setErr(apiErr.response?.data?.error || "Invalid credentials.");
+    } finally {
+      setLoginBusy(false);
     }
   }
 
-  function handleLogout() {
-    sessionStorage.removeItem("bp_admin");
+  async function handleLogout() {
+    try { await adminLogout(); } catch (_) { /* ignore */ }
+    clearAccessToken();
     setAuthed(false);
     setStats(null);
     setEvents([]);
@@ -787,6 +896,14 @@ export default function AdminDashboard({
   }, [authed, fetchData]);
 
   // ── LOGIN SCREEN ────────────────────────────────────────────────
+  if (authLoading) {
+    return (
+      <div className="admin-wrap" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+        <div style={{ textAlign: "center", color: "var(--ink4)", fontSize: 14 }}>Checking session…</div>
+      </div>
+    );
+  }
+
   if (!authed) {
     return (
       <div className="admin-wrap">
@@ -802,6 +919,7 @@ export default function AdminDashboard({
                 value={user}
                 onChange={(e) => setUser(e.target.value)}
                 autoComplete="username"
+                disabled={loginBusy}
               />
               <input
                 className="admin-input"
@@ -810,10 +928,11 @@ export default function AdminDashboard({
                 value={pass}
                 onChange={(e) => setPass(e.target.value)}
                 autoComplete="current-password"
+                disabled={loginBusy}
               />
               {err && <div className="admin-login-err">{err}</div>}
-              <button className="admin-login-btn" type="submit">
-                Sign In →
+              <button className="admin-login-btn" type="submit" disabled={loginBusy}>
+                {loginBusy ? "Signing in…" : "Sign In →"}
               </button>
             </form>
             <div style={{ marginTop: 16, textAlign: "center" }}>
@@ -881,7 +1000,7 @@ export default function AdminDashboard({
         </div>
 
         {activeTab === "blog" && (
-          <BlogTabView adminToken={adminToken || "bestpickr-admin-2025"} />
+          <BlogTabView />
         )}
 
         {activeTab === "analytics" && <>
@@ -890,7 +1009,6 @@ export default function AdminDashboard({
         <MaintenancePanel
           maintenance={maintenance}
           onMaintenanceChange={onMaintenanceChange}
-          adminToken={adminToken || "bestpickr-admin-2025"}
         />
 
         {/* ── STAT CARDS ── */}
