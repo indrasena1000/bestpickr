@@ -362,7 +362,7 @@ export default function App() {
         </div>
       )}
 
-      {isHome && <HomePage onSearch={handleSearch} onViewProduct={handleViewProduct} />}
+      {isHome && <HomePage onSearch={handleSearch} onViewProduct={handleViewProduct} onNav={navigate} />}
 
       {path === 'results' && (
         <ResultsPage

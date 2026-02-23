@@ -6,6 +6,7 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
+const cookieParser = require('cookie-parser')
 const { PrismaClient } = require("@prisma/client");
 const logger = require("./src/utils/logger");
 const {
@@ -65,6 +66,7 @@ app.use(
 );
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // Rate limiting
 const limiter = rateLimit({

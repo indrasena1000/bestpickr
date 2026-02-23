@@ -63,7 +63,7 @@ function AITooltip({ reason, children }) {
 }
 
 
-export default function HomePage({ onSearch, onViewProduct }) {
+export default function HomePage({ onSearch, onViewProduct, onNav }) {
   const [q, setQ] = useState("");
   const [categories, setCats] = useState([]);
   const [activeCat, setActive] = useState("headphones");
@@ -334,16 +334,16 @@ export default function HomePage({ onSearch, onViewProduct }) {
               </h2>
               <p style={{ fontSize:13, color:'var(--ink3)', margin:0 }}>Expert buying guides updated daily</p>
             </div>
-            <a
-              href='#/blog'
-              style={{ fontSize:13, fontWeight:600, color:'var(--accent)', textDecoration:'none', whiteSpace:'nowrap', padding:'8px 16px', border:'1px solid var(--accent)', borderRadius:'var(--r2)' }}
-              onMouseEnter={e => { e.target.style.background='var(--accent)'; e.target.style.color='white' }}
-              onMouseLeave={e => { e.target.style.background='transparent'; e.target.style.color='var(--accent)' }}
+            <button
+              onClick={() => onNav('blog')}
+              style={{ fontSize:13, fontWeight:600, color:'var(--accent)', textDecoration:'none', whiteSpace:'nowrap', padding:'8px 16px', border:'1px solid var(--accent)', borderRadius:'var(--r2)', background:'transparent', cursor:'pointer' }}
+              onMouseEnter={e => { e.currentTarget.style.background='var(--accent)'; e.currentTarget.style.color='white' }}
+              onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='var(--accent)' }}
             >
               View all posts →
-            </a>
+            </button>
           </div>
-          <BlogCarousel onNavigate={(path) => { window.location.hash = '/' + path }} />
+          <BlogCarousel onNavigate={(path) => onNav(path)} />
         </div>
       </div>
 

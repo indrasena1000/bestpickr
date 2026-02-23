@@ -64,6 +64,69 @@ You MUST respond with a valid JSON object containing these exact fields:
   "readTimeMinutes": 3
 }`;
 
+// ── SIMILARITY / DEDUPLICATION HELPERS ──────────────────────────
+const SIMILARITY_THRESHOLD = 0.70; // 70 % Jaccard similarity → reject
+
+// Common English + Hindi-transliteration stop words to ignore
+const STOP_WORDS = new Set([
+  'a','an','the','and','or','but','in','on','at','to','for','of',
+  'is','it','its','be','as','up','by','do','we','my','so','if',
+  'how','out','what','when','with','from','that','this','are',
+  'was','were','been','has','have','had','can','will','not','all',
+  'one','our','your','best','get','more','vs','top','india',
+  'indian','2026','rupees','inr','buy','price','online','review',
+]);
+
+/**
+ * Tokenises text: strips HTML, lowercases, splits into words,
+ * removes stop words and short tokens.
+ */
+function tokenize(text) {
+  return (text || '')
+    .toLowerCase()
+    .replace(/<[^>]+>/g, ' ')       // strip HTML tags
+    .replace(/[^a-z0-9\s]/g, ' ')  // keep alphanumeric only
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w));
+}
+
+/**
+ * Jaccard similarity between two text strings (0 … 1).
+ * Uses SET overlap so word-frequency doesn't inflate the score.
+ */
+function jaccardSimilarity(textA, textB) {
+  const setA = new Set(tokenize(textA));
+  const setB = new Set(tokenize(textB));
+  if (setA.size === 0 && setB.size === 0) return 1;
+  const intersection = [...setA].filter(x => setB.has(x)).length;
+  const unionSize    = new Set([...setA, ...setB]).size;
+  return unionSize === 0 ? 0 : intersection / unionSize;
+}
+
+/**
+ * Queries MongoDB for existing posts and returns the first one whose
+ * combined title+excerpt similarity with the candidate exceeds the threshold.
+ * Returns { slug, title, similarity } or null.
+ */
+async function findSimilarExistingPost(title, excerpt) {
+  const existing = await BlogPost
+    .find({}, { title: 1, excerpt: 1, slug: 1 })
+    .sort({ createdAt: -1 })
+    .limit(500)
+    .lean();
+
+  const candidateText = `${title} ${excerpt}`;
+
+  for (const post of existing) {
+    const existingText = `${post.title} ${post.excerpt || ''}`;
+    const sim = jaccardSimilarity(candidateText, existingText);
+    if (sim >= SIMILARITY_THRESHOLD) {
+      return { slug: post.slug, title: post.title, similarity: sim };
+    }
+  }
+  return null;
+}
+
 // ── GENERATE A SINGLE BLOG POST ──────────────────────────────────
 async function generateSinglePost(topicHint, categoryHint) {
   const userPrompt = `${topicHint}. Focus on the category: ${categoryHint}. Make it specific, practical, and useful for Indian buyers in 2026. Include real product names, approximate INR prices, and platform availability.`;
@@ -89,13 +152,43 @@ async function generateSinglePost(topicHint, categoryHint) {
     throw new Error('GPT response missing required fields: title, slug, excerpt, or content');
   }
 
-  // Sanitize slug
-  data.slug = data.slug
+  // Sanitize slug — always derived from the title, not GPT's suggestion,
+  // so it's deterministic and immune to GPT hallucinations.
+  const baseSlug = data.title
     .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 80);
+    .replace(/[^a-z0-9\s-]/g, '')   // strip special chars
+    .trim()
+    .replace(/\s+/g, '-')           // spaces → hyphens
+    .replace(/-+/g, '-')            // collapse multiple hyphens
+    .slice(0, 72);                  // cap at 72 so suffix "-10" still fits under 80
+
+  // ── SLUG COLLISION — single-query resolution ─────────────────
+  // Fetch all existing slugs that match "base-slug" or "base-slug-N"
+  // in one DB round-trip, then pick the next free suffix.
+  const slugPattern = new RegExp(`^${baseSlug}(-\\d+)?$`);
+  const takenSlugs = await BlogPost
+    .find({ slug: slugPattern }, { slug: 1, _id: 0 })
+    .lean()
+    .then(docs => new Set(docs.map(d => d.slug)));
+
+  let resolvedSlug = baseSlug;
+  if (takenSlugs.has(resolvedSlug)) {
+    let n = 2;
+    while (takenSlugs.has(`${baseSlug}-${n}`) && n <= 20) n++;
+    resolvedSlug = `${baseSlug}-${n}`;
+    logger.warn(`[BlogContent] Slug resolved: "${baseSlug}" → "${resolvedSlug}"`);
+  }
+  data.slug = resolvedSlug;
+
+  // 2. Semantic similarity — reject if ≥ 70 % Jaccard match
+  const similar = await findSimilarExistingPost(data.title, data.excerpt);
+  if (similar) {
+    throw new Error(
+      `Duplicate content detected (${(similar.similarity * 100).toFixed(0)}% similar to ` +
+      `"${similar.title}" [${similar.slug}]). Skipping generation.`
+    );
+  }
+  // ────────────────────────────────────────────────────────────
 
   // Fetch cover image from Unsplash
   let coverImage    = FALLBACK_IMAGE;
@@ -138,14 +231,27 @@ async function generateSinglePost(topicHint, categoryHint) {
     readTimeMinutes: data.readTimeMinutes || 3,
   });
 
-  await post.save();
+  // Save — catch MongoDB duplicate key (code 11000) in case a concurrent
+  // request claimed the same slug in the window between our check and save.
+  try {
+    await post.save();
+  } catch (saveErr) {
+    if (saveErr.code === 11000) {
+      // Append timestamp suffix and retry once — virtually impossible to collide again
+      post.slug = `${data.slug}-${Date.now().toString(36)}`;
+      await post.save();
+      logger.warn(`[BlogContent] Race condition on slug — retried with suffix: "${post.slug}"`);
+    } else {
+      throw saveErr;
+    }
+  }
   logger.info(`[BlogContent] Saved draft: "${post.title}" (${post.slug})`);
   return post;
 }
 
 // ── GENERATE 3 DAILY POSTS ───────────────────────────────────────
-// Picks 3 different topic/category combos, runs them in parallel
-// via Promise.allSettled so one failure doesn't block the others.
+// Runs combos SEQUENTIALLY so each dedup check sees posts that were
+// just saved by earlier iterations — avoids parallel race conditions.
 async function generateDailyBlogs() {
   logger.info('[BlogContent] Starting daily blog generation (3 posts)');
 
@@ -166,9 +272,17 @@ async function generateDailyBlogs() {
     },
   ];
 
-  const results = await Promise.allSettled(
-    combos.map(({ topic, category }) => generateSinglePost(topic, category))
-  );
+  // Sequential — not parallel — so each post's dupe check sees all
+  // previously generated posts that were saved in the same run.
+  const results = [];
+  for (const { topic, category } of combos) {
+    try {
+      const post = await generateSinglePost(topic, category);
+      results.push({ status: 'fulfilled', value: post });
+    } catch (err) {
+      results.push({ status: 'rejected', reason: err });
+    }
+  }
 
   let generated = 0;
   let failed    = 0;
@@ -188,4 +302,65 @@ async function generateDailyBlogs() {
   return { generated, failed, posts };
 }
 
-module.exports = { generateDailyBlogs };
+// ── PURGE EXISTING DUPLICATES ────────────────────────────────────
+/**
+ * Scans ALL existing BlogPosts and removes duplicates / near-duplicates
+ * (>= SIMILARITY_THRESHOLD Jaccard on title+excerpt).
+ *
+ * Strategy: iterate posts oldest→newest; for each post compare against
+ * all EARLIER unique posts. If ≥ 70 % similar, mark it for deletion
+ * (keeps the oldest copy, removes the newer duplicate).
+ *
+ * Returns { removed, kept, details } for the admin API response.
+ */
+async function deduplicateExistingPosts() {
+  logger.info('[BlogContent] Starting deduplication of existing posts…');
+
+  const all = await BlogPost
+    .find({}, { _id: 1, slug: 1, title: 1, excerpt: 1, createdAt: 1 })
+    .sort({ createdAt: 1 })   // oldest first → we keep the original
+    .lean();
+
+  const kept    = [];   // posts we're keeping (unique)
+  const removed = [];   // posts we're deleting (duplicates)
+
+  for (const candidate of all) {
+    const candidateText = `${candidate.title} ${candidate.excerpt || ''}`;
+    let isDuplicate = false;
+
+    for (const unique of kept) {
+      const uniqueText = `${unique.title} ${unique.excerpt || ''}`;
+      const sim = jaccardSimilarity(candidateText, uniqueText);
+      if (sim >= SIMILARITY_THRESHOLD) {
+        logger.warn(
+          `[BlogContent] Duplicate found: "${candidate.title}" ` +
+          `(${(sim * 100).toFixed(0)}% similar to "${unique.title}") — removing`
+        );
+        removed.push({ slug: candidate.slug, title: candidate.title, similarTo: unique.slug, similarity: sim });
+        isDuplicate = true;
+        break;
+      }
+    }
+
+    if (!isDuplicate) {
+      kept.push(candidate);
+    }
+  }
+
+  // Delete duplicates in one batch
+  if (removed.length > 0) {
+    const idsToDelete = removed.map(r => {
+      const match = all.find(p => p.slug === r.slug);
+      return match?._id;
+    }).filter(Boolean);
+
+    await BlogPost.deleteMany({ _id: { $in: idsToDelete } });
+    logger.info(`[BlogContent] Deduplication complete — removed ${removed.length} duplicates, kept ${kept.length} posts`);
+  } else {
+    logger.info('[BlogContent] Deduplication complete — no duplicates found');
+  }
+
+  return { removed: removed.length, kept: kept.length, details: removed };
+}
+
+module.exports = { generateDailyBlogs, deduplicateExistingPosts };
