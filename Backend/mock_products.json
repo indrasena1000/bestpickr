@@ -1,0 +1,940 @@
+{
+  "categories": [
+    {
+      "slug": "headphones",
+      "name": "Headphones",
+      "emoji": "🎧",
+      "products": [
+        {
+          "asin": "H01",
+          "title": "Sony WH-1000XM5 Wireless Noise Cancelling",
+          "brand": "Sony",
+          "amazon_price": 29990,
+          "flipkart_price": 28499,
+          "product_url": "https://www.flipkart.com/sony-wh-1000xm5-bluetooth-headset/p/itm21768406f5f3a",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/headphone/9/g/v/-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.6,
+          "aiScore": 94
+        },
+        {
+          "asin": "H02",
+          "title": "Apple AirPods Pro (2nd Gen) USB-C",
+          "brand": "Apple",
+          "amazon_price": 24900,
+          "flipkart_price": 23990,
+          "product_url": "https://www.flipkart.com/apple-airpods-pro-2nd-gen-magsafe-case-usb-c-bluetooth-headset/p/itme9705a691459a",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/headphone/t/p/1/-original-imagtcogm9uafp9z.jpeg",
+          "rating": 4.8,
+          "aiScore": 96
+        },
+        {
+          "asin": "H03",
+          "title": "boAt Airdopes 161 with 50H Playtime",
+          "brand": "boAt",
+          "amazon_price": 1099,
+          "flipkart_price": 999,
+          "product_url": "https://www.flipkart.com/boat-airdopes-161-adv-4mic-enx-50h-battery-fast-charge-13mm-driver-metallic-finish-bluetooth-headset/p/itm0a6e504c55208",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/headphone/e/a/g/-original-imahy3u57zhy8p8h.jpeg",
+          "rating": 4.1,
+          "aiScore": 82
+        },
+        {
+          "asin": "H04",
+          "title": "OnePlus Buds Pro 2",
+          "brand": "OnePlus",
+          "amazon_price": 11999,
+          "flipkart_price": 10999,
+          "product_url": "https://www.flipkart.com/oneplus-buds-pro-2-bluetooth-headset/p/itmb49544600642f",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/headphone/v/m/p/-original-imagtcogm9uafp9z.jpeg",
+          "rating": 4.4,
+          "aiScore": 89
+        },
+        {
+          "asin": "H05",
+          "title": "Bose QuietComfort Headphones",
+          "brand": "Bose",
+          "amazon_price": 29900,
+          "flipkart_price": 26900,
+          "product_url": "https://www.flipkart.com/bose-quietcomfort-bluetooth-headset/p/itm21768406f5f3a",
+          "image": "https://rukminim2.flixcart.com/image/416/416/ku8pbbk0/headphone/v/m/p/quietcomfort-45-bose-original-imag7erfzf6gyy6g.jpeg",
+          "rating": 4.7,
+          "aiScore": 95
+        },
+        {
+          "asin": "H06",
+          "title": "JBL Tune 770NC ANC",
+          "brand": "JBL",
+          "amazon_price": 6999,
+          "flipkart_price": 5999,
+          "product_url": "https://www.flipkart.com/jbl-tune-770nc-bluetooth-headset/p/itm0a6e504c55208",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/headphone/s/v/g/-original-imagwh7zhp5zp8zp.jpeg",
+          "rating": 4.2,
+          "aiScore": 84
+        },
+        {
+          "asin": "H07",
+          "title": "Sennheiser Accentum Wireless",
+          "brand": "Sennheiser",
+          "amazon_price": 12990,
+          "flipkart_price": 11990,
+          "product_url": "https://www.flipkart.com/sennheiser-accentum-wireless-bluetooth-headset/p/itm4b29f9e7f53a1",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/headphone/w/e/y/-original-imagvz6zy6v3u3u3.jpeg",
+          "rating": 4.3,
+          "aiScore": 87
+        },
+        {
+          "asin": "H08",
+          "title": "Realme Buds Air 5 Pro",
+          "brand": "Realme",
+          "amazon_price": 4999,
+          "flipkart_price": 4499,
+          "product_url": "https://www.flipkart.com/realme-buds-air-5-pro-bluetooth-headset/p/itm0f6b4a0a86b5b",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/headphone/j/k/l/-original-imagwh7zhp5zp8zp.jpeg",
+          "rating": 4.5,
+          "aiScore": 88
+        },
+        {
+          "asin": "H09",
+          "title": "Sony WH-CH720N Wireless",
+          "brand": "Sony",
+          "amazon_price": 9990,
+          "flipkart_price": 7990,
+          "product_url": "https://www.flipkart.com/sony-wh-ch720n-bluetooth-headset/p/itm21768406f5f3a",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/headphone/9/g/v/-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.4,
+          "aiScore": 86
+        },
+        {
+          "asin": "H10",
+          "title": "Marshall Major IV",
+          "brand": "Marshall",
+          "amazon_price": 12999,
+          "flipkart_price": 11499,
+          "product_url": "https://www.flipkart.com/marshall-major-iv-bluetooth-headset/p/itme9705a691459a",
+          "image": "https://rukminim2.flixcart.com/image/416/416/ku8pbbk0/headphone/v/m/p/quietcomfort-45-bose-original-imag7erfzf6gyy6g.jpeg",
+          "rating": 4.6,
+          "aiScore": 91
+        }
+      ]
+    },
+    {
+      "slug": "smartphones",
+      "name": "Smartphones",
+      "emoji": "📱",
+      "products": [
+        {
+          "asin": "S01",
+          "title": "Apple iPhone 16 (Black, 128 GB)",
+          "brand": "Apple",
+          "amazon_price": 79900,
+          "flipkart_price": 72999,
+          "product_url": "https://www.flipkart.com/apple-iphone-16-black-128-gb/p/itmbe17342807e9c",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mobile/y/8/i/-original-imah4jyfvf9p9pzh.jpeg",
+          "rating": 4.7,
+          "aiScore": 97
+        },
+        {
+          "asin": "S02",
+          "title": "Samsung Galaxy S24 Ultra 5G",
+          "brand": "Samsung",
+          "amazon_price": 129999,
+          "flipkart_price": 121999,
+          "product_url": "https://www.flipkart.com/samsung-galaxy-s24-ultra-5g-titanium-gray-256-gb/p/itmd097486e903a4",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mobile/f/n/u/-original-imagxhuay9vup9cd.jpeg",
+          "rating": 4.6,
+          "aiScore": 95
+        },
+        {
+          "asin": "S03",
+          "title": "Google Pixel 8 (Hazel, 128 GB)",
+          "brand": "Google",
+          "amazon_price": 75999,
+          "flipkart_price": 54999,
+          "product_url": "https://www.flipkart.com/google-pixel-8-hazel-128-gb/p/itm6d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mobile/y/8/i/-original-imah4jyfvf9p9pzh.jpeg",
+          "rating": 4.3,
+          "aiScore": 88
+        },
+        {
+          "asin": "S04",
+          "title": "Nothing Phone (2a) 5G",
+          "brand": "Nothing",
+          "amazon_price": 25999,
+          "flipkart_price": 23999,
+          "product_url": "https://www.flipkart.com/nothing-phone-2a-5g-black-128-gb/p/itmbe17342807e9c",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mobile/f/n/u/-original-imagxhuay9vup9cd.jpeg",
+          "rating": 4.5,
+          "aiScore": 90
+        },
+        {
+          "asin": "S05",
+          "title": "Redmi Note 13 Pro+ 5G",
+          "brand": "Xiaomi",
+          "amazon_price": 31999,
+          "flipkart_price": 29999,
+          "product_url": "https://www.flipkart.com/redmi-note-13-pro-5g-fusion-white-256-gb/p/itm0a27342807e9c",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mobile/y/8/i/-original-imah4jyfvf9p9pzh.jpeg",
+          "rating": 4.3,
+          "aiScore": 86
+        },
+        {
+          "asin": "S06",
+          "title": "Motorola Edge 50 Pro",
+          "brand": "Motorola",
+          "amazon_price": 35999,
+          "flipkart_price": 30999,
+          "product_url": "https://www.flipkart.com/motorola-edge-50-pro-5g-black-beauty-256-gb/p/itm6d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mobile/f/n/u/-original-imagxhuay9vup9cd.jpeg",
+          "rating": 4.4,
+          "aiScore": 88
+        },
+        {
+          "asin": "S07",
+          "title": "OnePlus 12R 5G",
+          "brand": "OnePlus",
+          "amazon_price": 39999,
+          "flipkart_price": 38999,
+          "product_url": "https://www.flipkart.com/oneplus-12r-5g-cool-blue-128-gb/p/itmbe17342807e9c",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mobile/y/8/i/-original-imah4jyfvf9p9pzh.jpeg",
+          "rating": 4.5,
+          "aiScore": 91
+        },
+        {
+          "asin": "S08",
+          "title": "Vivo T3 Pro 5G",
+          "brand": "Vivo",
+          "amazon_price": 26999,
+          "flipkart_price": 24999,
+          "product_url": "https://www.flipkart.com/vivo-t3-pro-5g-sandstone-orange-128-gb/p/itmd097486e903a4",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mobile/f/n/u/-original-imagxhuay9vup9cd.jpeg",
+          "rating": 4.5,
+          "aiScore": 89
+        },
+        {
+          "asin": "S09",
+          "title": "POCO X6 Pro 5G",
+          "brand": "POCO",
+          "amazon_price": 26999,
+          "flipkart_price": 23999,
+          "product_url": "https://www.flipkart.com/poco-x6-pro-5g-racing-grey-256-gb/p/itm0a27342807e9c",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mobile/y/8/i/-original-imah4jyfvf9p9pzh.jpeg",
+          "rating": 4.4,
+          "aiScore": 87
+        },
+        {
+          "asin": "S10",
+          "title": "Realme P1 5G",
+          "brand": "Realme",
+          "amazon_price": 17999,
+          "flipkart_price": 15999,
+          "product_url": "https://www.flipkart.com/realme-p1-5g-peacock-blue-128-gb/p/itmd097486e903a4",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mobile/f/n/u/-original-imagxhuay9vup9cd.jpeg",
+          "rating": 4.3,
+          "aiScore": 84
+        }
+      ]
+    },
+    {
+      "slug": "laptops",
+      "name": "Laptops",
+      "emoji": "💻",
+      "products": [
+        {
+          "asin": "L01",
+          "title": "Apple MacBook Air M3 (8GB/256GB)",
+          "brand": "Apple",
+          "amazon_price": 114900,
+          "flipkart_price": 104990,
+          "product_url": "https://www.flipkart.com/apple-2024-macbook-air-m3-8-gb-256-gb-ssd-macos-sonoma-mrym3hn-a/p/itma11357591e1d2",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/computer/2/v/v/-original-imagfdfp8ebbzzfs.jpeg",
+          "rating": 4.8,
+          "aiScore": 98
+        },
+        {
+          "asin": "L02",
+          "title": "HP Victus Ryzen 7 Octa Core 5800H",
+          "brand": "HP",
+          "amazon_price": 64000,
+          "flipkart_price": 58990,
+          "product_url": "https://www.flipkart.com/hp-victus-ryzen-7-octa-core-5800h-16-gb-512-gb-ssd-windows-11-home-4-graphics-nvidia-geforce-rtx-3050-144-hz-16-e0351ax-gaming-laptop/p/itmb49544600642f",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/computer/v/y/z/-original-imagp7pfgh7j9f9p.jpeg",
+          "rating": 4.4,
+          "aiScore": 86
+        },
+        {
+          "asin": "L03",
+          "title": "ASUS Vivobook 16X OLED",
+          "brand": "ASUS",
+          "amazon_price": 72000,
+          "flipkart_price": 66990,
+          "product_url": "https://www.flipkart.com/asus-vivobook-16x-oled-ryzen-7-octa-core-5800h-16-gb-512-gb-ssd-windows-11-home-m1603qa-mb711ws-laptop/p/itma11357591e1d2",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/computer/2/v/v/-original-imagfdfp8ebbzzfs.jpeg",
+          "rating": 4.5,
+          "aiScore": 89
+        },
+        {
+          "asin": "L04",
+          "title": "Lenovo IdeaPad Slim 3 Core i5",
+          "brand": "Lenovo",
+          "amazon_price": 54000,
+          "flipkart_price": 49990,
+          "product_url": "https://www.flipkart.com/lenovo-ideapad-slim-3-intel-core-i5-12th-gen-15ial7-thin-light-laptop/p/itmb49544600642f",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/computer/v/y/z/-original-imagp7pfgh7j9f9p.jpeg",
+          "rating": 4.2,
+          "aiScore": 83
+        },
+        {
+          "asin": "L05",
+          "title": "Dell Vostro Intel Core i3 12th Gen",
+          "brand": "Dell",
+          "amazon_price": 38000,
+          "flipkart_price": 34990,
+          "product_url": "https://www.flipkart.com/dell-vostro-intel-core-i3-12th-gen-8-gb-512-gb-ssd-windows-11-home-laptop/p/itma11357591e1d2",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/computer/2/v/v/-original-imagfdfp8ebbzzfs.jpeg",
+          "rating": 4.1,
+          "aiScore": 81
+        },
+        {
+          "asin": "L06",
+          "title": "Acer Predator Helios Neo 16",
+          "brand": "Acer",
+          "amazon_price": 115000,
+          "flipkart_price": 109990,
+          "product_url": "https://www.flipkart.com/acer-predator-helios-neo-16-intel-core-i7-13th-gen-16-gb-512-gb-ssd-windows-11-home-6-graphics-nvidia-geforce-rtx-4060-phn16-71-gaming-laptop/p/itmb49544600642f",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/computer/v/y/z/-original-imagp7pfgh7j9f9p.jpeg",
+          "rating": 4.6,
+          "aiScore": 93
+        },
+        {
+          "asin": "L07",
+          "title": "Samsung Galaxy Book3 Core i5",
+          "brand": "Samsung",
+          "amazon_price": 74000,
+          "flipkart_price": 68990,
+          "product_url": "https://www.flipkart.com/samsung-galaxy-book3-intel-core-i5-13th-gen-16-gb-512-gb-ssd-windows-11-home-thin-light-laptop/p/itma11357591e1d2",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/computer/2/v/v/-original-imagfdfp8ebbzzfs.jpeg",
+          "rating": 4.4,
+          "aiScore": 87
+        },
+        {
+          "asin": "L08",
+          "title": "MSI Sword 15 Intel Core i5",
+          "brand": "MSI",
+          "amazon_price": 78000,
+          "flipkart_price": 72990,
+          "product_url": "https://www.flipkart.com/msi-sword-15-intel-core-i5-12th-gen-16-gb-512-gb-ssd-windows-11-home-4-graphics-nvidia-geforce-rtx-3050-144-hz-gaming-laptop/p/itmb49544600642f",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/computer/v/y/z/-original-imagp7pfgh7j9f9p.jpeg",
+          "rating": 4.3,
+          "aiScore": 85
+        },
+        {
+          "asin": "L09",
+          "title": "Infinix ZERO Book Ultra",
+          "brand": "Infinix",
+          "amazon_price": 84000,
+          "flipkart_price": 79990,
+          "product_url": "https://www.flipkart.com/infinix-zero-book-ultra-intel-core-i9-12th-gen-32-gb-512-gb-ssd-windows-11-home-thin-light-laptop/p/itma11357591e1d2",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/computer/2/v/v/-original-imagfdfp8ebbzzfs.jpeg",
+          "rating": 4.2,
+          "aiScore": 84
+        },
+        {
+          "asin": "L10",
+          "title": "Microsoft Surface Laptop Go 3",
+          "brand": "Microsoft",
+          "amazon_price": 82000,
+          "flipkart_price": 76990,
+          "product_url": "https://www.flipkart.com/microsoft-surface-laptop-go-3-intel-core-i5-12th-gen-8-gb-256-gb-ssd-windows-11-home-thin-light-laptop/p/itmb49544600642f",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/computer/v/y/z/-original-imagp7pfgh7j9f9p.jpeg",
+          "rating": 4.4,
+          "aiScore": 88
+        }
+      ]
+    },
+    {
+      "slug": "appliances",
+      "name": "Appliances",
+      "emoji": "🍳",
+      "products": [
+        {
+          "asin": "A01",
+          "title": "Samsung 7 kg 5 Star Front Load",
+          "brand": "Samsung",
+          "amazon_price": 32000,
+          "flipkart_price": 28990,
+          "product_url": "https://www.flipkart.com/samsung-7-kg-5-star-ai-ecobubble-wi-fi-hygiene-steam-fully-automatic-front-load-in-built-heater-white/p/itm298817757912d",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/washing-machine-new/p/s/p/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.5,
+          "aiScore": 90
+        },
+        {
+          "asin": "A02",
+          "title": "LG 1.5 Ton 5 Star Split Dual Inverter AC",
+          "brand": "LG",
+          "amazon_price": 48000,
+          "flipkart_price": 44990,
+          "product_url": "https://www.flipkart.com/lg-convertible-6-in-1-1-5-ton-5-star-split-dual-inverter-ac-copper-condenser-hd-filter-with-anti-virus-protection/p/itme9705a691459a",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/air-conditioner-new/p/s/p/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.4,
+          "aiScore": 89
+        },
+        {
+          "asin": "A03",
+          "title": "Haier 190 L 4 Star Single Door Fridge",
+          "brand": "Haier",
+          "amazon_price": 16000,
+          "flipkart_price": 14490,
+          "product_url": "https://www.flipkart.com/haier-190-l-direct-cool-single-door-4-star-refrigerator-with-base-drawer/p/itm298817757912d",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/refrigerator-new/p/s/p/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.3,
+          "aiScore": 85
+        },
+        {
+          "asin": "A04",
+          "title": "Whirlpool 245 L 3 Star Double Door",
+          "brand": "Whirlpool",
+          "amazon_price": 28000,
+          "flipkart_price": 25990,
+          "product_url": "https://www.flipkart.com/whirlpool-245-l-frost-free-double-door-3-star-refrigerator/p/itme9705a691459a",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/refrigerator-new/p/s/p/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.2,
+          "aiScore": 82
+        },
+        {
+          "asin": "A05",
+          "title": "Bajaj 20L Grill Microwave Oven",
+          "brand": "Bajaj",
+          "amazon_price": 7500,
+          "flipkart_price": 6490,
+          "product_url": "https://www.flipkart.com/bajaj-20-l-grill-microwave-oven/p/itm298817757912d",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/microwave-new/p/s/p/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.1,
+          "aiScore": 80
+        },
+        {
+          "asin": "A06",
+          "title": "Prestige Iris Plus 750 W Mixer",
+          "brand": "Prestige",
+          "amazon_price": 4200,
+          "flipkart_price": 3499,
+          "product_url": "https://www.flipkart.com/prestige-iris-plus-750-w-mixer-grinder/p/itme9705a691459a",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mixer-new/p/s/p/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.3,
+          "aiScore": 84
+        },
+        {
+          "asin": "A07",
+          "title": "Eureka Forbes Quick Clean Vacuum",
+          "brand": "Eureka Forbes",
+          "amazon_price": 4500,
+          "flipkart_price": 3999,
+          "product_url": "https://www.flipkart.com/eureka-forbes-quick-clean-dx-vacuum-cleaner-with-reusable-dust-bag-compact-powerful-1200-watts/p/itm298817757912d",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/vacuum-new/p/s/p/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.2,
+          "aiScore": 81
+        },
+        {
+          "asin": "A08",
+          "title": "Philips GC1905 Steam Iron",
+          "brand": "Philips",
+          "amazon_price": 2200,
+          "flipkart_price": 1899,
+          "product_url": "https://www.flipkart.com/philips-gc1905-1440-w-steam-iron/p/itme9705a691459a",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/iron-new/p/s/p/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.4,
+          "aiScore": 87
+        },
+        {
+          "asin": "A09",
+          "title": "Kent Grand Plus RO Water Purifier",
+          "brand": "Kent",
+          "amazon_price": 18000,
+          "flipkart_price": 16990,
+          "product_url": "https://www.flipkart.com/kent-grand-plus-9-l-ro-uv-uf-tds-control-water-purifier/p/itm298817757912d",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/purifier-new/p/s/p/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.5,
+          "aiScore": 88
+        },
+        {
+          "asin": "A10",
+          "title": "Havells Monza EC 15 L Water Heater",
+          "brand": "Havells",
+          "amazon_price": 8500,
+          "flipkart_price": 7490,
+          "product_url": "https://www.flipkart.com/havells-monza-ec-15-l-storage-water-geyser/p/itme9705a691459a",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/geyser-new/p/s/p/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.3,
+          "aiScore": 83
+        }
+      ]
+    },
+    {
+      "slug": "gaming",
+      "name": "Gaming",
+      "emoji": "🎮",
+      "products": [
+        {
+          "asin": "G01",
+          "title": "Sony PS5 Console Slim Edition",
+          "brand": "Sony",
+          "amazon_price": 54990,
+          "flipkart_price": 52240,
+          "product_url": "https://www.flipkart.com/sony-playstation5-console-slim-cfi-2008a01x-1024-gb/p/itmb4984d6b677a2",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/gaming-console/t/v/v/-original-imagyxe54pzeayp5.jpeg",
+          "rating": 4.8,
+          "aiScore": 97
+        },
+        {
+          "asin": "G02",
+          "title": "Nintendo Switch OLED Model",
+          "brand": "Nintendo",
+          "amazon_price": 32000,
+          "flipkart_price": 30499,
+          "product_url": "https://www.flipkart.com/nintendo-switch-oled-model-neon-blue-red-joy-con/p/itmdb95740f3706d",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/gaming-console/t/v/v/-original-imagyxe54pzeayp5.jpeg",
+          "rating": 4.7,
+          "aiScore": 95
+        },
+        {
+          "asin": "G03",
+          "title": "Sony DualSense Wireless Controller",
+          "brand": "Sony",
+          "amazon_price": 5990,
+          "flipkart_price": 5490,
+          "product_url": "https://www.flipkart.com/sony-dualsense-wireless-controller/p/itmb4984d6b677a2",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/gaming-accessory/t/v/v/-original-imagyxe54pzeayp5.jpeg",
+          "rating": 4.6,
+          "aiScore": 92
+        },
+        {
+          "asin": "G04",
+          "title": "Xbox Wireless Controller (Carbon Black)",
+          "brand": "Microsoft",
+          "amazon_price": 5500,
+          "flipkart_price": 4999,
+          "product_url": "https://www.flipkart.com/xbox-wireless-controller-carbon-black/p/itmdb95740f3706d",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/gaming-accessory/t/v/v/-original-imagyxe54pzeayp5.jpeg",
+          "rating": 4.5,
+          "aiScore": 91
+        },
+        {
+          "asin": "G05",
+          "title": "Razer DeathAdder Essential Mouse",
+          "brand": "Razer",
+          "amazon_price": 1499,
+          "flipkart_price": 1299,
+          "product_url": "https://www.flipkart.com/razer-deathadder-essential-wired-gaming-mouse/p/itmb4984d6b677a2",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mouse/t/v/v/-original-imagyxe54pzeayp5.jpeg",
+          "rating": 4.3,
+          "aiScore": 85
+        },
+        {
+          "asin": "G06",
+          "title": "Logitech G502 Hero Gaming Mouse",
+          "brand": "Logitech",
+          "amazon_price": 4500,
+          "flipkart_price": 3999,
+          "product_url": "https://www.flipkart.com/logitech-g502-hero-wired-gaming-mouse/p/itmdb95740f3706d",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/mouse/t/v/v/-original-imagyxe54pzeayp5.jpeg",
+          "rating": 4.6,
+          "aiScore": 94
+        },
+        {
+          "asin": "G07",
+          "title": "SteelSeries Arctis 7 Wireless",
+          "brand": "SteelSeries",
+          "amazon_price": 14000,
+          "flipkart_price": 12990,
+          "product_url": "https://www.flipkart.com/steelseries-arctis-7-wireless-gaming-headset/p/itmb4984d6b677a2",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/headphone/t/v/v/-original-imagyxe54pzeayp5.jpeg",
+          "rating": 4.4,
+          "aiScore": 89
+        },
+        {
+          "asin": "G08",
+          "title": "HP OMEN Gaming Keyboard",
+          "brand": "HP",
+          "amazon_price": 4200,
+          "flipkart_price": 3890,
+          "product_url": "https://www.flipkart.com/hp-omen-encoder-wired-gaming-keyboard/p/itmdb95740f3706d",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/keyboard/t/v/v/-original-imagyxe54pzeayp5.jpeg",
+          "rating": 4.3,
+          "aiScore": 86
+        },
+        {
+          "asin": "G09",
+          "title": "Cosmic Byte CB-GK-16 Keyboard",
+          "brand": "Cosmic Byte",
+          "amazon_price": 2500,
+          "flipkart_price": 2199,
+          "product_url": "https://www.flipkart.com/cosmic-byte-cb-gk-16-firefly-mechanical-keyboard/p/itmb4984d6b677a2",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/keyboard/t/v/v/-original-imagyxe54pzeayp5.jpeg",
+          "rating": 4.1,
+          "aiScore": 82
+        },
+        {
+          "asin": "G10",
+          "title": "HyperX Cloud Core Gaming Headset",
+          "brand": "HyperX",
+          "amazon_price": 6500,
+          "flipkart_price": 5999,
+          "product_url": "https://www.flipkart.com/hyperx-cloud-core-wired-gaming-headset/p/itmdb95740f3706d",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/headphone/t/v/v/-original-imagyxe54pzeayp5.jpeg",
+          "rating": 4.5,
+          "aiScore": 90
+        }
+      ]
+    },
+    {
+      "slug": "footwear",
+      "name": "Footwear",
+      "emoji": "👟",
+      "products": [
+        {
+          "asin": "F01",
+          "title": "Puma Men's Smashic Sneakers",
+          "brand": "Puma",
+          "amazon_price": 2499,
+          "flipkart_price": 1999,
+          "product_url": "https://www.flipkart.com/puma-smashic-v2-sneakers-for-men/p/itm6d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shoe/7/z/r/8-389083-8-puma-black-white-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.2,
+          "aiScore": 85
+        },
+        {
+          "asin": "F02",
+          "title": "Adidas Adi-Bounce Running Shoes",
+          "brand": "Adidas",
+          "amazon_price": 3500,
+          "flipkart_price": 2999,
+          "product_url": "https://www.flipkart.com/adidas-adi-bounce-m-running-shoes-for-men/p/itm6d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shoe/s/g/m/-original-imaega8phqh6tf4e.jpeg",
+          "rating": 4.3,
+          "aiScore": 88
+        },
+        {
+          "asin": "F03",
+          "title": "Nike Revolution 6 Running Shoes",
+          "brand": "Nike",
+          "amazon_price": 4200,
+          "flipkart_price": 3690,
+          "product_url": "https://www.flipkart.com/nike-revolution-6-next-nature-road-running-shoes-for-men/p/itm6d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shoe/7/z/r/8-389083-8-puma-black-white-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.4,
+          "aiScore": 91
+        },
+        {
+          "asin": "F04",
+          "title": "Skechers Go Walk Max Sneakers",
+          "brand": "Skechers",
+          "amazon_price": 5500,
+          "flipkart_price": 4990,
+          "product_url": "https://www.flipkart.com/skechers-go-walk-max-sneakers-for-men/p/itm6d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shoe/s/g/m/-original-imaega8phqh6tf4e.jpeg",
+          "rating": 4.5,
+          "aiScore": 93
+        },
+        {
+          "asin": "F05",
+          "title": "Bata Men's Formal Oxford Shoes",
+          "brand": "Bata",
+          "amazon_price": 1500,
+          "flipkart_price": 1299,
+          "product_url": "https://www.flipkart.com/bata-men-s-derby-formal-shoes/p/itm6d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shoe/7/z/r/8-389083-8-puma-black-white-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.1,
+          "aiScore": 80
+        },
+        {
+          "asin": "F06",
+          "title": "Red Tape Men's Walking Shoes",
+          "brand": "Red Tape",
+          "amazon_price": 1800,
+          "flipkart_price": 1499,
+          "product_url": "https://www.flipkart.com/red-tape-men-s-walking-shoes/p/itm6d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shoe/s/g/m/-original-imaega8phqh6tf4e.jpeg",
+          "rating": 4.2,
+          "aiScore": 84
+        },
+        {
+          "asin": "F07",
+          "title": "Campus North Running Shoes",
+          "brand": "Campus",
+          "amazon_price": 1200,
+          "flipkart_price": 999,
+          "product_url": "https://www.flipkart.com/campus-north-running-shoes-for-men/p/itm6d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shoe/7/z/r/8-389083-8-puma-black-white-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.1,
+          "aiScore": 82
+        },
+        {
+          "asin": "F08",
+          "title": "Crocs Classic Unisex Clogs",
+          "brand": "Crocs",
+          "amazon_price": 2995,
+          "flipkart_price": 2490,
+          "product_url": "https://www.flipkart.com/crocs-classic-clogs-for-men-women/p/itm6d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shoe/s/g/m/-original-imaega8phqh6tf4e.jpeg",
+          "rating": 4.4,
+          "aiScore": 90
+        },
+        {
+          "asin": "F09",
+          "title": "Woodland Men's Leather Boots",
+          "brand": "Woodland",
+          "amazon_price": 4500,
+          "flipkart_price": 3890,
+          "product_url": "https://www.flipkart.com/woodland-leather-boots-for-men/p/itm6d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shoe/7/z/r/8-389083-8-puma-black-white-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.3,
+          "aiScore": 87
+        },
+        {
+          "asin": "F10",
+          "title": "Sparx SM-651 Running Shoes",
+          "brand": "Sparx",
+          "amazon_price": 999,
+          "flipkart_price": 849,
+          "product_url": "https://www.flipkart.com/sparx-sm-651-running-shoes-for-men/p/itm6d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shoe/s/g/m/-original-imaega8phqh6tf4e.jpeg",
+          "rating": 4.0,
+          "aiScore": 79
+        }
+      ]
+    },
+    {
+      "slug": "skincare",
+      "name": "Skincare",
+      "emoji": "✨",
+      "products": [
+        {
+          "asin": "SK01",
+          "title": "Simple Kind To Skin Face Wash",
+          "brand": "Simple",
+          "amazon_price": 385,
+          "flipkart_price": 264,
+          "product_url": "https://www.flipkart.com/simple-kind-skin-refreshing-facial-wash-face/p/itm7e66860368291",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/face-wash/s/i/m/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.5,
+          "aiScore": 90
+        },
+        {
+          "asin": "SK02",
+          "title": "Dot & Key CICA Face Wash",
+          "brand": "Dot & Key",
+          "amazon_price": 450,
+          "flipkart_price": 399,
+          "product_url": "https://www.flipkart.com/dot-key-cica-calming-niacinamide-face-wash/p/itm7e66860368291",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/face-wash/s/i/m/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.4,
+          "aiScore": 88
+        },
+        {
+          "asin": "SK03",
+          "title": "Minimalist SPF 50 Sunscreen",
+          "brand": "Minimalist",
+          "amazon_price": 399,
+          "flipkart_price": 379,
+          "product_url": "https://www.flipkart.com/minimalist-spf-50-multi-vitamin-sunscreen/p/itm7e66860368291",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/sunscreen/s/i/m/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.6,
+          "aiScore": 92
+        },
+        {
+          "asin": "SK04",
+          "title": "Cetaphil Gentle Skin Cleanser",
+          "brand": "Cetaphil",
+          "amazon_price": 550,
+          "flipkart_price": 499,
+          "product_url": "https://www.flipkart.com/cetaphil-gentle-skin-cleanser/p/itm7e66860368291",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/face-wash/s/i/m/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.7,
+          "aiScore": 94
+        },
+        {
+          "asin": "SK05",
+          "title": "The Derma Co 10% Niacinamide Serum",
+          "brand": "The Derma Co",
+          "amazon_price": 599,
+          "flipkart_price": 549,
+          "product_url": "https://www.flipkart.com/the-derma-co-10-niacinamide-serum/p/itm7e66860368291",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/serum/s/i/m/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.4,
+          "aiScore": 87
+        },
+        {
+          "asin": "SK06",
+          "title": "Mamaearth Vitamin C Face Moisturizer",
+          "brand": "Mamaearth",
+          "amazon_price": 350,
+          "flipkart_price": 299,
+          "product_url": "https://www.flipkart.com/mamaearth-vitamin-c-face-moisturizer/p/itm7e66860368291",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/moisturizer/s/i/m/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.2,
+          "aiScore": 84
+        },
+        {
+          "asin": "SK07",
+          "title": "Ponds Super Light Gel 150g",
+          "brand": "Ponds",
+          "amazon_price": 440,
+          "flipkart_price": 349,
+          "product_url": "https://www.flipkart.com/ponds-super-light-gel-oil-free-moisturizer/p/itm7e66860368291",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/moisturizer/s/i/m/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.5,
+          "aiScore": 89
+        },
+        {
+          "asin": "SK08",
+          "title": "Neutrogena Hydro Boost Water Gel",
+          "brand": "Neutrogena",
+          "amazon_price": 1100,
+          "flipkart_price": 990,
+          "product_url": "https://www.flipkart.com/neutrogena-hydro-boost-water-gel/p/itm7e66860368291",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/moisturizer/s/i/m/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.6,
+          "aiScore": 93
+        },
+        {
+          "asin": "SK09",
+          "title": "L'Oreal Paris Revitalift Serum",
+          "brand": "L'Oreal",
+          "amazon_price": 850,
+          "flipkart_price": 749,
+          "product_url": "https://www.flipkart.com/l-oreal-paris-revitalift-1-5-hyaluronic-acid-serum/p/itm7e66860368291",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/serum/s/i/m/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.5,
+          "aiScore": 91
+        },
+        {
+          "asin": "SK10",
+          "title": "Lakme Peach Milk Moisturizer",
+          "brand": "Lakme",
+          "amazon_price": 290,
+          "flipkart_price": 215,
+          "product_url": "https://www.flipkart.com/lakme-peach-milk-soft-creme/p/itm7e66860368291",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/moisturizer/s/i/m/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.3,
+          "aiScore": 85
+        }
+      ]
+    },
+    {
+      "slug": "fashion",
+      "name": "Fashion",
+      "emoji": "👗",
+      "products": [
+        {
+          "asin": "FA01",
+          "title": "Highlander Regular Men Trousers",
+          "brand": "Highlander",
+          "amazon_price": 999,
+          "flipkart_price": 666,
+          "product_url": "https://www.flipkart.com/highlander-regular-fit-men-brown-trousers/p/itm5d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/trouser/b/r/n/-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.0,
+          "aiScore": 78
+        },
+        {
+          "asin": "FA02",
+          "title": "Roadster Cotton Men Checked Shirt",
+          "brand": "Roadster",
+          "amazon_price": 850,
+          "flipkart_price": 599,
+          "product_url": "https://www.flipkart.com/roadster-men-checkered-casual-shirt/p/itm5d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shirt/b/r/n/-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.1,
+          "aiScore": 82
+        },
+        {
+          "asin": "FA03",
+          "title": "Levi's 511 Slim Fit Men Jeans",
+          "brand": "Levi's",
+          "amazon_price": 2800,
+          "flipkart_price": 2199,
+          "product_url": "https://www.flipkart.com/levi-s-511-slim-fit-men-jeans/p/itm5d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/jean/b/r/n/-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.4,
+          "aiScore": 91
+        },
+        {
+          "asin": "FA04",
+          "title": "Allen Solly Cotton Men Polo T-Shirt",
+          "brand": "Allen Solly",
+          "amazon_price": 1200,
+          "flipkart_price": 899,
+          "product_url": "https://www.flipkart.com/allen-solly-men-solid-polo-neck-t-shirt/p/itm5d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/t-shirt/b/r/n/-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.2,
+          "aiScore": 87
+        },
+        {
+          "asin": "FA05",
+          "title": "U.S. Polo Assn Men Cotton Shirt",
+          "brand": "U.S. Polo Assn",
+          "amazon_price": 2200,
+          "flipkart_price": 1699,
+          "product_url": "https://www.flipkart.com/u-s-polo-assn-men-solid-casual-shirt/p/itm5d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shirt/b/r/n/-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.3,
+          "aiScore": 89
+        },
+        {
+          "asin": "FA06",
+          "title": "Biba Women Printed Cotton Kurta",
+          "brand": "Biba",
+          "amazon_price": 1800,
+          "flipkart_price": 1399,
+          "product_url": "https://www.flipkart.com/biba-women-printed-kurta/p/itm5d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/kurta/b/r/n/-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.4,
+          "aiScore": 90
+        },
+        {
+          "asin": "FA07",
+          "title": "Libas Women Rayon Kurta Set",
+          "brand": "Libas",
+          "amazon_price": 1600,
+          "flipkart_price": 1199,
+          "product_url": "https://www.flipkart.com/libas-women-kurta-and-palazzo-set/p/itm5d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/kurta/b/r/n/-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.2,
+          "aiScore": 85
+        },
+        {
+          "asin": "FA08",
+          "title": "FabIndia Silk Women Saree",
+          "brand": "FabIndia",
+          "amazon_price": 4500,
+          "flipkart_price": 3890,
+          "product_url": "https://www.flipkart.com/fabindia-women-silk-saree/p/itm5d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/saree/b/r/n/-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.5,
+          "aiScore": 93
+        },
+        {
+          "asin": "FA09",
+          "title": "Killer Men's Skinny Jeans",
+          "brand": "Killer",
+          "amazon_price": 1900,
+          "flipkart_price": 1549,
+          "product_url": "https://www.flipkart.com/killer-men-skinny-fit-jeans/p/itm5d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/jean/b/r/n/-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.1,
+          "aiScore": 81
+        },
+        {
+          "asin": "FA10",
+          "title": "Peter England Men Formal Shirt",
+          "brand": "Peter England",
+          "amazon_price": 1100,
+          "flipkart_price": 799,
+          "product_url": "https://www.flipkart.com/peter-england-men-solid-formal-shirt/p/itm5d8636e0d8682",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/shirt/b/r/n/-original-imagg5jy7v9qyz9u.jpeg",
+          "rating": 4.3,
+          "aiScore": 88
+        }
+      ]
+    }
+  ]
+}

@@ -325,6 +325,7 @@ const {
 } = require("../utils/redis");
 const { CATEGORIES } = require("../cron/categoryPreloader");
 const logger = require("../utils/logger");
+const { getMockResults } = require("../utils/mockData");
 
 // FIX 1: prisma is injected from server.js via setPrisma()
 // Never create new PrismaClient() here — use the shared instance
@@ -496,13 +497,18 @@ async function runSearchAgent(query, category = "") {
       `(Amazon:${amazonProducts.length} Flipkart:${flipkartProducts.length} Myntra:${myntraProducts.length})`,
   );
 
-  // FIX 3: If ALL platforms return empty, something is wrong
-  // Log a clear warning so the developer knows immediately
+  // FIX 3: If ALL platforms return empty, fall back to mock_products.json
   if (allProducts.length === 0) {
     logger.warn(`Agent: ⚠️  ALL platforms returned 0 products for "${query}"`);
-    logger.warn(
-      "Agent: Check ScraperAPI key, Amazon API keys, and network connectivity",
-    );
+    const mockResults = getMockResults(query, category);
+    if (mockResults.length > 0) {
+      logger.info(`Agent: serving ${mockResults.length} mock products as fallback`);
+      // Cache mock results so subsequent searches hit Tier 1
+      cacheResults(query, category, mockResults).catch((err) =>
+        logger.warn(`Agent: mock→cache failed: ${err.message}`),
+      );
+      return { results: mockResults, fromCache: false, source: "mock_fallback" };
+    }
     return { results: [], fromCache: false, error: "no_products_found" };
   }
 

@@ -1,0 +1,101 @@
+{
+  "info": {
+    "name": "Bestpickr API Collection",
+    "_postman_id": "bestpickr-api-collection",
+    "description": "Postman collection for testing Bestpickr APIs",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Categories",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/categories",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "categories"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Search Products",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/search?q=iphone&category=mobiles",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "search"
+          ],
+          "query": [
+            {
+              "key": "q",
+              "value": "iphone"
+            },
+            {
+              "key": "category",
+              "value": "mobiles"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Top Products",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/products/top?category=headphones&limit=10",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "products",
+            "top"
+          ],
+          "query": [
+            {
+              "key": "category",
+              "value": "headphones"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://bestpickr.in/api"
+    }
+  ]
+}

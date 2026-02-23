@@ -47,7 +47,9 @@ api.interceptors.response.use(
 // ── API METHODS ────────────────────────────────────────────────────
 
 export const searchProducts = (query, category = "") =>
-  api.post("/search", { query, category }).then((r) => r.data);
+  api
+    .post("/search", { query, category }, { timeout: 90000 })
+    .then((r) => r.data);
 
 export const getSuggestions = (q) =>
   api.get("/search/suggestions", { params: { q } }).then((r) => r.data);

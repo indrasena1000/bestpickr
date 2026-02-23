@@ -21,7 +21,7 @@ export function useSearch() {
     try {
       const data = await searchProducts(query.trim(), category)
       setResults(data.results || [])
-      setMeta({ fromCache: data.fromCache, elapsed: data.elapsed_ms, platforms: data.platforms })
+      setMeta({ fromCache: data.cached, elapsed: data.elapsed_ms, platforms: data.platforms, source: data.source, cacheSource: data.cacheSource })
     } catch (err) {
       setError(err.response?.data?.error || 'Search failed. Please try again.')
     } finally {
