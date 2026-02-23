@@ -56,13 +56,17 @@ const {
   runAnalysisPipeline,
   buildProductResponse,
 } = require("../pipeline/analysisPipeline");
-const { SearchCache, ProductListing } = require("../models");
+const { SearchCache, ProductListing, ProductAnalysis } = require("../models");
 const {
   getCachedResults,
   cacheResults,
   getClient: getRedis,
 } = require("../utils/redis");
 const { normalize, buildSearchKey } = require("../utils/queryNormalizer");
+const {
+  getMockProductsForSearch,
+  buildMockAnalysis,
+} = require("../utils/mockData");
 const logger = require("../utils/logger");
 
 // ── Config
@@ -362,8 +366,14 @@ async function upsertProductListing(
       amazonRating: amazonProduct.rating || null,
       amazonReviewCount: amazonProduct.reviewCount || 0,
 
-      flipkartPrice: cuelinksData?.flipkart?.price || null,
-      flipkartUrl: cuelinksData?.flipkart?.affiliateUrl || null,
+      flipkartPrice:
+        cuelinksData?.flipkart?.price ||
+        amazonProduct._flipkartPrice ||
+        null,
+      flipkartUrl:
+        cuelinksData?.flipkart?.affiliateUrl ||
+        amazonProduct._flipkartUrl ||
+        null,
       myntraPrice: cuelinksData?.myntra?.price || null,
       myntraUrl: cuelinksData?.myntra?.affiliateUrl || null,
 
@@ -381,6 +391,50 @@ async function upsertProductListing(
   }
 }
 
+// ── Save mock analysis to MongoDB ProductAnalysis ───────────────
+// For mock products, the analysis pipeline is skipped (no review scraping).
+// We still want the analysis data in MongoDB so cache rebuilds include it.
+async function saveToMongoAnalysis(asin, productName, category, brand, analysis) {
+  try {
+    if (mongoose.connection.readyState !== 1) return;
+
+    await ProductAnalysis.findOneAndUpdate(
+      { asin: asin.toUpperCase() },
+      {
+        $set: {
+          asin: asin.toUpperCase(),
+          productName,
+          category: category?.toLowerCase() || "general",
+          brand: brand || null,
+          aiScore: analysis.aiScore,
+          aspectScores: analysis.aspectScores || {},
+          overallSentiment: analysis.overallSentiment || {},
+          whatPeopleLove: analysis.whatPeopleLove || [],
+          commonComplaints: analysis.commonComplaints || [],
+          redFlags: analysis.redFlags || [],
+          buyRecommendation: analysis.buyRecommendation || null,
+          avoidIf: analysis.avoidIf || null,
+          authenticityBadge: analysis.authenticityBadge || "medium",
+          authenticityFlags: analysis.authenticityFlags || [],
+          reviewsAnalyzed: analysis.reviewsAnalyzed || 0,
+          confidenceLevel: analysis.confidenceLevel || "medium",
+          analysisDate: new Date(),
+          lastUpdated: new Date(),
+        },
+      },
+      { upsert: true, new: true, runValidators: true },
+    ).exec();
+
+    logger.info(
+      `🔍 MongoDB: mock analysis saved for ${asin} — aiScore=${analysis.aiScore}`,
+    );
+  } catch (err) {
+    logger.warn(
+      `🔍 MongoDB: mock analysis save failed for ${asin} — ${err.message}`,
+    );
+  }
+}
+
 // ═════════════════════════════════════════════════════════════════
 // PRODUCT ENRICHMENT — runs per-product in parallel
 // ═════════════════════════════════════════════════════════════════
@@ -395,6 +449,7 @@ async function enrichProduct(amazonProduct, category) {
   const productName = amazonProduct.name || amazonProduct.title;
   const brand = amazonProduct.brand;
   const reviewCount = amazonProduct.reviewCount || 0;
+  const isMock = amazonProduct._mockSource === true;
 
   if (!asin) {
     logger.warn(
@@ -403,57 +458,88 @@ async function enrichProduct(amazonProduct, category) {
     return null;
   }
 
-  logger.info(`🔍 Enrichment: starting ${asin} "${productName?.slice(0, 50)}"`);
+  logger.info(
+    `🔍 Enrichment: starting ${asin} "${productName?.slice(0, 50)}"` +
+      (isMock ? " (mock)" : ""),
+  );
 
-  // ── Run analysis + Cuelinks in parallel ─────────────────────
-  // Both are independent — no reason to run sequentially.
-  // ANALYSIS_TIMEOUT_MS cap: if GPT is slow, we return partial data,
-  // not a hung request. The stale analysis from MongoDB is the fallback.
+  let analysis = null;
+  let cuelinks = null;
 
-  const [analysisResult, cuelinksResult] = await Promise.allSettled([
-    // Analysis pipeline: MongoDB check → review scrape → GPT → save
-    withTimeout(
-      runAnalysisPipeline(asin, productName, category || "general", {
-        currentReviewCount: reviewCount,
-        brand,
-      }),
-      ANALYSIS_TIMEOUT_MS,
-      `Analysis timeout for ${asin}`,
-    ),
+  if (isMock) {
+    // ── MOCK PATH: skip scraper + GPT, use pre-built analysis ───
+    // Mock ASINs (H01, S03, etc.) aren't real Amazon ASINs.
+    // Scraping reviews for them wastes ScraperAPI credits (5 pages × 3 retries)
+    // and GPT never runs because 0 reviews are found.
+    // Instead: generate analysis from mock data's rating + aiScore.
+    analysis = buildMockAnalysis(amazonProduct);
 
-    // Cuelinks: search Flipkart/Myntra, match product, get affiliate URLs
-    withTimeout(
-      getAffiliateLinks(asin, productName, brand, category),
-      10000, // Cuelinks is faster — 10s cap
-      `Cuelinks timeout for ${asin}`,
-    ),
-  ]);
+    // Still try Cuelinks for affiliate links (searches by product name)
+    try {
+      cuelinks = await withTimeout(
+        getAffiliateLinks(asin, productName, brand, category),
+        10000,
+        `Cuelinks timeout for ${asin}`,
+      );
+    } catch (err) {
+      logger.warn(
+        `🔍 Enrichment: Cuelinks failed for mock ${asin} — ${err.message}`,
+      );
+    }
 
-  // Extract results (fulfilled = success, rejected = failure)
-  const analysis =
-    analysisResult.status === "fulfilled" ? analysisResult.value : null;
-  const cuelinks =
-    cuelinksResult.status === "fulfilled" ? cuelinksResult.value : null;
-
-  if (analysisResult.status === "rejected") {
-    logger.warn(
-      `🔍 Enrichment: analysis failed for ${asin} — ${analysisResult.reason?.message}`,
+    logger.info(
+      `🔍 Enrichment: mock analysis built for ${asin} — aiScore=${analysis.aiScore}`,
     );
-  }
-  if (cuelinksResult.status === "rejected") {
-    logger.warn(
-      `🔍 Enrichment: Cuelinks failed for ${asin} — ${cuelinksResult.reason?.message}`,
-    );
+  } else {
+    // ── REAL PATH: full analysis pipeline + Cuelinks in parallel ──
+    const [analysisResult, cuelinksResult] = await Promise.allSettled([
+      // Analysis pipeline: MongoDB check → review scrape → GPT → save
+      withTimeout(
+        runAnalysisPipeline(asin, productName, category || "general", {
+          currentReviewCount: reviewCount,
+          brand,
+        }),
+        ANALYSIS_TIMEOUT_MS,
+        `Analysis timeout for ${asin}`,
+      ),
+
+      // Cuelinks: search Flipkart/Myntra, match product, get affiliate URLs
+      withTimeout(
+        getAffiliateLinks(asin, productName, brand, category),
+        10000,
+        `Cuelinks timeout for ${asin}`,
+      ),
+    ]);
+
+    analysis =
+      analysisResult.status === "fulfilled" ? analysisResult.value : null;
+    cuelinks =
+      cuelinksResult.status === "fulfilled" ? cuelinksResult.value : null;
+
+    if (analysisResult.status === "rejected") {
+      logger.warn(
+        `🔍 Enrichment: analysis failed for ${asin} — ${analysisResult.reason?.message}`,
+      );
+    }
+    if (cuelinksResult.status === "rejected") {
+      logger.warn(
+        `🔍 Enrichment: Cuelinks failed for ${asin} — ${cuelinksResult.reason?.message}`,
+      );
+    }
   }
 
-  // ── Merge Cuelinks data into the Amazon product ──────────────
-  // cuelinksService returns { flipkart: {price, affiliateUrl, ...}, myntra: {...} }
+  // ── Merge Cuelinks data into the product ────────────────────
+  // For mock products: use pre-existing Flipkart data from mock_products.json
+  // as a fallback when Cuelinks doesn't find a match
   const enrichedProduct = {
     ...amazonProduct,
     asin,
-    // Cuelinks prices layered on top
-    flipkartPrice: cuelinks?.flipkart?.price || null,
-    flipkartUrl: cuelinks?.flipkart?.affiliateUrl || null,
+    flipkartPrice:
+      cuelinks?.flipkart?.price ||
+      (isMock ? amazonProduct._flipkartPrice : null),
+    flipkartUrl:
+      cuelinks?.flipkart?.affiliateUrl ||
+      (isMock ? amazonProduct._flipkartUrl : null),
     flipkartInStock: cuelinks?.flipkart?.inStock !== false,
     myntraPrice: cuelinks?.myntra?.price || null,
     myntraUrl: cuelinks?.myntra?.affiliateUrl || null,
@@ -462,9 +548,6 @@ async function enrichProduct(amazonProduct, category) {
   };
 
   // ── Build final formatted product object ─────────────────────
-  // buildProductResponse() from analysisPipeline.js merges listing + analysis.
-  // But we don't have a ProductListing doc yet at this point — so we build
-  // the response inline from the enrichedProduct data + analysis.
   const formatted = formatProductResult(enrichedProduct, analysis, null);
 
   if (!formatted) {
@@ -477,11 +560,21 @@ async function enrichProduct(amazonProduct, category) {
     logger.warn(`🔍 Enrichment: upsert failed for ${asin} — ${err.message}`),
   );
 
+  // ── Save mock analysis to MongoDB ProductAnalysis (non-blocking) ──
+  if (isMock && analysis) {
+    saveToMongoAnalysis(asin, productName, category, brand, analysis).catch(
+      (err) =>
+        logger.warn(
+          `🔍 Enrichment: mock analysis save failed for ${asin} — ${err.message}`,
+        ),
+    );
+  }
+
   logger.info(
     `🔍 Enrichment: ✅ ${asin} "${productName?.slice(0, 40)}" ` +
       `aiScore=${formatted.aiScore} ` +
-      `flipkart=${cuelinks?.flipkart?.price ? "₹" + cuelinks.flipkart.price : "null"} ` +
-      `myntra=${cuelinks?.myntra?.price ? "₹" + cuelinks.myntra.price : "null"}`,
+      `flipkart=${enrichedProduct.flipkartPrice ? "₹" + enrichedProduct.flipkartPrice : "null"} ` +
+      `source=${isMock ? "mock" : "live"}`,
   );
 
   return formatted;
@@ -508,8 +601,8 @@ function formatProductResult(product, analysis, rank) {
   const asin = p.asin || p.platformId || null;
   if (!asin) return null;
 
-  // ── AI Score: from analysis or null ─────────────────────────
-  const aiScore = a?.aiScore ?? null;
+  // ── AI Score: from analysis, or mock's pre-computed score as fallback ──
+  const aiScore = a?.aiScore ?? p._mockAiScore ?? null;
 
   // ── Prices ──────────────────────────────────────────────────
   const amazonPrice = p.price || p.amazonPrice || null;
@@ -572,12 +665,95 @@ function formatProductResult(product, analysis, rank) {
   // ── Sentiment ────────────────────────────────────────────────
   const sentiment = a?.overallSentiment || null;
 
+  // ── Build platforms[] array (frontend iterates p.platforms) ──
+  const platforms = [];
+  const amazonRating = p.rating || p.amazonRating || null;
+  const amazonReviewCount = p.reviewCount || p.amazonReviewCount || 0;
+
+  if (amazonPrice) {
+    platforms.push({
+      name: "Amazon",
+      price: amazonPrice,
+      url: amazonUrl,
+      affiliateUrl: p.affiliateUrl || amazonUrl,
+      rating: amazonRating,
+      reviewCount: amazonReviewCount,
+      inStock: p.inStock !== false,
+    });
+  }
+  if (flipkartPrice) {
+    platforms.push({
+      name: "Flipkart",
+      price: flipkartPrice,
+      url: flipkartUrl,
+      affiliateUrl: flipkartUrl,
+      rating: p.flipkartRating || amazonRating || null,
+      reviewCount: p.flipkartReviewCount || 0,
+      inStock: p.flipkartInStock !== false,
+    });
+  }
+  if (myntraPrice) {
+    platforms.push({
+      name: "Myntra",
+      price: myntraPrice,
+      url: myntraUrl,
+      affiliateUrl: myntraUrl,
+      rating: p.myntraRating || null,
+      reviewCount: p.myntraReviewCount || 0,
+      inStock: p.myntraInStock !== false,
+    });
+  }
+
+  // ── Compute lowestPrice / highestPrice from platforms ──
+  const allPlatformPrices = platforms.map((pl) => pl.price).filter(Boolean);
+  const lowestPrice = allPlatformPrices.length
+    ? Math.min(...allPlatformPrices)
+    : amazonPrice || null;
+  const highestPrice = allPlatformPrices.length
+    ? Math.max(...allPlatformPrices)
+    : amazonPrice || null;
+
+  // ── Aggregate review stats across platforms ──
+  const totalReviews = platforms.reduce(
+    (sum, pl) => sum + (pl.reviewCount || 0),
+    0,
+  );
+  const avgRating =
+    platforms.filter((pl) => pl.rating).length > 0
+      ? +(
+          platforms.reduce((sum, pl) => sum + (pl.rating || 0), 0) /
+          platforms.filter((pl) => pl.rating).length
+        ).toFixed(1)
+      : amazonRating || null;
+
+  // ── Sentiment percentages (frontend uses p.positivePct) ──
+  const positivePct = sentiment
+    ? Math.round(sentiment.positive || 0)
+    : a?.positivePct || p.positivePct || 75;
+
+  // ── AI Score breakdown (frontend uses p.breakdown) ──
+  const breakdown = a?.breakdown || {
+    ratingScore: avgRating ? +(avgRating * 2).toFixed(1) : aiScore || 0,
+    sentimentScore: positivePct ? +(positivePct / 10).toFixed(1) : aiScore || 0,
+    valueScore: aiScore ? +(aiScore * 0.85).toFixed(1) : 0,
+    volumeScore: totalReviews > 1000 ? 9 : totalReviews > 100 ? 7 : 5,
+  };
+
+  // ── praiseSummary / complaintSummary (strings joined by "·") ──
+  const whatPeopleLove = a?.whatPeopleLove || [];
+  const commonComplaints = a?.commonComplaints || [];
+  const praiseSummary =
+    whatPeopleLove.length > 0 ? whatPeopleLove.join(" · ") : null;
+  const complaintSummary =
+    commonComplaints.length > 0 ? commonComplaints.join(" · ") : null;
+
   return {
     rank: rank,
     asin,
-    title: p.name || p.title || "Unknown Product",
+    platformId: asin,
+    name: p.name || p.title || "Unknown Product",
     brand: p.brand || null,
-    image: p.imageUrl || null,
+    imageUrl: p.imageUrl || p.image || null,
     category: p.category || null,
 
     // AI
@@ -585,27 +761,21 @@ function formatProductResult(product, analysis, rank) {
     authenticityBadge: a?.authenticityBadge || null,
     confidenceLevel: a?.confidenceLevel || null,
 
-    // Prices
-    prices: {
-      amazon: amazonPrice
-        ? { price: amazonPrice, url: amazonUrl, inStock: p.inStock !== false }
-        : null,
-      flipkart: flipkartPrice
-        ? {
-            price: flipkartPrice,
-            url: flipkartUrl,
-            inStock: p.flipkartInStock !== false,
-          }
-        : null,
-      myntra: myntraPrice
-        ? {
-            price: myntraPrice,
-            url: myntraUrl,
-            inStock: p.myntraInStock !== false,
-          }
-        : null,
-      bestDeal,
-    },
+    // Platforms array (frontend iterates p.platforms)
+    platforms,
+    lowestPrice,
+    highestPrice,
+
+    // Aggregate stats
+    totalReviews,
+    avgRating,
+    positivePct,
+
+    // AI Score breakdown
+    breakdown,
+
+    // Best deal
+    bestDeal,
 
     // Price history
     priceHistory: {
@@ -615,25 +785,16 @@ function formatProductResult(product, analysis, rank) {
       trend: priceTrend,
     },
 
-    // Sentiment breakdown
-    sentiment: sentiment
-      ? {
-          positive: Math.round(sentiment.positive || 0),
-          neutral: Math.round(sentiment.neutral || 0),
-          negative: Math.round(sentiment.negative || 0),
-        }
-      : null,
-
-    // AI insights
-    whatPeopleLove: a?.whatPeopleLove || [],
-    commonComplaints: a?.commonComplaints || [],
+    // AI insights (arrays + summary strings for frontend)
+    whatPeopleLove,
+    commonComplaints,
+    praiseSummary,
+    complaintSummary,
     aspectScores,
     buyRecommendation: a?.buyRecommendation || null,
     avoidIf: a?.avoidIf || null,
 
-    // Amazon platform stats
-    amazonRating: p.rating || p.amazonRating || null,
-    amazonReviewCount: p.reviewCount || p.amazonReviewCount || 0,
+    // Raw review stats
     reviewsAnalyzed: a?.reviewsAnalyzed || 0,
     analysisDate: a?.analysisDate || null,
   };
@@ -766,30 +927,39 @@ async function handleSearch(req, res) {
     logger.warn(`🔍 Search: MongoDB check threw — ${mongoErr.message}`);
   }
 
-  // ── STEP 4: Cache MISS — Fetch from Amazon PA-API ────────────
+  // ── STEP 4: Cache MISS — Fetch from Amazon PA-API (or mock fallback) ──
   logger.info(
     `🔍 Search: cache miss — fetching from Amazon PA-API for "${query}"`,
   );
 
   let amazonProducts = [];
+  let usingMockData = false;
+
   try {
     amazonProducts = await amazonService.searchProducts(query, category);
     logger.info(`🔍 Search: Amazon returned ${amazonProducts.length} products`);
   } catch (amazonErr) {
     logger.error(`🔍 Search: Amazon PA-API failed — ${amazonErr.message}`);
+  }
 
-    // Amazon is our only source for live data — if it fails, we can't continue
-    return res.status(502).json({
-      success: false,
-      error:
-        "Failed to fetch products from Amazon. Please try again in a moment.",
-      query: rawQuery,
-      elapsed_ms: Date.now() - requestStart,
-    });
+  // If Amazon returned nothing (no credentials, API error, or 0 results),
+  // fall back to mock_products.json so the full pipeline still runs
+  if (amazonProducts.length === 0) {
+    logger.warn(
+      `🔍 Search: Amazon returned 0 products — falling back to mock data`,
+    );
+    amazonProducts = getMockProductsForSearch(query, category);
+    usingMockData = amazonProducts.length > 0;
+
+    if (usingMockData) {
+      logger.info(
+        `🔍 Search: mock fallback loaded ${amazonProducts.length} products for "${query}"`,
+      );
+    }
   }
 
   if (amazonProducts.length === 0) {
-    logger.warn(`🔍 Search: Amazon returned 0 products for "${query}"`);
+    logger.warn(`🔍 Search: no products from Amazon or mock for "${query}"`);
     return res.status(404).json({
       success: false,
       error: "No products found. Try a different search term.",
@@ -841,7 +1011,7 @@ async function handleSearch(req, res) {
 
   logger.info(
     `🔍 Search: ranked ${ranked.length} products. ` +
-      `#1: "${ranked[0]?.title?.slice(0, 40)}" aiScore=${ranked[0]?.aiScore}`,
+      `#1: "${ranked[0]?.name?.slice(0, 40)}" aiScore=${ranked[0]?.aiScore}`,
   );
 
   // ── STEP 7: Save to Caches (non-blocking) ────────────────────
@@ -860,10 +1030,13 @@ async function handleSearch(req, res) {
 
   // ── STEP 8: Return Response ───────────────────────────────────
   const elapsed = Date.now() - requestStart;
-  req._searchLog.outcome = "live";
+  req._searchLog.outcome = usingMockData ? "mock_fallback" : "live";
   req._searchLog.resultCount = ranked.length;
 
-  logger.info(`🔍 Search: complete — ${ranked.length} results in ${elapsed}ms`);
+  logger.info(
+    `🔍 Search: complete — ${ranked.length} results in ${elapsed}ms` +
+      (usingMockData ? " (mock fallback)" : ""),
+  );
 
   return res.json({
     success: true,
@@ -873,6 +1046,7 @@ async function handleSearch(req, res) {
     totalResults: ranked.length,
     cached: false,
     cacheSource: null,
+    source: usingMockData ? "mock_fallback" : "live",
     lastUpdated: new Date().toISOString(),
     elapsed_ms: elapsed,
     results: ranked,
