@@ -32,7 +32,10 @@ input, select, textarea { font-size: 16px !important; }
 
 /* ─── RESET ─────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+/* overflow-x:clip prevents horizontal page scroll WITHOUT creating a scroll
+   container — so position:sticky (navbar) keeps working on all browsers.
+   Unlike overflow-x:hidden, clip does not affect formatting context. */
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth;overflow-x:clip}
 body{font-family:'DM Sans',sans-serif;background:#F7F7F5;color:#1A1A1A;line-height:1.5;-webkit-font-smoothing:antialiased}
 button{font-family:inherit;cursor:pointer;border:none;background:none}
 input,select{font-family:inherit}
@@ -232,6 +235,12 @@ a{text-decoration:none;color:inherit}
 .dh-score-sub{font-size:11px;color:var(--ink4)}
 .compare-title{font-size:15px;font-weight:700;color:var(--ink);letter-spacing:-.2px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
 .compare-title small{font-size:12px;font-weight:500;color:var(--ink4);letter-spacing:0}
+/* AI score breakdown label — desktop gets fixed width for alignment */
+.breakdown-label{font-size:12px;min-width:190px;flex-shrink:0}
+
+/* Scrollable wrapper — prevents table from blowing out the page on mobile */
+.compare-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:var(--r3);margin-bottom:0}
+.compare-table-wrap .compare-table{border:none;border-radius:0}
 .compare-table{background:var(--paper);border:1px solid var(--line);border-radius:var(--r3);overflow:hidden;width:100%;border-collapse:collapse}
 .compare-table thead tr{background:var(--paper2);border-bottom:1px solid var(--line)}
 .compare-table th{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3);padding:10px 16px;text-align:left}
@@ -389,10 +398,56 @@ footer{background:var(--paper);border-top:1px solid var(--line);padding:40px 0 2
   .picks-row>div:nth-child(3),.picks-row>div:nth-child(4),.picks-row>div:nth-child(5){display:none}
   .featured-grid{grid-template-columns:1fr}
   .admin-stat-grid{grid-template-columns:1fr 1fr}
-  .compare-table{font-size:12px}
-  .compare-table th,.compare-table td{padding:8px 8px}
-  .detail-layout{padding:16px 0 40px}
-  .bc{font-size:11px}
-  .dh-name{font-size:18px}
+  /* ── Detail page ─────────────────────────────── */
+  .detail-layout{padding:12px 0 40px}
+
+  /* Breadcrumb */
+  .bc{font-size:11px;gap:4px;flex-wrap:wrap}
+
+  /* Product header card */
+  .dh{padding:14px;margin-bottom:12px}
+  .dh-top{gap:14px;align-items:center}
+  .dh-emoji{
+    width:90px;height:90px;align-self:center;flex-shrink:0;
+    background:var(--paper);border:1.5px solid var(--line);
+  }
+  .dh-brand{font-size:10px}
+  .dh-name{font-size:17px;margin-bottom:8px}
+  .dh-badges{gap:5px}
+
+  /* Score cells — 2×2 with tighter padding */
+  .dh-scores{grid-template-columns:1fr 1fr}
+  .dh-score-cell{padding:10px 12px}
+  .dh-score-val{font-size:20px}
+  .dh-score-sub{font-size:10px}
+
+  /* Platform comparison table:
+     Make wrapper scrollable and hide Reviews column to save ~60px */
+  .compare-table-wrap{border-radius:var(--r2)}
+  .compare-table{font-size:12px;min-width:380px}
+  .compare-table th,.compare-table td{padding:9px 10px}
+  /* Hide Reviews column on mobile — count info shown elsewhere on page */
+  .compare-table th:nth-child(3),
+  .compare-table td:nth-child(3){display:none}
+
+  /* AI score breakdown label — let it size to content instead of forcing 200px */
+  .breakdown-label{flex:0 1 auto;white-space:nowrap;min-width:0;font-size:11px}
+
+  /* Review section */
+  .review-section{margin-bottom:12px}
+  .review-grid{padding:14px;gap:14px}
+  .review-big-num{font-size:44px}
+  .sent-lbl{min-width:68px;font-size:12px}
+  .sent-pct{min-width:28px;font-size:12px}
+  .rh-box{padding:10px 12px}
+  .rh-point{font-size:11px}
+
+  /* Buy card */
+  .buy-card-header{padding:14px 16px}
+  .buy-card-price{font-size:26px}
+  .buy-card-body{padding:12px 16px}
+  .buy-card-main-btn{font-size:14px;padding:12px}
+
+  /* Nav */
   .how-item{padding:0 16px}
 }
