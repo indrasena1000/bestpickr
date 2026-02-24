@@ -64,9 +64,9 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
             </span>
           </div>
 
-          {/* BUG #7 FIX: Search bar hidden on home page */}
+          {/* BUG #7 FIX: Search bar hidden on home page, hidden on mobile (drawer handles it) */}
           {!isHome && (
-            <div style={{ flex:1, maxWidth:480, position:'relative' }}>
+            <div className="nav-search-wrap" style={{ flex:1, maxWidth:480, position:'relative' }}>
               <form onSubmit={handleSubmit} className="nav-search">
                 <SearchIcon />
                 <input
@@ -109,8 +109,8 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
             </div>
           )}
 
-          {/* Spacer when on home page */}
-          {isHome && <div style={{ flex:1 }} />}
+          {/* Spacer when on home page or mobile (search is hidden) */}
+          {(isHome) && <div style={{ flex:1 }} />}
 
           {/* Desktop nav links */}
           <div className="nav-links">
@@ -144,7 +144,7 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
           {/* Mobile hamburger */}
           <button
             onClick={() => setMenu(m => !m)}
-            style={{ display:'none', flexDirection:'column', gap:5, padding:6, cursor:'pointer' }}
+            style={{ display:'none', flexDirection:'column', gap:5, padding:'6px 8px', cursor:'pointer', marginLeft:'auto' }}
             className="hbg-btn"
             aria-label="Menu"
           >
@@ -163,20 +163,21 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
           padding:'16px 20px', zIndex:99, boxShadow:'0 8px 24px rgba(0,0,0,.08)',
           boxSizing:'border-box',
         }}>
-          {!isHome && (
-            <form
-              onSubmit={e => { handleSubmit(e); setMenu(false) }}
-              style={{ display:'flex', alignItems:'center', gap:8, border:'1.5px solid var(--line)', borderRadius:'var(--r2)', padding:'9px 12px', marginBottom:12 }}
-            >
-              <SearchIcon />
-              <input
-                value={q}
-                onChange={e => setQ(e.target.value)}
-                placeholder="Search…"
-                style={{ flex:1, border:'none', outline:'none', fontSize:14, background:'transparent' }}
-              />
-            </form>
-          )}
+          <form
+            onSubmit={e => { handleSubmit(e); setMenu(false) }}
+            style={{ display:'flex', alignItems:'center', gap:8, border:'1.5px solid var(--line)', borderRadius:'var(--r2)', padding:'9px 12px', marginBottom:12 }}
+          >
+            <SearchIcon />
+            <input
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Search any product…"
+              style={{ flex:1, border:'none', outline:'none', fontSize:16, background:'transparent' }}
+            />
+            <button type="submit" style={{ background:'var(--accent)', color:'#fff', border:'none', borderRadius:'var(--r)', padding:'6px 14px', fontSize:13, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' }}>
+              Search
+            </button>
+          </form>
           <div
             onClick={() => { onHome(); setMenu(false) }}
             style={{ padding:'11px 8px', fontSize:14, fontWeight:600, color: currentPage==='home' ? 'var(--accent)' : 'var(--ink2)', cursor:'pointer', borderRadius:'var(--r)' }}
@@ -198,6 +199,7 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
           .hbg-btn { display:flex !important }
           .nav-links { display:none !important }
           .nav-search-btn { display:none }
+          .nav-search-wrap { display:none }
         }
         /* BUG #8 FIX: Ensure navbar covers full width regardless of zoom level */
         .navbar {

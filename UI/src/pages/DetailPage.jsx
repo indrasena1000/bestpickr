@@ -9,6 +9,7 @@ const fmt = (n) => (n ? `₹${Number(n).toLocaleString("en-IN")}` : "—");
 
 export default function DetailPage({ product: p, allResults, onBack, onHome }) {
   const [wishlisted, setWish] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
   if (!p) {
     return (
@@ -91,15 +92,17 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
           <div className="dh">
             <div className="dh-top">
               <div className="dh-emoji">
-                {p.imageUrl ? (
+                {p.imageUrl && !imgError ? (
                   <img
                     src={p.imageUrl}
                     alt={p.name}
+                    onError={() => setImgError(true)}
                     style={{
                       width: "100%",
                       height: "100%",
                       objectFit: "contain",
                       borderRadius: "var(--r2)",
+                      display: "block",
                     }}
                   />
                 ) : (
@@ -192,7 +195,15 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
                     key={label}
                     style={{ display: "flex", alignItems: "center", gap: 12 }}
                   >
-                    <span className="breakdown-label" style={{ fontWeight: 600, color: "var(--ink3)" }}>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: "var(--ink3)",
+                        minWidth: 'clamp(120px, 30%, 200px)',
+                        flexShrink: 0,
+                      }}
+                    >
                       {label}
                     </span>
                     <div
