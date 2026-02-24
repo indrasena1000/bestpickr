@@ -56,8 +56,6 @@ export default function AffiliateDisclosurePage({ onHome, onNav }) {
         {' '}bestpickr is a participant in the <strong>Amazon Associates Program</strong> — an affiliate
         advertising program designed to provide a means for sites to earn advertising fees by advertising
         and linking to Amazon.in and Amazon.com.
-        {' '}<strong>Amazon and the Amazon logo are trademarks of Amazon.com, Inc. or its affiliates.
-        bestpickr is an independent website and is not owned, operated, or endorsed by Amazon.</strong>
       </Callout>
       <ul style={{ paddingLeft:20, marginBottom:14 }}>
         <Li>We link directly to product pages on <strong>Amazon.in</strong> (India) via the Amazon Associates Program.</Li>
@@ -73,12 +71,19 @@ export default function AffiliateDisclosurePage({ onHome, onNav }) {
         <Li>We do not copy Amazon customer reviews verbatim, use Amazon's star rating graphics, or use phrases such as "Amazon's #1 Product", "Best on Amazon", or "Official Amazon Recommended".</Li>
         <Li>Affiliate links are never sent via email. Amazon prohibits the use of affiliate links in email communications and bestpickr complies with this requirement.</Li>
       </ul>
+      <P style={{ fontSize:13, color:'var(--ink3)', fontStyle:'italic' }}>
+        This disclosure may be updated periodically to remain compliant with changes to the Amazon
+        Associates Operating Agreement and applicable regulations.
+      </P>
 
       <H2>3. Other Affiliate Programs</H2>
       <P>In addition to Amazon, bestpickr participates in affiliate programs with:</P>
       <ul style={{ paddingLeft:20, marginBottom:14 }}>
         <Li><strong>Flipkart Affiliate Program</strong> — We link to products on Flipkart.com and may earn a commission on qualifying purchases.</Li>
         <Li><strong>Myntra Affiliate Program</strong> — We link to products on Myntra.com and may earn a commission on qualifying purchases.</Li>
+      </ul>
+      <ul style={{ paddingLeft:20, marginBottom:14 }}>
+        <Li>Product data from Flipkart and Myntra is displayed in accordance with their respective affiliate program policies.</Li>
       </ul>
       <P>All affiliate relationships are governed by the respective platform's affiliate program terms and conditions. bestpickr is independent of and not endorsed by Flipkart or Myntra.</P>
 
@@ -102,13 +107,19 @@ export default function AffiliateDisclosurePage({ onHome, onNav }) {
       <Callout icon="⚠️" bg='#FFF9E6' color='#B8860B' title="Always verify price before purchasing">
         <strong>Product prices and availability are accurate as of the date/time indicated and are subject
         to change. Any price and availability information displayed on the retailer's website at the time
-        of purchase will apply to the purchase of that product.</strong> bestpickr is not responsible for
-        pricing errors or changes that occur after data is fetched from retailer APIs.
+        of purchase will apply to the purchase of that product.</strong> Prices are provided for
+        informational purposes only. Final pricing is determined by the retailer at checkout. bestpickr
+        is not responsible for pricing errors or changes that occur after data is fetched from retailer APIs.
       </Callout>
       <P>
         bestpickr does not make any representations or warranties regarding products purchased through
         affiliate links. All product claims, guarantees, and warranties are provided solely by the retailer
         or manufacturer — not by bestpickr.
+      </P>
+      <P>
+        Content on bestpickr is for informational purposes only and does not constitute professional advice.
+        Always verify product specifications, compatibility, and suitability for your needs directly with
+        the retailer or manufacturer before purchasing.
       </P>
 
       <H2>6. Trademarks &amp; No Endorsement</H2>
