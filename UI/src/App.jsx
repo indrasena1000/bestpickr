@@ -27,6 +27,7 @@ import {
   AIScorePage, PriceAlertsPage,
   PrivacyPage, TermsPage,
 } from './pages/StaticPage.jsx'
+import AffiliateDisclosurePage from './components/AffiliateDisclosurePage.jsx'
 import BlogPage     from './pages/BlogPage.jsx'
 import BlogPostPage from './pages/BlogPostPage.jsx'
 import { matchSeoRoute } from './seoRoutes.js'
@@ -319,12 +320,13 @@ export default function App() {
   }
 
   const staticPages = {
-    'about':        <AboutPage        onHome={() => navigate('home')} onNav={navigate} />,
-    'how-it-works': <HowItWorksPage   onHome={() => navigate('home')} />,
-    'ai-score':     <AIScorePage      onHome={() => navigate('home')} />,
-    'price-alerts': <PriceAlertsPage  onHome={() => navigate('home')} />,
-    'privacy':      <PrivacyPage      onHome={() => navigate('home')} />,
-    'terms':        <TermsPage        onHome={() => navigate('home')} />,
+    'about':               <AboutPage              onHome={() => navigate('home')} onNav={navigate} />,
+    'how-it-works':        <HowItWorksPage         onHome={() => navigate('home')} />,
+    'ai-score':            <AIScorePage            onHome={() => navigate('home')} />,
+    'price-alerts':        <PriceAlertsPage        onHome={() => navigate('home')} />,
+    'privacy':             <PrivacyPage            onHome={() => navigate('home')} />,
+    'terms':               <TermsPage              onHome={() => navigate('home')} />,
+    'affiliate-disclosure':<AffiliateDisclosurePage onHome={() => navigate('home')} onNav={navigate} />,
   }
   if (staticPages[path]) {
     return (

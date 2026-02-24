@@ -98,11 +98,14 @@ export default function Footer({ onSearch, onNav, onAdmin }) {
             <div className="footer-links">
               <div className="footer-link" onClick={() => nav('privacy')}>Privacy Policy</div>
               <div className="footer-link" onClick={() => nav('terms')}>Terms of Service</div>
+              <div className="footer-link" onClick={() => nav('affiliate-disclosure')}>Affiliate Disclosure</div>
             </div>
             <div style={{ marginTop:20, background:'var(--accent-bg)', border:'1px solid #C8E6D4', borderRadius:'var(--r2)', padding:'12px 14px' }}>
               <div style={{ fontSize:11, fontWeight:700, color:'var(--accent)', marginBottom:5 }}>🛒 Affiliate Disclosure</div>
               <div style={{ fontSize:11, color:'var(--ink3)', lineHeight:1.6 }}>
-                We earn a small commission on qualifying purchases via affiliate links. Rankings are never influenced by this — products are ranked purely by our AI score.
+                As an Amazon Associate I earn from qualifying purchases.
+                We also earn commissions from Flipkart and Myntra affiliate links — at no extra cost to you. Rankings are never influenced by this.
+                {' '}<span onClick={() => nav('affiliate-disclosure')} style={{ color:'var(--accent)', cursor:'pointer', textDecoration:'underline' }}>Learn more</span>
               </div>
             </div>
           </div>
@@ -112,8 +115,9 @@ export default function Footer({ onSearch, onNav, onAdmin }) {
         {/* Bottom bar */}
         <div className="footer-bottom">
           <div>© {new Date().getFullYear()} bestpickr. All rights reserved.</div>
-          <div style={{ fontSize:11, color:'var(--ink4)' }}>
-            bestpickr is an independent product comparison platform. Not affiliated with Amazon, Flipkart or Myntra.
+          <div style={{ fontSize:11, color:'var(--ink4)', textAlign:'center', lineHeight:1.7 }}>
+            bestpickr is an independent product comparison platform, not affiliated with Amazon, Flipkart or Myntra.
+            bestpickr is a participant in the Amazon Associates Programme — an affiliate advertising programme that enables sites to earn fees by linking to Amazon.in.
           </div>
           {/* Hidden admin dot */}
           <div

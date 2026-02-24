@@ -2,16 +2,16 @@
 // All static pages: About, Blog, How it Works, AI Score, Price Alerts, Privacy, Terms
 import { useState } from 'react'
 
-const SITE_NAME = 'bestpickr'
-const SITE_URL  = 'https://bestpickr.vercel.app'
-const CONTACT   = 'hello@bestpickr.in'
-const TODAY     = new Date().toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' })
+export const SITE_NAME = 'bestpickr'
+export const SITE_URL  = 'https://bestpickr.in'
+export const CONTACT   = 'hello@bestpickr.in'
+export const TODAY     = new Date().toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' })
 
 // ─────────────────────────────────────────────────────────────────
 // SHARED LAYOUT COMPONENTS
 // ─────────────────────────────────────────────────────────────────
 
-function Shell({ title, subtitle, badge, children, onHome, wide }) {
+export function Shell({ title, subtitle, badge, children, onHome, wide }) {
   return (
     <div style={{ background:'var(--paper2)', minHeight:'80vh' }}>
       <div style={{ background:'var(--paper)', borderBottom:'1px solid var(--line)', padding:'36px 0 28px' }}>
@@ -38,19 +38,19 @@ function Shell({ title, subtitle, badge, children, onHome, wide }) {
   )
 }
 
-function H2({ children, mt }) {
+export function H2({ children, mt }) {
   return <h2 style={{ fontSize:18, fontWeight:700, color:'var(--ink)', marginBottom:10, marginTop: mt ?? 36, paddingBottom:10, borderBottom:'2px solid var(--line)', letterSpacing:'-.2px' }}>{children}</h2>
 }
-function H3({ children }) {
+export function H3({ children }) {
   return <h3 style={{ fontSize:15, fontWeight:700, color:'var(--ink)', marginBottom:6, marginTop:22 }}>{children}</h3>
 }
-function P({ children, style }) {
+export function P({ children, style }) {
   return <p style={{ fontSize:14, color:'var(--ink2)', lineHeight:1.85, marginBottom:14, ...style }}>{children}</p>
 }
-function Li({ children }) {
+export function Li({ children }) {
   return <li style={{ fontSize:14, color:'var(--ink2)', lineHeight:1.8, marginBottom:6 }}>{children}</li>
 }
-function Callout({ icon, color, bg, title, children }) {
+export function Callout({ icon, color, bg, title, children }) {
   return (
     <div style={{ background: bg || 'var(--accent-bg)', border:`1px solid ${color||'#C8E6D4'}`, borderRadius:'var(--r2)', padding:'16px 18px', marginBottom:14, display:'flex', gap:14 }}>
       <span style={{ fontSize:22, flexShrink:0, lineHeight:1 }}>{icon}</span>

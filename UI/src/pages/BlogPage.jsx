@@ -159,7 +159,7 @@ export default function BlogPage({ onSearch, onNav, maintenanceMode = false }) {
         </div>
       </div>
 
-      <div className="wrap" style={{ padding: '28px 20px 20px' }}>
+      <div className="wrap" style={{ padding: '28px 20px 0px' }}>
 
         {/* ── Tabs row ──────────────────────────────────────────── */}
         <div className="blog-cat-tabs" style={{ marginBottom: 16 }}>
@@ -411,7 +411,7 @@ export default function BlogPage({ onSearch, onNav, maintenanceMode = false }) {
 
 
       {/* ── CTA banner ────────────────────────────────────────────── */}
-      <div style={{ background: 'var(--paper)', borderTop: '1px solid var(--line)', padding: '0 0 0' }}>
+      
         <div className="wrap" style={{ padding: '0 20px' }}>
           <div className="blog-cta-banner">
             {maintenanceMode ? (
@@ -458,7 +458,6 @@ export default function BlogPage({ onSearch, onNav, maintenanceMode = false }) {
             )}
           </div>
         </div>
-      </div>
 
     </div>
   )
