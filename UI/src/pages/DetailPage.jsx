@@ -192,14 +192,7 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
                     key={label}
                     style={{ display: "flex", alignItems: "center", gap: 12 }}
                   >
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: "var(--ink3)",
-                        minWidth: 200,
-                      }}
-                    >
+                    <span className="breakdown-label" style={{ fontWeight: 600, color: "var(--ink3)" }}>
                       {label}
                     </span>
                     <div
@@ -242,6 +235,9 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
               Price comparison across platforms
               <small>— updated just now</small>
             </div>
+            {/* compare-table-wrap makes the table scroll horizontally on mobile
+                instead of overflowing the page and clipping content on the left */}
+            <div className="compare-table-wrap">
             <table className="compare-table" style={{ width: "100%" }}>
               <thead>
                 <tr>
@@ -365,6 +361,7 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
                     ))}
               </tbody>
             </table>
+            </div>{/* /compare-table-wrap */}
           </div>
 
           {/* Review analysis */}
