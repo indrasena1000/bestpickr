@@ -27,7 +27,7 @@ const express = require('express');
 const router  = express.Router();
 const logger  = require('../utils/logger');
 const { BlogPost } = require('../models/index.js');
-const { generateDailyBlogs, deduplicateExistingPosts } = require('../services/blogContentService.js');
+const { generateDailyBlogs, generateThreeDrafts, deduplicateExistingPosts } = require('../services/blogContentService.js');
 
 // ── HELPERS ──────────────────────────────────────────────────────
 
@@ -162,12 +162,17 @@ router.get('/admin/posts', verifyAdmin, async (req, res) => {
 });
 
 // ── ADMIN: POST /admin/generate ───────────────────────────────────
-// Manually trigger generation (also used by admin dashboard button)
+// Manually trigger generation — generates 3 drafts (2 tech + 1 e-commerce)
 router.post('/admin/generate', verifyAdmin, async (req, res) => {
-  logger.info('[Blog] Admin triggered blog generation');
+  logger.info('[Blog] Admin triggered 3-draft generation');
   try {
-    const result = await generateDailyBlogs();
-    res.json({ success: true, ...result });
+    const result = await generateThreeDrafts();
+    const message = result.generated > 0
+      ? `${result.generated} draft${result.generated !== 1 ? 's' : ''} generated successfully`
+      : result.skipped > 0
+        ? `All ${result.skipped} drafts already exist for today — no duplicates created`
+        : 'Generation failed — check backend logs';
+    res.json({ success: true, ...result, message });
   } catch (err) {
     logger.error('[Blog] /admin/generate error', { error: err.message });
     res.status(500).json({ success: false, error: err.message });

@@ -358,7 +358,7 @@
       "products": [
         {
           "asin": "A01",
-          "title": "Samsung 7 kg 5 Star Front Load",
+          "title": "Samsung 7 kg 5 Star Front Load Washing Machine",
           "brand": "Samsung",
           "amazon_price": 32000,
           "flipkart_price": 28990,
@@ -369,7 +369,7 @@
         },
         {
           "asin": "A02",
-          "title": "LG 1.5 Ton 5 Star Split Dual Inverter AC",
+          "title": "LG 1.5 Ton 5 Star Split Dual Inverter Air Conditioner AC",
           "brand": "LG",
           "amazon_price": 48000,
           "flipkart_price": 44990,
@@ -380,7 +380,7 @@
         },
         {
           "asin": "A03",
-          "title": "Haier 190 L 4 Star Single Door Fridge",
+          "title": "Haier 190 L 4 Star Single Door Fridge Refrigerator",
           "brand": "Haier",
           "amazon_price": 16000,
           "flipkart_price": 14490,
@@ -391,14 +391,14 @@
         },
         {
           "asin": "A04",
-          "title": "Whirlpool 245 L 3 Star Double Door",
-          "brand": "Whirlpool",
-          "amazon_price": 28000,
-          "flipkart_price": 25990,
-          "product_url": "https://www.flipkart.com/whirlpool-245-l-frost-free-double-door-3-star-refrigerator/p/itme9705a691459a",
-          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/refrigerator-new/p/s/p/-original-imagvgsgr68g6pfp.jpeg",
-          "rating": 4.2,
-          "aiScore": 82
+          "title": "LG 7 kg 5 Star Inverter Fully Automatic Top Load Washing Machine",
+          "brand": "LG",
+          "amazon_price": 26000,
+          "flipkart_price": 23990,
+          "product_url": "https://www.flipkart.com/lg-7-kg-5-star-inverter-fully-automatic-top-load-washing-machine/p/itme9705a691459a",
+          "image": "https://rukminim2.flixcart.com/image/416/416/xif0q/washing-machine-new/p/s/p/-original-imagvgsgr68g6pfp.jpeg",
+          "rating": 4.4,
+          "aiScore": 88
         },
         {
           "asin": "A05",
@@ -424,7 +424,7 @@
         },
         {
           "asin": "A07",
-          "title": "Eureka Forbes Quick Clean Vacuum",
+          "title": "Eureka Forbes Quick Clean Vacuum Cleaner",
           "brand": "Eureka Forbes",
           "amazon_price": 4500,
           "flipkart_price": 3999,
@@ -457,7 +457,7 @@
         },
         {
           "asin": "A10",
-          "title": "Havells Monza EC 15 L Water Heater",
+          "title": "Havells Monza EC 15 L Water Heater Geyser",
           "brand": "Havells",
           "amazon_price": 8500,
           "flipkart_price": 7490,

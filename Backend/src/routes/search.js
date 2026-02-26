@@ -76,6 +76,118 @@ const MAX_RESPONSE_RESULTS = 10; // return top 10
 const PARALLEL_CONCURRENCY = 5; // max products enriched simultaneously
 const ANALYSIS_TIMEOUT_MS = 25000; // 25s per product (scrape + GPT)
 
+// ── Category filter map — ensures results strictly match the requested category
+// Prevents: stale cache returning wrong category, Amazon SearchIndex mismatch,
+// mock fallback returning off-topic products.
+const CATEGORY_FILTER_MAP = {
+  headphones:  ['headphone', 'earphone', 'earbuds', 'earbud', 'headset', 'neckband', 'airpods', 'tws', 'audio', 'speaker', 'bluetooth headset'],
+  smartphones: ['phone', 'mobile', 'smartphone', 'iphone', 'android', 'redmi', 'realme', 'samsung', 'oneplus', 'vivo', 'oppo', 'pixel'],
+  laptops:     ['laptop', 'notebook', 'macbook', 'chromebook', 'ultrabook'],
+  gaming:      ['gaming', 'controller', 'gamepad', 'console', 'playstation', 'xbox', 'ps5', 'nintendo', 'game'],
+  footwear:    ['footwear', 'shoe', 'shoes', 'sneaker', 'sandal', 'slipper', 'boot', 'trainer', 'nike', 'adidas', 'puma', 'reebok', 'skechers', 'crocs', 'running'],
+  skincare:    ['skincare', 'serum', 'sunscreen', 'moisturizer', 'cleanser', 'face wash', 'face', 'spf', 'toner', 'cream', 'lotion', 'skin'],
+  fashion:     ['shirt', 't-shirt', 'tshirt', 'jeans', 'kurta', 'dress', 'jacket', 'hoodie', 'trouser', 'saree', 'fashion', 'clothing', 'apparel'],
+  appliances:  ['mixer', 'grinder', 'microwave', 'oven', 'washing', 'refrigerator', 'fridge', 'vacuum', 'purifier', 'cooker', 'appliance', 'induction', 'juicer'],
+};
+
+/**
+ * Filter results to only those matching the requested category.
+ * Checks p.category (set for mock data) first, then product name/brand keywords.
+ * Returns the filtered array — may be empty if no results match.
+ */
+function filterByCategory(results, category) {
+  if (!category || !CATEGORY_FILTER_MAP[category]) return results;
+  const keywords = CATEGORY_FILTER_MAP[category];
+  return results.filter((p) => {
+    // Direct category slug match (always set for mock products)
+    if (p.category && p.category.toLowerCase() === category) return true;
+    // Keyword match against product name and brand
+    const text = `${p.name || ''} ${p.brand || ''}`.toLowerCase();
+    return keywords.some((kw) => text.includes(kw));
+  });
+}
+
+// ── Query relevance stop words (broader than cache normalizer stop words)
+const QUERY_STOP_WORDS = new Set([
+  'best', 'top', 'good', 'great', 'cheap', 'cheapest', 'affordable', 'premium',
+  'latest', 'new', 'popular', 'trending', 'rated', 'recommended', 'buy', 'online',
+  'india', 'price', 'deal', 'offer', 'discount', 'budget', 'value', 'review', 'reviews',
+  'under', 'below', 'above', 'the', 'a', 'an', 'for', 'in', 'and', 'or', 'vs',
+  'compare', 'comparison', '2024', '2025', '2026',
+]);
+
+// Synonym expansions — ensures "machine" matches "washer", "washing", etc.
+const PRODUCT_SYNONYM_MAP = {
+  'machine':      ['machine', 'washer', 'washing machine'],
+  'machines':     ['machine', 'washer', 'washing machine'],
+  'washer':       ['washer', 'washing'],
+  'washing':      ['washing', 'washer'],
+  'purifier':     ['purifier', 'purification', ' ro '],
+  'refrigerator': ['refrigerator', 'fridge'],
+  'fridge':       ['fridge', 'refrigerator'],
+  'iron':         ['steam iron', 'garment', 'ironing', 'steam generator'],
+  'ironing':      ['iron', 'ironing', 'steam'],
+  'vacuum':       ['vacuum', 'robovac', 'robot cleaner'],
+  'microwave':    ['microwave'],
+  'television':   ['television', 'tv', 'smart tv', 'qled', 'oled'],
+  'tv':           ['tv', 'television', 'smart tv', 'qled', 'oled'],
+  'fryer':        ['fryer', 'air fryer'],
+  'airfryer':     ['airfryer', 'air fryer'],
+  'cooker':       ['cooker', 'pressure cooker', 'rice cooker'],
+  'trimmer':      ['trimmer', 'shaver'],
+  'shaver':       ['shaver', 'trimmer', 'razor'],
+  'juicer':       ['juicer', 'mixer', 'blender'],
+  'blender':      ['blender', 'mixer', 'juicer'],
+};
+
+/**
+ * Filter results by query relevance — ensures "washing machines" only returns
+ * washing machines, not fridges/irons that are also in the appliances category.
+ *
+ * SAFE: if filtering would leave fewer than MIN_RESULTS products, returns
+ * the unfiltered set (never causes an empty page due to over-filtering).
+ */
+function filterByQueryRelevance(results, query) {
+  if (!query || results.length === 0) return results;
+
+  const words = query.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !QUERY_STOP_WORDS.has(w));
+
+  if (words.length === 0) return results;
+
+  // Build expanded set of match terms via synonyms
+  const matchTerms = new Set();
+  for (const word of words) {
+    const syns = PRODUCT_SYNONYM_MAP[word];
+    if (syns) syns.forEach((s) => matchTerms.add(s));
+    else matchTerms.add(word);
+  }
+  const termArray = Array.from(matchTerms);
+
+  const filtered = results.filter((p) => {
+    const text = `${p.name || ''} ${p.brand || ''}`.toLowerCase();
+    return termArray.some((term) => text.includes(term));
+  });
+
+  // Safety — never show fewer than 1 result due to over-filtering
+  const MIN_RESULTS = 1;
+  if (filtered.length < MIN_RESULTS) {
+    logger.warn(
+      `🔍 Query relevance: "${query}" would leave only ${filtered.length} — keeping all ${results.length}`,
+    );
+    return results;
+  }
+
+  if (filtered.length < results.length) {
+    logger.info(
+      `🔍 Query relevance: "${query}" kept ${filtered.length}/${results.length} products`,
+    );
+  }
+  return filtered;
+}
+
 // ═════════════════════════════════════════════════════════════════
 // RATE LIMITER — 30 requests per minute per IP
 // ═════════════════════════════════════════════════════════════════
@@ -876,20 +988,31 @@ async function handleSearch(req, res) {
     const redisResults = await checkRedisCache(query, category);
 
     if (redisResults && redisResults.length > 0) {
-      req._searchLog.outcome = "redis_hit";
-
-      return res.json({
-        success: true,
-        query: rawQuery,
-        normalized: normalizedQuery,
-        category: category || null,
-        totalResults: Math.min(redisResults.length, MAX_RESPONSE_RESULTS),
-        cached: true,
-        cacheSource: "redis",
-        lastUpdated: new Date().toISOString(),
-        elapsed_ms: Date.now() - requestStart,
-        results: addRanks(redisResults.slice(0, MAX_RESPONSE_RESULTS)),
-      });
+      // Apply strict category filter — prevents returning wrong-category cached data
+      const redisFiltered = filterByCategory(redisResults, category);
+      if (redisFiltered.length === 0 && category) {
+        logger.warn(
+          `🔍 Category filter: Redis has ${redisResults.length} results but NONE match category="${category}" — cache miss, refetching`,
+        );
+        // Fall through to MongoDB / live fetch
+      } else {
+        const catMatched = redisFiltered.length > 0 ? redisFiltered : redisResults;
+        // Apply query relevance — prevents e.g. all appliances when searching "washing machines"
+        const finalRedis = filterByQueryRelevance(catMatched, query);
+        req._searchLog.outcome = "redis_hit";
+        return res.json({
+          success: true,
+          query: rawQuery,
+          normalized: normalizedQuery,
+          category: category || null,
+          totalResults: Math.min(finalRedis.length, MAX_RESPONSE_RESULTS),
+          cached: true,
+          cacheSource: "redis",
+          lastUpdated: new Date().toISOString(),
+          elapsed_ms: Date.now() - requestStart,
+          results: addRanks(finalRedis.slice(0, MAX_RESPONSE_RESULTS)),
+        });
+      }
     }
   } catch (cacheErr) {
     // Non-fatal: continue to live fetch
@@ -903,25 +1026,37 @@ async function handleSearch(req, res) {
     const mongoResults = await checkMongoCache(normalizedQuery, category);
 
     if (mongoResults && mongoResults.length > 0) {
-      req._searchLog.outcome = "mongo_hit";
+      // Apply strict category filter — prevents returning wrong-category cached data
+      const mongoFiltered = filterByCategory(mongoResults, category);
+      if (mongoFiltered.length === 0 && category) {
+        logger.warn(
+          `🔍 Category filter: MongoDB has ${mongoResults.length} results but NONE match category="${category}" — cache miss, refetching`,
+        );
+        // Fall through to live fetch
+      } else {
+        const catMatchedMongo = mongoFiltered.length > 0 ? mongoFiltered : mongoResults;
+        // Apply query relevance — prevents e.g. all appliances when searching "washing machines"
+        const finalMongo = filterByQueryRelevance(catMatchedMongo, query);
+        req._searchLog.outcome = "mongo_hit";
 
-      // Repopulate Redis while we respond (non-blocking)
-      cacheResults(query, category, mongoResults).catch((err) =>
-        logger.warn(`🔍 Search: Redis repopulate failed — ${err.message}`),
-      );
+        // Repopulate Redis while we respond (non-blocking)
+        cacheResults(query, category, finalMongo).catch((err) =>
+          logger.warn(`🔍 Search: Redis repopulate failed — ${err.message}`),
+        );
 
-      return res.json({
-        success: true,
-        query: rawQuery,
-        normalized: normalizedQuery,
-        category: category || null,
-        totalResults: Math.min(mongoResults.length, MAX_RESPONSE_RESULTS),
-        cached: true,
-        cacheSource: "mongodb",
-        lastUpdated: new Date().toISOString(),
-        elapsed_ms: Date.now() - requestStart,
-        results: addRanks(mongoResults.slice(0, MAX_RESPONSE_RESULTS)),
-      });
+        return res.json({
+          success: true,
+          query: rawQuery,
+          normalized: normalizedQuery,
+          category: category || null,
+          totalResults: Math.min(finalMongo.length, MAX_RESPONSE_RESULTS),
+          cached: true,
+          cacheSource: "mongodb",
+          lastUpdated: new Date().toISOString(),
+          elapsed_ms: Date.now() - requestStart,
+          results: addRanks(finalMongo.slice(0, MAX_RESPONSE_RESULTS)),
+        });
+      }
     }
   } catch (mongoErr) {
     logger.warn(`🔍 Search: MongoDB check threw — ${mongoErr.message}`);
@@ -995,6 +1130,40 @@ async function handleSearch(req, res) {
       elapsed_ms: Date.now() - requestStart,
     });
   }
+
+  // ── STEP 5.5: Strict category post-filter ────────────────────
+  // Validate that enriched products actually belong to the requested category.
+  // This catches: Amazon SearchIndex mismatch, stale cache data slipping through,
+  // and mock fallback returning products from the wrong category.
+  if (category) {
+    const catFiltered = filterByCategory(enrichedProducts, category);
+    if (catFiltered.length > 0) {
+      if (catFiltered.length < enrichedProducts.length) {
+        logger.info(
+          `🔍 Category filter: "${category}" kept ${catFiltered.length}/${enrichedProducts.length} products`,
+        );
+      }
+      enrichedProducts = catFiltered;
+    } else {
+      // No products matched — return a clean empty state
+      logger.warn(
+        `🔍 Category filter: all ${enrichedProducts.length} live results failed category="${category}" filter — returning empty`,
+      );
+      return res.status(404).json({
+        success: false,
+        error: `No products found for "${category}". Try a different search or browse another category.`,
+        query: rawQuery,
+        category,
+        totalResults: 0,
+        results: [],
+      });
+    }
+  }
+
+  // ── STEP 5.6: Query relevance filter ───────────────────────
+  // Within the matched category, ensure products match the specific query.
+  // e.g. "washing machines" → only washing machines, not fridges + irons.
+  enrichedProducts = filterByQueryRelevance(enrichedProducts, query);
 
   // ── STEP 6: Sort by AI Score, Take Top 10 ────────────────────
   const ranked = enrichedProducts

@@ -120,7 +120,8 @@ export const getAdminBlogPosts  = ()      => api.get("/blog/admin/posts").then((
 export const publishBlogPost    = (id)    => api.patch(`/blog/admin/posts/${id}/publish`, {}).then((r) => r.data);
 export const unpublishBlogPost  = (id)    => api.patch(`/blog/admin/posts/${id}/unpublish`, {}).then((r) => r.data);
 export const deleteBlogPost     = (id)    => api.delete(`/blog/admin/posts/${id}`).then((r) => r.data);
-export const generateBlogPosts  = ()      => api.post("/blog/admin/generate", {}).then((r) => r.data);
+// 180s timeout — 3 sequential OpenAI calls + RSS fetches can take 60-120s
+export const generateBlogPosts  = ()      => api.post("/blog/admin/generate", {}, { timeout: 180000 }).then((r) => r.data);
 export const getBlogAnalytics   = ()      => api.get("/blog/admin/analytics").then((r) => r.data);
 
 export default api;

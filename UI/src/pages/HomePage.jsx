@@ -85,7 +85,7 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
     setProds([]);
     searchProducts(activeCat, activeCat)
       .then((d) => setProds(d.results || []))
-      .catch(() => setProds(MOCK_PRODUCTS[activeCat] || MOCK_PRODUCTS.headphones))
+      .catch(() => setProds([]))   // show empty state — never show wrong-category fallback
       .finally(() => setLoad(false));
   }, [activeCat]);
 
@@ -385,12 +385,4 @@ const FALLBACK_CATS = [
   { slug:"appliances", name:"Appliances", emoji:"🍳" },
 ];
 
-const MOCK_PRODUCTS = {
-  headphones: [
-    { rank:1, name:"Sony WH-1000XM5 Wireless NC", brand:"Sony", aiScore:9.5, totalReviews:1240, positivePct:84, lowestPrice:24990, highestPrice:27500, platforms:[{name:"Amazon"},{name:"Flipkart"}] },
-    { rank:2, name:"Bose QuietComfort 45", brand:"Bose", aiScore:8.8, totalReviews:890, positivePct:79, lowestPrice:26500, highestPrice:29000, platforms:[{name:"Amazon"},{name:"Flipkart"}] },
-    { rank:3, name:"Apple AirPods Max", brand:"Apple", aiScore:8.2, totalReviews:1050, positivePct:76, lowestPrice:59900, highestPrice:61000, platforms:[{name:"Amazon"}] },
-    { rank:4, name:"Samsung Galaxy Buds 2 Pro", brand:"Samsung", aiScore:7.9, totalReviews:640, positivePct:71, lowestPrice:14990, highestPrice:16500, platforms:[{name:"Flipkart"},{name:"Amazon"}] },
-    { rank:5, name:"Jabra Evolve2 75 Wireless Headset", brand:"Jabra", aiScore:7.5, totalReviews:410, positivePct:68, lowestPrice:18999, highestPrice:21000, platforms:[{name:"Amazon"}] },
-  ],
-};
+
