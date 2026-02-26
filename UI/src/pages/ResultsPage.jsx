@@ -289,9 +289,19 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
 
           {!loading && !error && results.length === 0 && (
             <div style={{ background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r3)', padding:'48px 20px', textAlign:'center' }}>
-              <div style={{ fontSize:40, marginBottom:12 }}>🔍</div>
-              <div style={{ fontSize:16, fontWeight:700, color:'var(--ink)', marginBottom:6 }}>No results found</div>
-              <div style={{ fontSize:14, color:'var(--ink3)', marginBottom:20 }}>Try a different search term or category</div>
+              <div style={{ fontSize:40, marginBottom:12 }}>{category ? '📂' : '🔍'}</div>
+              <div style={{ fontSize:16, fontWeight:700, color:'var(--ink)', marginBottom:6 }}>
+                {category
+                  ? `No products found in "${category}"`
+                  : 'No results found'
+                }
+              </div>
+              <div style={{ fontSize:14, color:'var(--ink3)', marginBottom:20 }}>
+                {category
+                  ? `We couldn't find any products in the ${category} category. Try searching for specific product names.`
+                  : 'Try a different search term or browse a category'
+                }
+              </div>
               {['Sony headphones','running shoes','air fryer'].map(s => (
                 <button key={s} onClick={() => onSearch(s, '')}
                   style={{ margin:4, padding:'7px 14px', border:'1px solid var(--line)', borderRadius:'var(--r)', background:'var(--paper2)', fontSize:13, fontWeight:600, cursor:'pointer', color:'var(--ink2)' }}>

@@ -322,6 +322,7 @@
   box-sizing: border-box;
   outline: none;
   transition: border-color .15s;
+  margin-bottom: 16px;
 }
 .admin-input:focus { border-color: #3B82F6; background: #fff; }
 .admin-textarea {

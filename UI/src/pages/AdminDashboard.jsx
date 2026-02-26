@@ -10,6 +10,7 @@ import {
   getAdminBlogPosts,
   publishBlogPost,
   unpublishBlogPost,
+  deleteBlogPost,
   generateBlogPosts,
   getBlogAnalytics,
   adminLogin,
@@ -260,10 +261,26 @@ function BlogAdminPanel() {
     setFeedback("");
     try {
       const d = await generateBlogPosts();
-      setFeedback(`✅ Generated ${d.generated} draft${d.generated !== 1 ? "s" : ""}!`);
+      if (d.generated > 0) {
+        const failMsg = d.failed > 0 ? ` (${d.failed} failed — check backend logs)` : "";
+        setFeedback(`✅ ${d.generated} of 3 drafts generated successfully!${failMsg}`);
+      } else if (d.skipped > 0) {
+        setFeedback(`ℹ️ ${d.skipped} draft${d.skipped !== 1 ? "s" : ""} skipped (already saved this second). Try again.`);
+      } else {
+        setFeedback(`❌ Generation failed — 0 drafts created. Check backend logs.`);
+      }
       loadPosts();
     } catch (e) {
-      setFeedback("❌ Generation failed — check backend logs.");
+      const detail = e?.response?.data?.error || e?.message || "unknown error";
+      if (detail.includes("timeout") || detail.includes("ECONNABORTED")) {
+        setFeedback("⏱️ Request timed out — generation is taking longer than expected. Try again in a minute.");
+      } else if (detail.includes("OPENAI_API_KEY")) {
+        setFeedback("❌ OpenAI API key not configured — add OPENAI_API_KEY to Backend .env");
+      } else if (detail.includes("MongoDB") || detail.includes("mongo")) {
+        setFeedback("❌ MongoDB not connected — check MONGODB_URI in Backend .env");
+      } else {
+        setFeedback(`❌ Generation failed: ${detail}`);
+      }
     } finally {
       setGenerating(false);
     }
@@ -283,6 +300,16 @@ function BlogAdminPanel() {
       setFeedback("✅ Post moved to drafts.");
       loadPosts();
     } catch { setFeedback("❌ Unpublish failed."); }
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm("Permanently delete this post? This cannot be undone.")) return;
+    try {
+      await deleteBlogPost(id);
+      setFeedback("🗑️ Post deleted.");
+      setPreviewPost(null);
+      loadPosts();
+    } catch { setFeedback("❌ Delete failed."); }
   }
 
   const drafts    = posts.filter(p => p.status === "draft");
@@ -537,6 +564,13 @@ function BlogAdminPanel() {
                   </button>
                 )}
                 <button
+                  className="admin-btn"
+                  style={{ padding: "7px 18px", fontSize: 12, background: "#FFF0F0", color: "#C0392B", border: "1px solid #F4C9C9" }}
+                  onClick={() => handleDelete(previewPost._id)}
+                >
+                  🗑️ Delete
+                </button>
+                <button
                   style={{ background: "none", border: "1px solid var(--line)", borderRadius: 6, fontSize: 16, cursor: "pointer", color: "var(--ink4)", padding: "5px 10px", lineHeight: 1 }}
                   onClick={() => setPreviewPost(null)}
                 >
@@ -636,6 +670,13 @@ function BlogAdminPanel() {
                   Move to Drafts
                 </button>
               )}
+              <button
+                className="admin-btn"
+                style={{ padding: "10px 24px", fontSize: 13, background: "#FFF0F0", color: "#C0392B", border: "1px solid #F4C9C9", marginLeft: "auto" }}
+                onClick={() => handleDelete(previewPost._id)}
+              >
+                🗑️ Delete Post
+              </button>
               <button
                 className="admin-btn"
                 style={{ padding: "10px 24px", fontSize: 13 }}

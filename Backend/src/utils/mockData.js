@@ -22,14 +22,66 @@ function loadMockData() {
 
 // Category keyword mapping (mirrors rankingAgent's CATEGORY_KEYWORDS)
 const QUERY_TO_SLUG = {
-  headphones:  ['headphone', 'earphone', 'earbuds', 'earbud', 'headset', 'tws', 'neckband', 'airpods'],
-  smartphones: ['phone', 'mobile', 'smartphone', 'iphone', 'samsung galaxy', 'oneplus', 'pixel'],
-  laptops:     ['laptop', 'macbook', 'notebook', 'chromebook'],
-  appliances:  ['appliance', 'mixer', 'grinder', 'microwave', 'oven', 'toaster', 'blender', 'juicer', 'washing', 'fridge', 'refrigerator', 'ac ', 'air conditioner', 'iron', 'vacuum', 'purifier', 'geyser', 'heater'],
-  gaming:      ['gaming', 'controller', 'gamepad', 'console', 'playstation', 'xbox', 'ps5', 'nintendo'],
-  footwear:    ['shoe', 'sneaker', 'sandal', 'slipper', 'boot', 'running shoe', 'trainer', 'clogs'],
-  skincare:    ['skincare', 'serum', 'sunscreen', 'moisturizer', 'cleanser', 'face wash', 'toner'],
-  fashion:     ['shirt', 'tshirt', 't-shirt', 'jeans', 'kurta', 'dress', 'jacket', 'hoodie', 'trouser', 'saree'],
+  headphones:  ['headphone', 'headphones', 'earphone', 'earphones', 'earbuds', 'earbud', 'headset', 'tws', 'neckband', 'airpods', 'audio', 'speaker'],
+  smartphones: ['phone', 'phones', 'mobile', 'smartphone', 'smartphones', 'iphone', 'android', 'samsung galaxy', 'oneplus', 'pixel', 'redmi', 'realme', 'vivo', 'oppo'],
+  laptops:     ['laptop', 'laptops', 'macbook', 'notebook', 'chromebook', 'ultrabook'],
+  appliances:  ['appliance', 'appliances', 'mixer', 'grinder', 'microwave', 'oven', 'toaster', 'blender', 'juicer', 'washing', 'fridge', 'refrigerator', 'ac ', 'air conditioner', 'iron', 'vacuum', 'purifier', 'geyser', 'heater', 'cooker', 'induction'],
+  gaming:      ['gaming', 'game', 'gamer', 'controller', 'gamepad', 'console', 'playstation', 'xbox', 'ps5', 'ps4', 'nintendo', 'rgb keyboard', 'rgb mouse'],
+  footwear:    ['footwear', 'shoe', 'shoes', 'sneaker', 'sneakers', 'sandal', 'slipper', 'boot', 'boots', 'running shoe', 'trainer', 'trainers', 'clogs', 'loafer', 'nike', 'adidas', 'puma', 'reebok', 'skechers', 'crocs'],
+  skincare:    ['skincare', 'skin care', 'beauty', 'cosmetic', 'serum', 'sunscreen', 'moisturizer', 'moisturiser', 'cleanser', 'face wash', 'facewash', 'toner', 'spf', 'mamaearth', 'ordinary', 'minimalist'],
+  fashion:     ['fashion', 'clothing', 'clothes', 'apparel', 'wear', 'shirt', 'tshirt', 't-shirt', 'jeans', 'kurta', 'dress', 'jacket', 'hoodie', 'trouser', 'saree', 'lehenga', 'kurti', 'salwar'],
+}
+
+// ── Query stop words for relevance filtering
+const QUERY_STOP = new Set([
+  'best','top','good','great','cheap','affordable','latest','new','popular',
+  'buy','online','india','price','deal','discount','budget','review','reviews',
+  'under','below','the','a','an','for','in','and','or','vs',
+])
+
+// Synonym map for product term expansion
+const MOCK_SYNONYM_MAP = {
+  'machine':   ['machine','washer','washing machine'],
+  'machines':  ['machine','washer','washing machine'],
+  'washer':    ['washer','washing'],
+  'washing':   ['washing','washer'],
+  'purifier':  ['purifier','purification'],
+  'fridge':    ['fridge','refrigerator'],
+  'refrigerator': ['refrigerator','fridge'],
+  'iron':      ['steam iron','garment','ironing'],
+  'vacuum':    ['vacuum','robovac'],
+  'fryer':     ['fryer','air fryer'],
+  'airfryer':  ['airfryer','air fryer'],
+  'cooker':    ['cooker','pressure cooker'],
+}
+
+/**
+ * Filter a list of products (raw mock_products.json items) by query relevance.
+ * Only applies when the query contains specific product keywords.
+ * Safe: returns unfiltered if fewer than 2 products would remain.
+ */
+function queryFilterProducts(products, query) {
+  const words = query.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 3 && !QUERY_STOP.has(w))
+  if (words.length === 0) return products
+
+  const terms = new Set()
+  for (const word of words) {
+    const syns = MOCK_SYNONYM_MAP[word]
+    if (syns) syns.forEach(s => terms.add(s))
+    else terms.add(word)
+  }
+  const termArr = Array.from(terms)
+
+  const filtered = products.filter(p => {
+    const text = (p.title || p.name || '').toLowerCase()
+    return termArr.some(t => text.includes(t))
+  })
+
+  // Safety: never return fewer than 1 match
+  return filtered.length >= 1 ? filtered : products
 }
 
 function detectSlug(query, category) {
@@ -59,16 +111,21 @@ function getMockResults(query, category) {
     logger.info(`[MockData] No matching category for "${query}" — returning first category`)
   }
 
-  const cat = slug
-    ? data.categories.find(c => c.slug === slug)
-    : data.categories[0]
+  if (!slug) {
+    logger.info(`[MockData] No matching category for query="${query}" — returning empty (no cross-category fallback)`)
+    return []
+  }
+
+  const cat = data.categories.find(c => c.slug === slug)
 
   if (!cat || !cat.products || cat.products.length === 0) {
+    logger.info(`[MockData] Category "${slug}" has no products — returning empty`)
     return []
   }
 
   // Transform mock_products.json format → rankingAgent output format
-  const results = cat.products
+  const filtered = queryFilterProducts(cat.products, query)
+  const results = filtered
     .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
     .slice(0, 10)
     .map((p, i) => {
@@ -134,11 +191,15 @@ function getMockProductsForSearch(query, category) {
   const data = loadMockData()
   const slug = detectSlug(query, category)
 
-  const cat = slug
-    ? data.categories.find(c => c.slug === slug)
-    : data.categories[0]
+  if (!slug) {
+    logger.info(`[MockData] No matching category for query="${query}" (PA-API shape) — returning empty`)
+    return []
+  }
+
+  const cat = data.categories.find(c => c.slug === slug)
 
   if (!cat || !cat.products || cat.products.length === 0) {
+    logger.info(`[MockData] Category "${slug}" has no products (PA-API shape) — returning empty`)
     return []
   }
 
@@ -146,7 +207,8 @@ function getMockProductsForSearch(query, category) {
   // NOTE: mock_products.json has Flipkart URLs in product_url.
   // We generate Amazon search URLs for the Amazon platform entry,
   // and pass the real Flipkart URL as _flipkartUrl for the Flipkart platform.
-  const products = cat.products
+  const filteredProducts = queryFilterProducts(cat.products, query)
+  const products = filteredProducts
     .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
     .slice(0, 15) // match MAX_AMAZON_RESULTS in search.js
     .map(p => {

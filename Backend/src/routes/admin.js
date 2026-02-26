@@ -11,7 +11,7 @@ const router      = express.Router()
 
 const MAINTENANCE_KEY   = 'maintenance'
 const ACCESS_TOKEN_TTL  = '15m'
-const REFRESH_TOKEN_TTL = '7d'
+const REFRESH_TOKEN_TTL = '1d'
 const REFRESH_COOKIE    = 'bp_refresh'
 
 function db(req) { return req.app.locals.prisma }
@@ -21,11 +21,12 @@ function issueTokens(res) {
   const accessToken  = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL })
   const refreshToken = jwt.sign(payload, process.env.JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_TTL })
 
+  const isProd = process.env.NODE_ENV === 'production'
   res.cookie(REFRESH_COOKIE, refreshToken, {
     httpOnly: true,
-    secure:   process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge:   7 * 24 * 60 * 60 * 1000,
+    secure:   isProd,
+    sameSite: isProd ? 'none' : 'lax',  // 'none' needed for cross-origin (Vercel → backend host)
+    maxAge:   1 * 24 * 60 * 60 * 1000, // 1 day
     path:     '/api/admin/refresh',
   })
   return accessToken
@@ -95,7 +96,8 @@ router.post('/refresh', (req, res) => {
     const accessToken = issueTokens(res)
     res.json({ ok: true, accessToken, expiresIn: ACCESS_TOKEN_TTL })
   } catch (err) {
-    res.clearCookie(REFRESH_COOKIE, { path: '/api/admin/refresh' })
+    const isProd = process.env.NODE_ENV === 'production'
+    res.clearCookie(REFRESH_COOKIE, { path: '/api/admin/refresh', secure: isProd, sameSite: isProd ? 'none' : 'lax' })
     if (err.name === 'TokenExpiredError')
       return res.status(401).json({ error: 'Session expired — please log in again', code: 'SESSION_EXPIRED' })
     return res.status(401).json({ error: 'Invalid refresh token' })
@@ -104,7 +106,8 @@ router.post('/refresh', (req, res) => {
 
 // ── POST /api/admin/logout ─────────────────────────────────────────
 router.post('/logout', (req, res) => {
-  res.clearCookie(REFRESH_COOKIE, { path: '/api/admin/refresh' })
+  const isProd = process.env.NODE_ENV === 'production'
+  res.clearCookie(REFRESH_COOKIE, { path: '/api/admin/refresh', secure: isProd, sameSite: isProd ? 'none' : 'lax' })
   console.log('[Admin] Logout')
   res.json({ ok: true })
 })

@@ -8,7 +8,8 @@ const PLT_ICONS = { Amazon: "🛒", Flipkart: "🔵", Myntra: "🛍️" };
 const fmt = (n) => (n ? `₹${Number(n).toLocaleString("en-IN")}` : "—");
 
 export default function DetailPage({ product: p, allResults, onBack, onHome }) {
-  const [wishlisted, setWish] = useState(false);
+  // TODO (future): Save to wishlist feature
+  // const [wishlisted, setWish] = useState(false);
   const [imgError, setImgError] = useState(false);
 
   if (!p) {
@@ -599,12 +600,14 @@ export default function DetailPage({ product: p, allResults, onBack, onHome }) {
               >
                 Buy on {bestPlt?.name || "Amazon"} →
               </button>
+              {/* TODO (future): Save to wishlist feature
               <button
                 className="buy-card-wish"
                 onClick={() => setWish((w) => !w)}
               >
                 {wishlisted ? "❤️ Saved to wishlist" : "🤍 Save to wishlist"}
               </button>
+              */}
 
               {/* Price history */}
               <div className="price-history">

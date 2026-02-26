@@ -38,12 +38,12 @@ function getOpenAIClient() {
 // ── CONSTANTS ─────────────────────────────────────────────────────
 const MODEL          = 'gpt-4o-mini';
 const TEMPERATURE    = 0.65; // Lower = more factual, less hallucination
-const MAX_TOKENS     = 4000;
+const MAX_TOKENS     = 2000; // Reduced from 4000 — enough for a full post, faster + avoids rate limits
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=800';
 
 // ── RSS FEED SOURCES ──────────────────────────────────────────────
-// Covers: AI, Big Tech, Startups, Cybersecurity, Gadgets globally
-const RSS_FEEDS = [
+// Tech: AI, Big Tech, Startups, Cybersecurity, Gadgets globally
+const TECH_RSS_FEEDS = [
   { url: 'https://techcrunch.com/feed/',                    source: 'TechCrunch'      },
   { url: 'https://www.theverge.com/rss/index.xml',          source: 'The Verge'       },
   { url: 'http://feeds.arstechnica.com/arstechnica/index',  source: 'Ars Technica'    },
@@ -54,15 +54,32 @@ const RSS_FEEDS = [
   { url: 'https://www.engadget.com/rss.xml',                source: 'Engadget'        },
 ];
 
-// ── SYSTEM PROMPT ─────────────────────────────────────────────────
-const NEWS_SYSTEM_PROMPT = `You are a professional global tech news editor writing for bestpickr.in.
+// Keep backward-compat alias used by the cron job
+const RSS_FEEDS = TECH_RSS_FEEDS;
 
-Your task: write one "Top 5 Global Tech News" daily roundup blog post using ONLY the real news articles provided by the user.
+// E-commerce: Online retail, deals, India shopping, payments, D2C
+const ECOMMERCE_RSS_FEEDS = [
+  { url: 'https://techcrunch.com/tag/e-commerce/feed/',                                  source: 'TechCrunch E-Commerce' },
+  { url: 'https://inc42.com/feed/',                                                       source: 'Inc42'                 },
+  { url: 'https://entrackr.com/feed/',                                                    source: 'Entrackr'              },
+  { url: 'https://www.retaildive.com/feeds/news/',                                        source: 'Retail Dive'           },
+  { url: 'https://www.pymnts.com/feed/',                                                  source: 'PYMNTS'                },
+  { url: 'https://economictimes.indiatimes.com/industry/services/retail/rssfeeds/78570945.cms', source: 'ET Retail'      },
+  { url: 'https://www.businessoffashion.com/rss',                                         source: 'Business of Fashion'   },
+  { url: 'https://techcrunch.com/tag/amazon/feed/',                                       source: 'TechCrunch Amazon'     },
+];
+
+// ── SYSTEM PROMPTS ────────────────────────────────────────────────
+
+// Post 1: AI & Big Tech focus
+const TECH_AI_SYSTEM_PROMPT = `You are a professional global tech news editor writing for bestpickr.in.
+
+Your task: write one "Top 5 AI & Tech News" daily roundup blog post using ONLY the real news articles provided by the user.
 
 STRICT EDITORIAL RULES:
 1. Base every claim on the provided articles — never invent facts, dates, or quotes.
 2. Rewrite all summaries entirely in your own original language. Zero copied or near-copied sentences from sources.
-3. Select 5 stories that span diverse categories: AI & Machine Learning, Big Tech (Apple/Google/Microsoft/Meta/Amazon/Tesla/Samsung), Startups & Funding, Cybersecurity, Gadgets launched this week.
+3. Select 5 stories focused on: AI & Machine Learning, Big Tech (Apple/Google/Microsoft/Meta/Amazon/Tesla/Samsung), new product launches, and developer tools.
 4. Each story must cite a verifiable source from the input articles.
 5. Do NOT include old product releases (pre-2026) unless the article covers a brand-new 2026 update.
 6. If fewer than 5 valid articles exist, include fewer items and state clearly why.
@@ -70,49 +87,140 @@ STRICT EDITORIAL RULES:
 
 You MUST respond with a valid JSON object — no markdown fences, just raw JSON:
 {
-  "title": "Top 5 Global Tech News – [Month DD, YYYY]: [hook keyword from biggest story]",
-  "slug": "top-5-tech-news-YYYY-MM-DD",
-  "excerpt": "2–3 sentence meta description 120–160 chars covering today's top tech categories.",
+  "title": "Top 5 AI & Tech News – [Month DD, YYYY]: [hook keyword from biggest story]",
+  "slug": "SLUG_PLACEHOLDER",
+  "excerpt": "2–3 sentence meta description 120–160 chars covering today's AI and tech stories.",
   "content": "Full post as clean HTML using ONLY <h2> <h3> <p> <ul> <li> <strong> <em> <hr> tags.",
   "category": "Industry News",
-  "tags": ["tech news today", "global tech news", "AI news", "placeholder-tag4", "placeholder-tag5"],
-  "unsplashQuery": "global technology news 2026",
+  "tags": ["AI news today", "tech news", "artificial intelligence", "big tech", "technology 2026"],
+  "unsplashQuery": "artificial intelligence technology 2026",
   "readTimeMinutes": 5
 }
 
 HTML CONTENT STRUCTURE — follow this exactly:
 
-<h2>Top 5 Global Tech News – [Full Date]</h2>
-<p>[1–2 sentence intro painting today's tech landscape — make it compelling and specific to today's stories]</p>
+<h2>Top 5 AI & Tech News – [Full Date]</h2>
+<p>[1–2 sentence intro on today's AI/tech landscape]</p>
 
-[Repeat the following block for each of the 5 stories:]
-
-<h3>🔹 [SEO-Optimised Headline — clear, specific, keyword-rich, present tense]</h3>
-<p><strong>📅 Published:</strong> [Exact publication date, e.g. February 24, 2026] &nbsp;|&nbsp; <strong>🌍 Source:</strong> <a href="[original article URL]" target="_blank" rel="noopener noreferrer">[Source Name]</a></p>
-<p>[4–6 line summary written 100% in your own original words using your training knowledge of this topic. You have NOT been given the publisher's text — write every word yourself. Be specific and factual.]</p>
-<p><strong>🔎 Why It Matters:</strong> [2–3 lines on broader business, societal, or technology significance.]</p>
-
-[After all 5 stories:]
+[Repeat for each of the 5 stories:]
+<h3>🤖 [SEO-Optimised Headline — clear, specific, keyword-rich, present tense]</h3>
+<p><strong>📅 Published:</strong> [Date] &nbsp;|&nbsp; <strong>🌍 Source:</strong> <a href="[URL]" target="_blank" rel="noopener noreferrer">[Source]</a></p>
+<p>[4–6 line summary in your own words. Be specific and factual.]</p>
+<p><strong>🔎 Why It Matters:</strong> [2–3 lines on broader significance.]</p>
 
 <hr>
 <h3>📌 Today's Key Takeaway</h3>
-<p>[1–2 paragraphs synthesising the day's overall tech narrative — what common themes emerge across these stories?]</p>
+<p>[1–2 paragraphs synthesising the AI/tech narrative for the day.]</p>
 
 <h3>🏷️ SEO Tags</h3>
 <p>[tag1] · [tag2] · [tag3] · [tag4] · [tag5]</p>
 <p><em>Meta: [Exactly 160-character SEO meta description for this post]</em></p>`;
 
-// ── FETCH RECENT RSS TECH NEWS ─────────────────────────────────────
+// Post 2: Startups, Cybersecurity, Funding focus
+const STARTUP_CYBER_SYSTEM_PROMPT = `You are a professional global tech news editor writing for bestpickr.in.
+
+Your task: write one "Startups & Cybersecurity Roundup" daily blog post using ONLY the real news articles provided by the user.
+
+STRICT EDITORIAL RULES:
+1. Base every claim on the provided articles — never invent facts, dates, or quotes.
+2. Rewrite all summaries entirely in your own original language. Zero copied or near-copied sentences from sources.
+3. Select 5 stories focused on: Startup funding rounds, cybersecurity breaches/threats, new SaaS launches, VC investments, and developer/open-source news.
+4. Each story must cite a verifiable source from the input articles.
+5. Do NOT include old content (pre-2026) unless it covers a fresh 2026 development.
+6. If fewer than 5 valid articles exist, include fewer items and state clearly why.
+7. Tone: analytical, data-driven, founder-friendly.
+
+You MUST respond with a valid JSON object — no markdown fences, just raw JSON:
+{
+  "title": "Startups & Cyber Roundup – [Month DD, YYYY]: [hook from biggest funding/breach story]",
+  "slug": "SLUG_PLACEHOLDER",
+  "excerpt": "2–3 sentence meta description 120–160 chars on today's startup and cybersecurity highlights.",
+  "content": "Full post as clean HTML using ONLY <h2> <h3> <p> <ul> <li> <strong> <em> <hr> tags.",
+  "category": "Industry News",
+  "tags": ["startup news", "cybersecurity", "funding rounds", "venture capital", "tech startups 2026"],
+  "unsplashQuery": "startup funding cybersecurity technology",
+  "readTimeMinutes": 5
+}
+
+HTML CONTENT STRUCTURE — follow this exactly:
+
+<h2>Startups & Cyber Roundup – [Full Date]</h2>
+<p>[1–2 sentence intro on today's startup/cyber landscape]</p>
+
+[Repeat for each of the 5 stories:]
+<h3>🚀 [SEO-Optimised Headline]</h3>
+<p><strong>📅 Published:</strong> [Date] &nbsp;|&nbsp; <strong>🌍 Source:</strong> <a href="[URL]" target="_blank" rel="noopener noreferrer">[Source]</a></p>
+<p>[4–6 line summary in your own words.]</p>
+<p><strong>🔎 Why It Matters:</strong> [2–3 lines on significance.]</p>
+
+<hr>
+<h3>📌 Today's Key Takeaway</h3>
+<p>[1–2 paragraphs on the startup/cyber narrative for the day.]</p>
+
+<h3>🏷️ SEO Tags</h3>
+<p>[tag1] · [tag2] · [tag3] · [tag4] · [tag5]</p>
+<p><em>Meta: [Exactly 160-character SEO meta description for this post]</em></p>`;
+
+// Post 3: E-commerce & Shopping focus
+const ECOMMERCE_SYSTEM_PROMPT = `You are a professional e-commerce and online shopping news editor writing for bestpickr.in — India's trusted product comparison platform.
+
+Your task: write one "E-Commerce & Shopping News" daily roundup blog post using ONLY the real news articles provided by the user.
+
+STRICT EDITORIAL RULES:
+1. Base every claim on the provided articles — never invent facts, dates, or quotes.
+2. Rewrite all summaries entirely in your own original language. Zero copied or near-copied sentences from sources.
+3. Select 5 stories focused on: Amazon/Flipkart/Myntra news, D2C brand launches, Indian e-commerce, deal trends, logistics innovations, and online shopping tips.
+4. Each story must cite a verifiable source from the input articles.
+5. India-first perspective wherever possible — prioritise stories relevant to Indian shoppers.
+6. If fewer than 5 valid articles exist, include fewer items and state clearly why.
+7. Tone: helpful, practical, reader-first — like a knowledgeable shopping advisor.
+
+You MUST respond with a valid JSON object — no markdown fences, just raw JSON:
+{
+  "title": "E-Commerce News – [Month DD, YYYY]: [hook from biggest shopping story]",
+  "slug": "SLUG_PLACEHOLDER",
+  "excerpt": "2–3 sentence meta description 120–160 chars on today's e-commerce and shopping highlights.",
+  "content": "Full post as clean HTML using ONLY <h2> <h3> <p> <ul> <li> <strong> <em> <hr> tags.",
+  "category": "E-Commerce",
+  "tags": ["ecommerce news", "online shopping India", "Amazon India", "Flipkart", "best deals today"],
+  "unsplashQuery": "online shopping ecommerce delivery India",
+  "readTimeMinutes": 4
+}
+
+HTML CONTENT STRUCTURE — follow this exactly:
+
+<h2>E-Commerce News – [Full Date]</h2>
+<p>[1–2 sentence intro on today's online shopping landscape in India and globally]</p>
+
+[Repeat for each of the 5 stories:]
+<h3>🛒 [SEO-Optimised Headline]</h3>
+<p><strong>📅 Published:</strong> [Date] &nbsp;|&nbsp; <strong>🌍 Source:</strong> <a href="[URL]" target="_blank" rel="noopener noreferrer">[Source]</a></p>
+<p>[4–6 line summary in your own words. Highlight what this means for Indian shoppers.]</p>
+<p><strong>🔎 Why It Matters:</strong> [2–3 lines on impact for buyers/sellers.]</p>
+
+<hr>
+<h3>📌 Today's Shopping Takeaway</h3>
+<p>[1–2 paragraphs on the e-commerce narrative — what should shoppers know today?]</p>
+
+<h3>🏷️ SEO Tags</h3>
+<p>[tag1] · [tag2] · [tag3] · [tag4] · [tag5]</p>
+<p><em>Meta: [Exactly 160-character SEO meta description for this post]</em></p>`;
+
+// Backward-compat alias used by cron job + generateDailyBlogs()
+const NEWS_SYSTEM_PROMPT = TECH_AI_SYSTEM_PROMPT;
+
+// ── FETCH RECENT RSS NEWS ──────────────────────────────────────────
 /**
- * Pulls articles from multiple tech RSS feeds published in the last 24 hours.
+ * Pulls articles from multiple RSS feeds published in the last 24 hours.
+ * @param {Array} feeds - array of { url, source } objects
  * Returns an array sorted newest-first.
  */
-async function fetchRecentTechNews() {
+async function fetchRecentNews(feeds) {
   const cutoff   = Date.now() - 24 * 60 * 60 * 1000; // 24 h ago
   const allItems = [];
 
   await Promise.allSettled(
-    RSS_FEEDS.map(async (feed) => {
+    feeds.map(async (feed) => {
       try {
         const res = await axios.get(feed.url, {
           timeout: 12000,
@@ -181,13 +289,13 @@ async function fetchRecentTechNews() {
 // No description or excerpt text from publishers is included.
 // Headlines are factual (not protected by copyright). GPT writes
 // all summaries independently based on the headline alone.
-function buildUserPrompt(articles, todayStr, todayISO) {
+function buildUserPrompt(articles, todayStr, todayISO, slug, topicHint) {
   let newsBlock = '';
 
   if (articles.length === 0) {
     newsBlock =
       'No RSS articles were found in the last 24 hours from the configured sources. ' +
-      'Please write a post clearly stating that no major verifiable global tech updates ' +
+      'Please write a post clearly stating that no major verifiable updates ' +
       'were available at publication time, and briefly explain why news cycles can have quiet days.';
   } else {
     newsBlock = articles
@@ -208,13 +316,13 @@ function buildUserPrompt(articles, todayStr, todayISO) {
   return [
     `Today is ${todayStr} (${todayISO}).`,
     '',
-    'Here are real tech headlines published in the last 24 hours (headline + metadata only):',
+    `Here are real ${topicHint || 'tech'} headlines published in the last 24 hours (headline + metadata only):`,
     '',
     newsBlock,
     '',
-    `Based on ONLY these headlines, write the "Top 5 Global Tech News" blog post for ${todayStr}.`,
-    '- Pick the 5 most globally significant stories covering diverse categories.',
-    `- Use the slug exactly: "top-5-tech-news-${todayISO}".`,
+    `Based on ONLY these headlines, write the blog post for ${todayStr}.`,
+    '- Pick the 5 most significant stories.',
+    `- Use this slug exactly: "${slug}".`,
     '- Write ALL summaries 100% in your own original language — you have NOT been given any',
     '  publisher description text, so every word of your summary must come from your own knowledge',
     '  of the topic suggested by the headline.',
@@ -224,15 +332,15 @@ function buildUserPrompt(articles, todayStr, todayISO) {
 }
 
 // ── CALL GPT-4o-mini ──────────────────────────────────────────────
-async function callGPT(userPrompt) {
+async function callGPT(userPrompt, systemPrompt) {
   const response = await getOpenAIClient().chat.completions.create({
     model:           MODEL,
     temperature:     TEMPERATURE,
     max_tokens:      MAX_TOKENS,
     response_format: { type: 'json_object' },
     messages: [
-      { role: 'system', content: NEWS_SYSTEM_PROMPT },
-      { role: 'user',   content: userPrompt          },
+      { role: 'system', content: systemPrompt || NEWS_SYSTEM_PROMPT },
+      { role: 'user',   content: userPrompt                          },
     ],
   });
 
@@ -296,11 +404,11 @@ async function generateDailyBlogs() {
 
   try {
     // Step 1 — Fetch real news from RSS feeds
-    const articles = await fetchRecentTechNews();
+    const articles = await fetchRecentNews(TECH_RSS_FEEDS);
 
     // Step 2 — Build prompt and call GPT
-    const userPrompt = buildUserPrompt(articles, todayStr, todayISO);
-    const data       = await callGPT(userPrompt);
+    const userPrompt = buildUserPrompt(articles, todayStr, todayISO, slug, 'tech');
+    const data       = await callGPT(userPrompt, TECH_AI_SYSTEM_PROMPT);
 
     // Step 3 — Enforce deterministic slug (don't trust GPT for this)
     data.slug = slug;
@@ -346,6 +454,167 @@ async function generateDailyBlogs() {
     logger.error('[BlogContent] Failed to generate Top 5 Tech News post', { error: err.message });
     return { generated: 0, failed: 1, posts: [] };
   }
+}
+
+// ── GENERATE ONE DRAFT (generic) ─────────────────────────────────
+/**
+ * Generates a single blog draft of a specific type.
+ * @param {object} config
+ *   slug         {string}   - exact MongoDB slug
+ *   feeds        {Array}    - RSS feeds to pull from
+ *   systemPrompt {string}   - GPT system prompt
+ *   topicHint    {string}   - human-readable topic label for the user prompt
+ *   imgQuery     {string}   - Unsplash search query fallback
+ *   label        {string}   - log label (e.g. "Tech AI post")
+ * @returns {{ ok: boolean, slug: string, error?: string }}
+ */
+async function generateOneDraft({ slug, feeds, articles: prefetchedArticles, systemPrompt, topicHint, imgQuery, label }) {
+  const today    = new Date();
+  const todayISO = today.toISOString().slice(0, 10);
+  const todayStr = today.toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  // Idempotency — skip if this exact slug already exists
+  const alreadyExists = await BlogPost.findOne({ slug }, { slug: 1 }).lean();
+  if (alreadyExists) {
+    logger.info(`[BlogContent] ${label}: slug "${slug}" already exists — skipping`);
+    return { ok: false, slug, skipped: true };
+  }
+
+  // Use pre-fetched articles if provided, otherwise fetch now
+  const articles = prefetchedArticles || await fetchRecentNews(feeds);
+  logger.info(`[BlogContent] ${label}: ${articles.length} articles available`);
+
+  // Build prompt + call GPT
+  const userPrompt = buildUserPrompt(articles, todayStr, todayISO, slug, topicHint);
+  const data       = await callGPT(userPrompt, systemPrompt);
+  data.slug        = slug; // always enforce — never trust GPT for the slug
+
+  // Cover image
+  const img = await fetchCoverImage(data.unsplashQuery || imgQuery, data.title);
+
+  // Save to MongoDB
+  const post = new BlogPost({
+    slug:            data.slug,
+    title:           data.title,
+    excerpt:         data.excerpt,
+    content:         data.content,
+    coverImage:      img.url,
+    coverImageAlt:   img.alt,
+    category:        data.category || 'Industry News',
+    tags:            Array.isArray(data.tags) ? data.tags.slice(0, 10) : [],
+    status:          'draft',
+    aiGenerated:     true,
+    readTimeMinutes: data.readTimeMinutes || 5,
+  });
+
+  try {
+    await post.save();
+  } catch (saveErr) {
+    if (saveErr.code === 11000) {
+      logger.warn(`[BlogContent] ${label}: race condition on "${slug}" — already saved`);
+      return { ok: false, slug, skipped: true };
+    }
+    throw saveErr;
+  }
+
+  logger.info(`[BlogContent] ${label}: saved draft "${post.title}" (${post.slug})`);
+  return { ok: true, slug: post.slug };
+}
+
+// ── GENERATE THREE DRAFTS (admin button) ─────────────────────────
+/**
+ * Generates exactly 3 blog drafts on demand:
+ *   1. Tech AI & Big Tech news
+ *   2. Startups & Cybersecurity roundup
+ *   3. E-Commerce & Shopping news
+ *
+ * Each post gets a unique slug per day. Already-existing slugs are
+ * skipped (idempotent) — the count returned reflects only NEW posts saved.
+ *
+ * Returns { generated, failed, skipped, posts: [...slugs] }
+ */
+async function generateThreeDrafts() {
+  // Preflight checks — fail fast with a clear error instead of a silent 0
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY is not set in environment variables');
+  }
+
+  const { getMongoStatus } = require('../utils/mongodb');
+  const mongoStatus = getMongoStatus();
+  if (!mongoStatus.connected) {
+    throw new Error('MongoDB is not connected — check MONGODB_URI in .env');
+  }
+
+  const todayISO = new Date().toISOString().slice(0, 10);
+  // Use a per-run timestamp suffix so every click creates new unique slugs
+  // without hitting the idempotency check. Format: YYYY-MM-DD-HHmmss
+  const runStamp = new Date().toISOString().replace('T', '-').replace(/:/g, '').slice(0, 17);
+
+  // Pre-fetch both RSS batches in parallel — avoids repeating 8+8 HTTP calls
+  logger.info('[BlogContent] Pre-fetching tech + e-commerce RSS feeds in parallel…');
+  const [techArticles, ecomArticles] = await Promise.all([
+    fetchRecentNews(TECH_RSS_FEEDS),
+    fetchRecentNews(ECOMMERCE_RSS_FEEDS),
+  ]);
+  logger.info(`[BlogContent] RSS ready — tech:${techArticles.length} ecom:${ecomArticles.length}`);
+
+  // All 3 configs run sequentially to avoid rate-limit spikes on OpenAI
+  const configs = [
+    {
+      label:        'Tech AI post',
+      slug:         `tech-ai-news-${runStamp}`,
+      articles:     techArticles,
+      systemPrompt: TECH_AI_SYSTEM_PROMPT,
+      topicHint:    'AI and Big Tech',
+      imgQuery:     'artificial intelligence technology',
+    },
+    {
+      label:        'Startup & Cyber post',
+      slug:         `startup-cyber-news-${runStamp}`,
+      articles:     techArticles,
+      systemPrompt: STARTUP_CYBER_SYSTEM_PROMPT,
+      topicHint:    'startup funding and cybersecurity',
+      imgQuery:     'startup cybersecurity funding',
+    },
+    {
+      label:        'E-Commerce post',
+      slug:         `ecommerce-news-${runStamp}`,
+      articles:     ecomArticles,
+      systemPrompt: ECOMMERCE_SYSTEM_PROMPT,
+      topicHint:    'e-commerce and online shopping',
+      imgQuery:     'online shopping ecommerce India',
+    },
+  ];
+
+  let generated = 0;
+  let failed    = 0;
+  let skipped   = 0;
+  const posts   = [];
+
+  for (const config of configs) {
+    try {
+      const result = await generateOneDraft(config);
+      if (result.ok) {
+        generated++;
+        posts.push(result.slug);
+      } else {
+        skipped++;
+        posts.push(result.slug);
+      }
+    } catch (err) {
+      failed++;
+      logger.error(`[BlogContent] ${config.label} failed`, { error: err.message });
+    }
+    // 3-second pause between GPT calls to avoid OpenAI TPM rate limits
+    if (configs.indexOf(config) < configs.length - 1) {
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+
+  logger.info(`[BlogContent] generateThreeDrafts done — generated:${generated} skipped:${skipped} failed:${failed}`);
+  return { generated, failed, skipped, posts };
 }
 
 // ── SIMILARITY / DEDUPLICATION HELPERS ───────────────────────────
@@ -430,4 +699,4 @@ async function deduplicateExistingPosts() {
   return { removed: removed.length, kept: kept.length, details: removed };
 }
 
-module.exports = { generateDailyBlogs, deduplicateExistingPosts };
+module.exports = { generateDailyBlogs, generateThreeDrafts, deduplicateExistingPosts };
