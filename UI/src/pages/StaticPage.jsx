@@ -2,7 +2,7 @@
 // All static pages: About, Blog, How it Works, AI Score, Price Alerts, Privacy, Terms
 import { useState } from 'react'
 
-export const SITE_NAME = 'bestpickr'
+export const SITE_NAME = 'bestpickr™'
 export const SITE_URL  = 'https://bestpickr.in'
 export const CONTACT   = 'hello@bestpickr.in'
 export const TODAY     = new Date().toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' })
@@ -18,7 +18,7 @@ export function Shell({ title, subtitle, badge, children, onHome, wide }) {
         <div className="wrap">
           <button onClick={onHome}
             style={{ fontSize:12, color:'var(--ink4)', fontWeight:600, cursor:'pointer', background:'none', border:'none', display:'flex', alignItems:'center', gap:5, marginBottom:16, padding:0 }}>
-            ← bestpickr
+            ← bestpickr™
           </button>
           {badge && (
             <div style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700, letterSpacing:'.5px', textTransform:'uppercase', color:'var(--accent)', background:'var(--accent-bg)', borderRadius:'var(--r)', padding:'3px 10px', marginBottom:12 }}>
@@ -97,11 +97,11 @@ export function AboutPage({ onHome, onNav }) {
   ]
 
   return (
-    <Shell title="About bestpickr" badge="Our Story" subtitle="We built the product comparison tool we always wished existed. Here's why and how." onHome={onHome}>
+    <Shell title="About bestpickr™" badge="Our Story" subtitle="We built the product comparison tool we always wished existed. Here's why and how." onHome={onHome}>
 
       <P>Shopping online in India is harder than it should be. You open Amazon, find 200 results for "headphones." You check Flipkart — different 200 results, different prices. You read reviews on one platform, but how do you know if they're real? How do you compare across all three platforms at once?</P>
       <P>We couldn't find a tool that answered this question well. So we built one.</P>
-      <P><strong>bestpickr</strong> is an AI-powered product comparison engine built specifically for Indian online shoppers. We aggregate product data from Amazon India, Flipkart, and Myntra — then run it through our proprietary ranking algorithm that weighs ratings, review sentiment, pricing, and review volume to produce a single, trustworthy <strong>AI Score from 0 to 10</strong>.</P>
+      <P><strong>bestpickr™</strong> is an AI-powered product comparison engine built specifically for Indian online shoppers. We aggregate product data from Amazon India, Flipkart, and Myntra — then run it through our proprietary ranking algorithm that weighs ratings, review sentiment, pricing, and review volume to produce a single, trustworthy <strong>AI Score from 0 to 10</strong>.</P>
       <P>The result: instead of spending hours comparing, you see the definitive ranked list in seconds — with every data point shown transparently so you can make your own decision.</P>
 
       <H2>Our Numbers</H2>

@@ -27,7 +27,7 @@ export default function Footer({ onSearch, onNav, onAdmin }) {
 
           {/* Brand */}
           <div>
-            <div className="footer-brand"><b>best</b><span>pickr</span></div>
+            <div className="footer-brand"><b>best</b><span>pickr™</span></div>
             <div className="footer-desc">
               India's smartest product comparison engine. We rank products across Amazon, Flipkart &amp; Myntra using AI — so you always find the best-rated product at the best price.
             </div>
@@ -62,7 +62,7 @@ export default function Footer({ onSearch, onNav, onAdmin }) {
           <div>
             <div className="footer-col-title">Company</div>
             <div className="footer-links">
-              <div className="footer-link" onClick={() => nav('about')}>About bestpickr</div>
+              <div className="footer-link" onClick={() => nav('about')}>About bestpickr™</div>
               <div className="footer-link" onClick={() => nav('blog')}>Blog</div>
               {latestPosts.map(post => (
                 <div key={post.slug} className="footer-link"
@@ -114,10 +114,10 @@ export default function Footer({ onSearch, onNav, onAdmin }) {
 
         {/* Bottom bar */}
         <div className="footer-bottom">
-          <div>© {new Date().getFullYear()} bestpickr. All rights reserved.</div>
+          <div>© {new Date().getFullYear()} bestpickr™. All rights reserved.</div>
           <div style={{ fontSize:11, color:'var(--ink4)', textAlign:'center', lineHeight:1.7 }}>
-            bestpickr is an independent product comparison platform, not affiliated with Amazon, Flipkart or Myntra.
-            bestpickr is a participant in the Amazon Associates Programme — an affiliate advertising programme that enables sites to earn fees by linking to Amazon.in.
+            bestpickr™ is an independent product comparison platform, not affiliated with Amazon, Flipkart or Myntra.
+            bestpickr™ is a participant in the Amazon Associates Programme — an affiliate advertising programme that enables sites to earn fees by linking to Amazon.in.
           </div>
           {/* Hidden admin dot */}
           <div

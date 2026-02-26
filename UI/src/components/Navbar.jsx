@@ -60,6 +60,7 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
             <span style={{ fontWeight:800, fontSize:18, letterSpacing:'-0.5px', lineHeight:1 }}>
               <b style={{ color:'var(--accent)' }}>best</b>
               <span style={{ color:'var(--ink)' }}>pickr</span>
+              <sup style={{ fontSize:9, fontWeight:700, color:'var(--ink3)', verticalAlign:'super', letterSpacing:0, lineHeight:1 }}>™</sup>
               <span style={{ color:'var(--accent2)' }}>.</span>
             </span>
           </div>
