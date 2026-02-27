@@ -1360,4 +1360,11 @@ router.post("/", searchRateLimiter, requestLogger, (req, res, next) => {
   return handleSearch(req, res, next);
 });
 
+// Job status polling endpoint (async live-fetch jobs)
+// GET /api/search/status/:jobId
+router.get("/status/:jobId", async (req, res) => {
+  const { jobStatus } = require("../controllers/searchController");
+  return jobStatus(req, res);
+});
+
 module.exports = router;

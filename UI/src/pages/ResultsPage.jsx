@@ -8,6 +8,11 @@ import { useEffect, useState, useRef } from 'react'
 import { useSearch }      from '../hooks/useSearch.js'
 import { ResultSkeleton } from '../components/Skeleton.jsx'
 import { PlatformLogo, PlatformPill } from '../components/PlatformLogo.jsx'
+import PrimaryProductCard from '../components/PrimaryProductCard.jsx'
+import SuggestionsGrid    from '../components/SuggestionsGrid.jsx'
+import ProductGrid        from '../components/ProductGrid.jsx'
+import DidYouMeanBanner   from '../components/DidYouMeanBanner.jsx'
+import FallbackView       from '../components/FallbackView.jsx'
 
 const RANK_CLASS = ['','g','s','b','n','n','n','n','n','n','n']
 const fmt = (n) => n ? `₹${Number(n).toLocaleString('en-IN')}` : '—'
@@ -110,7 +115,10 @@ function AITooltip({ reason, children }) {
 }
 
 export default function ResultsPage({ query, category, onViewProduct, onSearch }) {
-  const { results, loading, error, meta, search } = useSearch()
+  const {
+    results, loading, error, meta, search,
+    intent, confidence, primaryProduct, suggestions, status,
+  } = useSearch()
   const [sort,    setSort]    = useState('best')
   const [filters, setFilters] = useState({ platforms: [], minScore: 0, maxPrice: 0 })
   // BUG #19 FIX
@@ -252,33 +260,24 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
             </div>
           </div>
 
-          {/* AI Summary bar */}
-          {!loading && results.length > 0 && top && (
-            <div className="ai-summary">
-              <div className="ai-summary-label">★ AI Summary</div>
-              <div className="ai-summary-text">
-                <strong>{top.name}</strong> leads with the highest combined score ({top.aiScore}/10) across all platforms.
-                {bestVal && bestVal.name !== top.name && (
-                  <> <strong>Best value:</strong> {bestVal.name} at {fmt(bestVal.lowestPrice)} (score: {bestVal.aiScore}/10).</>
-                )}
-                {' '}{results.filter(p => p.positivePct >= 75).length} of {results.length} products have 75%+ positive reviews.
-                {results.length > 1 && results[0].lowestPrice && results[results.length-1].lowestPrice && (
-                  <> Prices range from <strong>{fmt(Math.min(...results.map(p=>p.lowestPrice||Infinity)))}</strong> to <strong>{fmt(Math.max(...results.map(p=>p.highestPrice||0)))}</strong>.</>
-                )}
-              </div>
-            </div>
-          )}
+          {/* ── INTENT-BASED LAYOUT ROUTER ─────────────────── */}
 
-          {loading && (
+          {/* Loading / polling state */}
+          {(loading || status === 'fetching' || status === 'partial') && !primaryProduct && (
             <div>
               <div className="loading-wrap" style={{ padding:'16px 0 20px', flexDirection:'row', justifyContent:'flex-start' }}>
                 <div className="loading-spinner"/>
-                <span>Searching Amazon, Flipkart &amp; Myntra simultaneously…</span>
+                <span>
+                  {status === 'fetching' ? 'Fetching live data…' :
+                   status === 'partial'  ? 'Analysing results…' :
+                   'Searching Amazon, Flipkart & Myntra simultaneously…'}
+                </span>
               </div>
               <ResultSkeleton />
             </div>
           )}
 
+          {/* Error state */}
           {error && (
             <div className="error-wrap">
               ⚠️ {error}
@@ -291,42 +290,129 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
             </div>
           )}
 
-          {!loading && !error && results.length === 0 && (
-            <div style={{ background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r3)', padding:'48px 20px', textAlign:'center' }}>
-              <div style={{ fontSize:40, marginBottom:12 }}>{category ? '📂' : '🔍'}</div>
-              <div style={{ fontSize:16, fontWeight:700, color:'var(--ink)', marginBottom:6 }}>
-                {category
-                  ? `No products found in "${category}"`
-                  : 'No results found'
-                }
-              </div>
-              <div style={{ fontSize:14, color:'var(--ink3)', marginBottom:20 }}>
-                {category
-                  ? `We couldn't find any products in the ${category} category. Try searching for specific product names.`
-                  : 'Try a different search term or browse a category'
-                }
-              </div>
-              {['Sony headphones','running shoes','air fryer'].map(s => (
-                <button key={s} onClick={() => onSearch(s, '')}
-                  style={{ margin:4, padding:'7px 14px', border:'1px solid var(--line)', borderRadius:'var(--r)', background:'var(--paper2)', fontSize:13, fontWeight:600, cursor:'pointer', color:'var(--ink2)' }}>
-                  {s}
-                </button>
-              ))}
-            </div>
+          {/* PATH A — PRODUCT_SPECIFIC: primary card + alternatives grid */}
+          {!loading && !error && intent === 'PRODUCT_SPECIFIC' && (
+            <>
+              <PrimaryProductCard
+                product={primaryProduct}
+                status={status}
+                onBuy={(plt) => plt?.url && window.open(plt.url, '_blank')}
+              />
+              {suggestions && suggestions.length > 0 && (
+                <div style={{ marginTop: 24 }}>
+                  <SuggestionsGrid
+                    title="Top Alternatives"
+                    items={suggestions}
+                    onSelect={(p) => onViewProduct(p, suggestions)}
+                  />
+                </div>
+              )}
+            </>
           )}
 
-          {!loading && sorted.length > 0 && (
-            <div className="result-cards">
-              {sorted.map((p, i) => (
-                <ResultCard
-                  key={i}
-                  product={p}
-                  rank={p.rank || i+1}
-                  isTop={i === 0}
-                  onClick={() => onViewProduct(p, results)}
+          {/* PATH B — CATEGORY / BRAND_CATEGORY / GENERIC */}
+          {!loading && !error && (intent === 'CATEGORY' || intent === 'BRAND_CATEGORY' || intent === 'GENERIC') && (
+            <>
+              {/* AI Summary bar for category results */}
+              {(suggestions || results).length > 0 && top && (
+                <div className="ai-summary">
+                  <div className="ai-summary-label">★ AI Summary</div>
+                  <div className="ai-summary-text">
+                    <strong>{top.name}</strong> leads with the highest combined score ({top.aiScore}/10).
+                    {' '}{(suggestions || results).filter(p => p.positivePct >= 75).length} of {(suggestions || results).length} products have 75%+ positive reviews.
+                  </div>
+                </div>
+              )}
+              <ProductGrid
+                title={`Top picks for "${query}"`}
+                items={suggestions && suggestions.length > 0 ? suggestions : sorted}
+                onSelect={(p) => onViewProduct(p, suggestions || results)}
+              />
+            </>
+          )}
+
+          {/* PATH C — LOW_CONFIDENCE: banner + suggestions */}
+          {!loading && !error && intent === 'LOW_CONFIDENCE' && (
+            <>
+              <DidYouMeanBanner
+                product={primaryProduct || suggestions?.[0]}
+                confidence={confidence}
+                onConfirm={(p) => onViewProduct(p, suggestions || [])}
+              />
+              {suggestions && suggestions.length > 0 ? (
+                <SuggestionsGrid
+                  title="You might be looking for…"
+                  items={suggestions}
+                  onSelect={(p) => onViewProduct(p, suggestions)}
                 />
-              ))}
-            </div>
+              ) : (
+                <ProductGrid
+                  title="Popular products"
+                  items={sorted}
+                  onSelect={(p) => onViewProduct(p, results)}
+                />
+              )}
+            </>
+          )}
+
+          {/* PATH D — FALLBACK */}
+          {!loading && !error && intent === 'FALLBACK' && (
+            <FallbackView
+              suggestions={suggestions || results}
+              categorySuggestions={null}
+            />
+          )}
+
+          {/* LEGACY FALLBACK — no intent set (old API response shape) */}
+          {!loading && !error && !intent && (
+            <>
+              {results.length === 0 && (
+                <div style={{ background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r3)', padding:'48px 20px', textAlign:'center' }}>
+                  <div style={{ fontSize:40, marginBottom:12 }}>{category ? '📂' : '🔍'}</div>
+                  <div style={{ fontSize:16, fontWeight:700, color:'var(--ink)', marginBottom:6 }}>
+                    {category ? `No products found in "${category}"` : 'No results found'}
+                  </div>
+                  <div style={{ fontSize:14, color:'var(--ink3)', marginBottom:20 }}>
+                    {category
+                      ? `We couldn't find any products in the ${category} category. Try searching for specific product names.`
+                      : 'Try a different search term or browse a category'}
+                  </div>
+                  {['Sony headphones','running shoes','air fryer'].map(s => (
+                    <button key={s} onClick={() => onSearch(s, '')}
+                      style={{ margin:4, padding:'7px 14px', border:'1px solid var(--line)', borderRadius:'var(--r)', background:'var(--paper2)', fontSize:13, fontWeight:600, cursor:'pointer', color:'var(--ink2)' }}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {sorted.length > 0 && (
+                <>
+                  {top && (
+                    <div className="ai-summary">
+                      <div className="ai-summary-label">★ AI Summary</div>
+                      <div className="ai-summary-text">
+                        <strong>{top.name}</strong> leads with the highest combined score ({top.aiScore}/10) across all platforms.
+                        {bestVal && bestVal.name !== top.name && (
+                          <> <strong>Best value:</strong> {bestVal.name} at {fmt(bestVal.lowestPrice)} (score: {bestVal.aiScore}/10).</>
+                        )}
+                        {' '}{results.filter(p => p.positivePct >= 75).length} of {results.length} products have 75%+ positive reviews.
+                      </div>
+                    </div>
+                  )}
+                  <div className="result-cards">
+                    {sorted.map((p, i) => (
+                      <ResultCard
+                        key={i}
+                        product={p}
+                        rank={p.rank || i+1}
+                        isTop={i === 0}
+                        onClick={() => onViewProduct(p, results)}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
           )}
         </div>
       </div>

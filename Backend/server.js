@@ -150,6 +150,15 @@ async function start() {
     setPrisma(prisma);
     logger.info("✅ Prisma injected into rankingAgent");
 
+    // Inject prisma into new search architecture services
+    const { setPrisma: setSearchCtrlPrisma } = require("./src/controllers/searchController");
+    const { setPrisma: setProductMatchPrisma } = require("./src/services/productMatchService");
+    const { setPrisma: setLiveFetchPrisma }    = require("./src/services/liveProductFetchService");
+    setSearchCtrlPrisma(prisma);
+    setProductMatchPrisma(prisma);
+    setLiveFetchPrisma(prisma);
+    logger.info("✅ Prisma injected into search services (searchController, productMatchService, liveProductFetchService)");
+
     // Connect MongoDB (Mongoose) — AI analysis layer (non-fatal)
     // App works without it; AI features (analysis, price alerts) will be disabled
     const mongoOk = await connectMongoDB();
@@ -168,6 +177,13 @@ async function start() {
     setSearchAgent(runSearchAgent);
     startCron();
     logger.info("✅ Cron scheduler started (preloads categories at 12 AM IST)");
+
+    // Start ranking snapshot cron (replaces top50:{category} every 6 hours)
+    const snapshotCron = require("./src/cron/rankingSnapshotCron");
+    const { getClient: getRedisClient } = require("./src/utils/redis");
+    snapshotCron.init(getRedisClient(), prisma);
+    snapshotCron.start();
+    logger.info("✅ Ranking snapshot cron started (refreshes top50 keys every 6h)");
 
     // Start nightly product refresh (runs at 12:01 AM IST — 1 min after categoryPreloader)
     startNightlyRefresh();
