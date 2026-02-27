@@ -1,9 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <!-- BUG #1 FIX: maximum-scale=1 prevents auto-zoom on input focus on iOS -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+
 
     <!-- ── PRIMARY META ──────────────────────────────────────── -->
     <title>bestpickr™ — Find the Best Rated Products in India</title>
@@ -32,15 +29,60 @@
     <meta name="twitter:description" content="Compare products across Amazon, Flipkart & Myntra. AI-ranked by buyer satisfaction. Free." />
     <meta name="twitter:image" content="https://bestpickr.in/og-image.png" />
 
-    <!-- ── FAVICON ────────────────────────────────────────────── -->
-    <!-- Real file paths (not data URIs) so Google's crawler can index them -->
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/logo-192.png" />
-    <link rel="apple-touch-icon" sizes="192x192" href="/logo-192.png" />
+<head>
+  <meta charset="UTF-8" />
+  <!-- BUG #1 FIX: maximum-scale=1 prevents auto-zoom on input focus on iOS -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+  <!-- ── GOOGLE ANALYTICS ──────────────────────────────────── -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-J35E6R1LBN"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'G-J35E6R1LBN');
+  </script>
 
-    <!-- ── STRUCTURED DATA — WebSite ─────────────────────────── -->
-    <script type="application/ld+json">
+  <!-- ── PRIMARY META ──────────────────────────────────────── -->
+  <title>bestpickr — Find the Best Rated Products in India</title>
+  <meta name="description"
+    content="bestpickr uses AI to compare products across Amazon, Flipkart & Myntra and rank them by buyer satisfaction. Find the best headphones, smartphones, laptops & more in India — in seconds." />
+  <meta name="keywords"
+    content="best products india, product comparison india, amazon vs flipkart, best rated headphones india, best smartphone india 2025, ai product ranking, bestpickr, product review aggregator india, best buy india, product comparison tool, best buy india 2026, top rated products india" />
+  <meta name="author" content="bestpickr" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+  <link rel="canonical" href="https://bestpickr.in/" />
+
+  <!-- ── OPEN GRAPH (Facebook / WhatsApp / Google) ────────── -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://bestpickr.in/" />
+  <meta property="og:title" content="bestpickr — AI Product Rankings for Indian Shoppers" />
+  <meta property="og:description"
+    content="Stop guessing. Find the best-rated product across Amazon, Flipkart & Myntra in one search. Free. No ads. Rankings powered by AI." />
+  <meta property="og:site_name" content="bestpickr" />
+  <meta property="og:locale" content="en_IN" />
+  <meta property="og:image" content="https://bestpickr.in/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="bestpickr — AI-ranked products for Indian shoppers" />
+
+
+  <!-- ── TWITTER CARD ───────────────────────────────────────── -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@bestpickr" />
+  <meta name="twitter:title" content="bestpickr — AI Product Rankings for Indian Shoppers" />
+  <meta name="twitter:description"
+    content="Compare products across Amazon, Flipkart & Myntra. AI-ranked by buyer satisfaction. Free." />
+  <meta name="twitter:image" content="https://bestpickr.in/og-image.png" />
+
+  <!-- ── FAVICON ────────────────────────────────────────────── -->
+  <!-- Real file paths (not data URIs) so Google's crawler can index them -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/logo-192.png" />
+  <link rel="apple-touch-icon" sizes="192x192" href="/logo-192.png" />
+
+  <!-- ── STRUCTURED DATA — WebSite ─────────────────────────── -->
+  <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "WebSite",
@@ -59,8 +101,8 @@
     }
     </script>
 
-    <!-- ── STRUCTURED DATA — Organization ────────────────────── -->
-    <script type="application/ld+json">
+  <!-- ── STRUCTURED DATA — Organization ────────────────────── -->
+  <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "Organization",
@@ -79,8 +121,8 @@
     }
     </script>
 
-    <!-- ── STRUCTURED DATA — FAQ (for rich results) ──────────── -->
-    <script type="application/ld+json">
+  <!-- ── STRUCTURED DATA — FAQ (for rich results) ──────────── -->
+  <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "FAQPage",
@@ -121,26 +163,35 @@
     }
     </script>
 
-    <!-- ── FONTS ──────────────────────────────────────────────── -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <!-- ── FONTS ──────────────────────────────────────────────── -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
 
-    <!-- BUG #13 FIX: Hide body until React hydrates to prevent maintenance mode flash -->
-    <style>
-      body { visibility: hidden; }
-      body.bp-ready { visibility: visible; }
-    </style>
+  <!-- BUG #13 FIX: Hide body until React hydrates to prevent maintenance mode flash -->
+  <style>
+    body {
+      visibility: hidden;
+    }
 
-    <!-- ── THEME COLOR ────────────────────────────────────────── -->
-    <meta name="theme-color" content="#1A6B3C" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="bestpickr" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+    body.bp-ready {
+      visibility: visible;
+    }
+  </style>
+
+  <!-- ── THEME COLOR ────────────────────────────────────────── -->
+  <meta name="theme-color" content="#1A6B3C" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="bestpickr" />
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
 </html>
