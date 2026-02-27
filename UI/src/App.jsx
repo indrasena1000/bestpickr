@@ -14,7 +14,7 @@
 //   Admin toggles from dashboard → backend stores state →
 //   frontend polls /api/admin/status every 60 seconds.
 // ─────────────────────────────────────────────────────────────────
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Navbar          from './components/Navbar.jsx'
 import Footer          from './components/Footer.jsx'
 import HomePage        from './pages/HomePage.jsx'
@@ -32,6 +32,7 @@ import BlogPage     from './pages/BlogPage.jsx'
 import BlogPostPage from './pages/BlogPostPage.jsx'
 import { matchSeoRoute } from './seoRoutes.js'
 import { trackPageView, trackSearch } from './utils/analytics.js'
+import NotFoundPage from './pages/NotFoundPage.jsx'
 
 // ── MAINTENANCE BLOG NAV ───────────────────────────────────────────
 // Shown instead of the main Navbar when maintenance is ON but user is
@@ -121,6 +122,7 @@ const PAGE_TITLES = {
   'price-alerts': 'Price Alerts — bestpickr',
   'privacy':      'Privacy Policy — bestpickr',
   'terms':        'Terms of Service — bestpickr',
+  '404':          'Page Not Found — bestpickr',
 }
 
 export default function App() {
@@ -131,16 +133,27 @@ export default function App() {
   const initialRoute   = parseHash()
   const initialSession = initialRoute.path === 'detail' ? loadDetailFromSession() : { product: null, results: [] }
 
+  // If the visitor landed on an unknown path (not root, not an SEO route),
+  // treat it as a 404 from the start — don't silently fall back to home.
+  const isUnknownPathRoute = pathname !== '' && !seoMatch
+
   const [route,           setRoute]       = useState(
     seoMatch
       ? { path: 'results', params: { q: seoMatch.query, cat: seoMatch.category } }
-      : initialRoute
+      : isUnknownPathRoute
+        ? { path: '404', params: {} }
+        : initialRoute
   )
   const [selectedProduct, setProduct]     = useState(initialSession.product)
   const [searchResults,   setResults]     = useState(initialSession.results)
   const [showAdmin,       setShowAdmin]   = useState(false)
   const [maintenance,     setMaintenance] = useState(null) // null = not yet fetched
   const [activeSeoMeta,   setSeoMeta]     = useState(seoMatch || null)
+
+  // Track last search query so onBack from DetailPage restores the right results
+  const lastSearchRef = useRef(
+    (() => { try { return JSON.parse(sessionStorage.getItem('bp_last_search') || '{}') } catch (_) { return {} } })()
+  )
 
   // Whether this device is bypassing maintenance (admin access)
   const isAdminBypass = window.location.search.includes('admin=1')
@@ -234,6 +247,11 @@ export default function App() {
   // ── NAVIGATION ─────────────────────────────────────────────────
   const navigate = useCallback((path, params = {}) => {
     setSeoMeta(null)
+    // If we're on a non-root pathname (e.g. /nonexistent-url), silently fix
+    // the URL to '/' via history.replaceState — no full page reload needed.
+    if (window.location.pathname.replace(/^\//, '') !== '') {
+      window.history.replaceState(null, '', '/')
+    }
     setHash(path === 'home' ? '' : path, params)
     setRoute({ path: path === 'home' ? '/' : path, params })
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -243,6 +261,13 @@ export default function App() {
   function handleSearch(q, cat = '') {
     trackSearch(q, cat, 0)
     setSeoMeta(null)
+    // Remember last search so DetailPage's back button can restore it
+    lastSearchRef.current = { q, cat }
+    try { sessionStorage.setItem('bp_last_search', JSON.stringify({ q, cat })) } catch (_) {}
+    // If on a bad pathname, silently correct to '/' without a page reload.
+    if (window.location.pathname.replace(/^\//, '') !== '') {
+      window.history.replaceState(null, '', '/')
+    }
     setHash('results', { q, cat })
     setRoute({ path: 'results', params: { q, cat } })
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -275,8 +300,30 @@ export default function App() {
   }
 
   const { path, params } = route
-  const isHome     = path === '/' || path === ''
+  const isHome      = path === '/' || path === ''
   const isBlogRoute = path === 'blog' || path.startsWith('blog/')
+
+  // ── RENDER: 404 FALLBACK (checked FIRST — before maintenance) ──
+  // Must run before maintenance so broken URLs show 404, not a maintenance
+  // page. Static page keys + known nav routes are all explicitly listed.
+  const staticPageKeys = [
+    'about', 'how-it-works', 'ai-score', 'price-alerts',
+    'privacy', 'terms', 'affiliate-disclosure',
+  ]
+  const knownRoutes = ['/', '', 'results', 'detail', 'admin']
+  const is404 = !knownRoutes.includes(path) &&
+                !staticPageKeys.includes(path) &&
+                !isBlogRoute
+
+  if (is404) {
+    return (
+      <>
+        <Navbar currentPage='404' currentQuery='' onSearch={handleSearch} onHome={() => navigate('home')} />
+        <NotFoundPage onSearch={handleSearch} onHome={() => navigate('home')} onNav={navigate} />
+        <Footer onSearch={handleSearch} onNav={navigate} onAdmin={() => setShowAdmin(true)} />
+      </>
+    )
+  }
 
   // ── RENDER: MAINTENANCE ────────────────────────────────────────
   // Blog routes are allowed through — Instagram visitors can read
@@ -379,7 +426,10 @@ export default function App() {
         <DetailPage
           product={selectedProduct}
           allResults={searchResults}
-          onBack={() => navigate('results')}
+          onBack={() => {
+            const { q = '', cat = '' } = lastSearchRef.current
+            navigate('results', { q, cat })
+          }}
           onHome={() => navigate('home')}
         />
       )}

@@ -24,7 +24,7 @@ const SUGGESTS = [
   "smartphone under 20000",
   "laptop for students",
 ];
-const PLT_ICONS = { Amazon: "🛒", Flipkart: "🔵", Myntra: "🛍️" };
+import { PlatformPill } from '../components/PlatformLogo.jsx'
 
 
 // ── HOVER TOOLTIP (BUG #18) ────────────────────────────────────────
@@ -242,9 +242,7 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
                     </div>
                     <div className="plt-pills" style={{ marginTop:6 }}>
                       {(p.platforms || []).map((plt) => (
-                        <span key={plt.name} className="plt-pill">
-                          {PLT_ICONS[plt.name] || ""} {plt.name}
-                        </span>
+                        <PlatformPill key={plt.name} name={plt.name} />
                       ))}
                     </div>
                   </div>

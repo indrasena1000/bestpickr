@@ -40,7 +40,7 @@ const { getClient: getRedis } = require('../utils/redis');
 const ACCESS_TOKEN    = process.env.CUELINKS_WEBSITE_ID;
 const CHANNEL_ID      = process.env.CUELINKS_API_KEY; // numeric publisher ID
 
-const CLNK_BASE_URL   = 'http://api.clnk.in';
+const CLNK_BASE_URL   = 'https://api.clnk.in';
 const CACHE_TTL       = 6 * 60 * 60;           // 6 hours
 const REDIS_PREFIX    = 'bestpickr:cuelinks';
 const REQUEST_TIMEOUT = 10000;                  // 10s
@@ -188,7 +188,12 @@ async function convertToAffiliateLink(originalUrl) {
   }
 
   try {
-    const body = { long_url: originalUrl, access_token: ACCESS_TOKEN };
+    // CHANNEL_ID (CUELINKS_API_KEY) is the numeric publisher ID — include if available
+    const body = {
+      long_url:     originalUrl,
+      access_token: ACCESS_TOKEN,
+      ...(CHANNEL_ID ? { channel_id: CHANNEL_ID } : {}),
+    };
 
     const res = await axios.post(
       `${CLNK_BASE_URL}/api/v1/links/shorten`,
