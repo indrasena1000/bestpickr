@@ -10,7 +10,7 @@ export default function AffiliateDisclosurePage({ onHome, onNav }) {
     <Shell
       title="Affiliate Disclosure"
       badge="Transparency"
-      subtitle="How bestpickr earns revenue — and why it never affects your results."
+      subtitle="How bestpickr™ earns revenue — and why it never affects your results."
       onHome={onHome}
     >
 
