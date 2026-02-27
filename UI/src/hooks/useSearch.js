@@ -2,6 +2,18 @@
 import { useState, useCallback, useRef } from 'react'
 import { searchProducts, getSuggestions } from '../services/api'
 
+const cacheKey = (q) => `bp_search:${q.toLowerCase().trim()}`
+
+function readCache(q) {
+  try {
+    const raw = sessionStorage.getItem(cacheKey(q))
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+function writeCache(q, data) {
+  try { sessionStorage.setItem(cacheKey(q), JSON.stringify(data)) } catch (_) {}
+}
+
 export function useSearch() {
   const [results,    setResults]    = useState([])
   const [loading,    setLoading]    = useState(false)
@@ -11,6 +23,17 @@ export function useSearch() {
 
   const search = useCallback(async (query, category = '') => {
     if (!query?.trim()) return
+
+    // ── Session cache hit: restore instantly, skip API ──────────
+    const cached = readCache(query)
+    if (cached) {
+      setResults(cached.results)
+      setMeta(cached.meta)
+      setLoading(false)
+      setError(null)
+      return
+    }
+
     // Cancel any in-flight request
     if (abortRef.current) abortRef.current.abort()
 
@@ -20,8 +43,12 @@ export function useSearch() {
 
     try {
       const data = await searchProducts(query.trim(), category)
-      setResults(data.results || [])
-      setMeta({ fromCache: data.cached, elapsed: data.elapsed_ms, platforms: data.platforms, source: data.source, cacheSource: data.cacheSource })
+      const freshResults = data.results || []
+      const freshMeta = { fromCache: data.cached, elapsed: data.elapsed_ms, platforms: data.platforms, source: data.source, cacheSource: data.cacheSource }
+      setResults(freshResults)
+      setMeta(freshMeta)
+      // Save to session cache so back-nav is instant
+      writeCache(query, { results: freshResults, meta: freshMeta })
     } catch (err) {
       setError(err.response?.data?.error || 'Search failed. Please try again.')
     } finally {

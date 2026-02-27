@@ -7,9 +7,9 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSearch }      from '../hooks/useSearch.js'
 import { ResultSkeleton } from '../components/Skeleton.jsx'
+import { PlatformLogo, PlatformPill } from '../components/PlatformLogo.jsx'
 
 const RANK_CLASS = ['','g','s','b','n','n','n','n','n','n','n']
-const PLT_ICONS  = { Amazon:'🛒', Flipkart:'🔵', Myntra:'🛍️' }
 const fmt = (n) => n ? `₹${Number(n).toLocaleString('en-IN')}` : '—'
 
 const CATEGORY_EMOJIS = {
@@ -166,7 +166,7 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
                     checked={filters.platforms.length === 0 || filters.platforms.includes(plt)}
                     onChange={() => togglePlatform(plt)}
                   />
-                  <span>{PLT_ICONS[plt]} {plt}</span>
+                  <span style={{display:'inline-flex',alignItems:'center',gap:5}}><PlatformLogo name={plt} size={13}/> {plt}</span>
                   <span className="filter-cnt">{count}</span>
                 </label>
               )
@@ -218,7 +218,11 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
               {meta.fromCache ? '⚡ Cached result' : `🔍 Live search in ${meta.elapsed}ms`}
               {meta.platforms && (
                 <div style={{ marginTop:4 }}>
-                  🛒 {meta.platforms.amazon} · 🔵 {meta.platforms.flipkart} · 🛍️ {meta.platforms.myntra}
+                  <span style={{display:'inline-flex',alignItems:'center',gap:3,flexWrap:'wrap'}}>
+                    <PlatformLogo name="Amazon" size={13}/> {meta.platforms.amazon} &nbsp;·&nbsp;
+                    <PlatformLogo name="Flipkart" size={13}/> {meta.platforms.flipkart} &nbsp;·&nbsp;
+                    <PlatformLogo name="Myntra" size={13}/> {meta.platforms.myntra}
+                  </span>
                 </div>
               )}
             </div>
@@ -426,9 +430,7 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
           <div className="rcard-bottom-val">{(p.platforms||[]).length} stores</div>
           <div className="plt-pills" style={{ marginTop:6 }}>
             {(p.platforms||[]).map(plt => (
-              <span key={plt.name} className="plt-pill">
-                {PLT_ICONS[plt.name] || ''} {plt.name}
-              </span>
+              <PlatformPill key={plt.name} name={plt.name} />
             ))}
           </div>
         </div>

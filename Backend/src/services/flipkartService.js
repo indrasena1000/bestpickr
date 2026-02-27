@@ -104,28 +104,30 @@ async function searchProducts(query, category = '') {
 //   3. Find the repeating container div and update SELECTORS.card
 //   4. Find each data element and update accordingly
 //
-// CURRENT SELECTORS (verified Feb 2026):
+// CURRENT SELECTORS (updated Feb 2026 — Flipkart refreshes classes ~quarterly):
+// To re-derive: open flipkart.com/search?q=headphones in Chrome DevTools,
+// inspect a product card, note the repeating container class and child classes.
 const SELECTORS = {
-  // Product card container — try multiple because Flipkart A/B tests layouts
-  card:       '._1AtVbE, ._2kHMtA, .col.col-7-12, ._13oc-S, [data-id]',
-  // Product name
-  name:       '._4rR01T, .s1Q9rs, ._2WkVRV, .IRpwTa, a.s1Q9rs',
-  // Brand (sometimes separate from name, sometimes embedded)
-  brand:      '.hCKiLj, ._2WkVRV, ._30jeq3 + span',
-  // Discounted/sale price (₹ price shown prominently)
-  price:      '._30jeq3, ._25b18h ._30jeq3, .Nx9bqj',
-  // Original MRP (struck-through price)
-  mrp:        '._3I9_wc, ._3tbKJL, .yRaY8j',
-  // Discount percentage
-  discount:   '._3Ay6Sb, .UkUFwK',
-  // Star rating number
-  rating:     '._3LWZlK, .XQDdHH, ._1lRcqv ._3LWZlK',
-  // Number of ratings/reviews (e.g. "1,240 Ratings")
-  reviewCount:'._2_R_DZ span, ._2y7Z71, .Wphh3N',
-  // Product image
-  image:      '._396cs4, img._2r_T1I, img.DByuf4',
-  // Product page link
-  link:       '._1fQZEK, a._2UzuFa, a.s1Q9rs, a.IRpwTa, a[href*="/p/"]',
+  // Product card container — ranked by reliability; [data-id] is the most stable
+  card:       'div[data-id], ._75nlfW, ._1AtVbE, ._2kHMtA, ._13oc-S',
+  // Product name — .KzDlHZ is the current primary class (2025/26), others are fallbacks
+  name:       '.KzDlHZ, ._4rR01T, .s1Q9rs, .IRpwTa, a.wjcEIp',
+  // Brand element (often omitted; brand is usually the first word of name)
+  brand:      '.hCKiLj, .syl9yP, ._2WkVRV',
+  // Sale/current price — .Nx9bqj is current (2025/26), ._30jeq3 is the 2024 fallback
+  price:      '.Nx9bqj, ._30jeq3, ._25b18h .Nx9bqj',
+  // Struck-through MRP
+  mrp:        '.yRaY8j, ._3I9_wc, ._3tbKJL',
+  // Discount percentage badge
+  discount:   '.UkUFwK, ._3Ay6Sb',
+  // Star rating number — .XQDdHH is current, ._3LWZlK is 2024 fallback
+  rating:     '.XQDdHH, ._3LWZlK, ._1lRcqv .XQDdHH',
+  // Ratings/reviews count (e.g. "1,240 Ratings & 340 Reviews")
+  reviewCount:'.Wphh3N, ._2_R_DZ span, ._2y7Z71',
+  // Product thumbnail image
+  image:      '.DByuf4, img.DByuf4, ._396cs4, img._2r_T1I',
+  // Product page anchor — CGtC98 is current (2025/26), others are fallbacks
+  link:       'a.CGtC98, a.WKTcLC, a._1fQZEK, a._2UzuFa, a[href*="/p/"]',
 }
 
 function parseFlipkartHTML(html, query) {
@@ -135,9 +137,18 @@ function parseFlipkartHTML(html, query) {
   // Try to find product cards — Flipkart uses various grid layouts
   let cards = $(SELECTORS.card)
 
-  // Fallback: look for any div with a product-like link
+  // Fallback 1: any anchor with a Flipkart product path, walk up one level
   if (cards.length < 3) {
-    cards = $('a[href*="/p/itm"]').closest('div').parent()
+    cards = $('a[href*="/p/"]').closest('div[class]').parent()
+  }
+
+  // Fallback 2: any div that contains both a price and a product link
+  if (cards.length < 3) {
+    cards = $('div').filter((_, el) => {
+      const div = $(el)
+      return div.find('a[href*="/p/"]').length > 0 &&
+             div.find('*').filter((_, n) => /[₹]/.test($(n).text())).length > 0
+    })
   }
 
   cards.each((i, el) => {
