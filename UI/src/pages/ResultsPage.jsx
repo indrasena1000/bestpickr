@@ -118,6 +118,7 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
   const {
     results, loading, error, meta, search,
     intent, confidence, primaryProduct, suggestions, status,
+    matchType, wasSpellingCorrected, correctedQuery,
   } = useSearch()
   const [sort,    setSort]    = useState('best')
   const [filters, setFilters] = useState({ platforms: [], minScore: 0, maxPrice: 0 })
@@ -293,19 +294,30 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
           {/* PATH A — PRODUCT_SPECIFIC: primary card + alternatives grid */}
           {!loading && !error && intent === 'PRODUCT_SPECIFIC' && (
             <>
+              {/* Spelling correction banner */}
+              {wasSpellingCorrected && correctedQuery && (
+                <div style={{
+                  background: 'var(--accent-bg)', border: '1px solid var(--accent)',
+                  borderRadius: 8, padding: '8px 14px', marginBottom: 12,
+                  fontSize: 13, color: 'var(--ink)',
+                }}>
+                  Showing results for <strong>{correctedQuery}</strong>
+                </div>
+              )}
               <PrimaryProductCard
                 product={primaryProduct}
                 status={status}
+                confidence={confidence}
+                matchType={matchType}
                 onBuy={(plt) => plt?.url && window.open(plt.url, '_blank')}
               />
               {suggestions && suggestions.length > 0 && (
-                <div style={{ marginTop: 24 }}>
-                  <SuggestionsGrid
-                    title="Top Alternatives"
-                    items={suggestions}
-                    onSelect={(p) => onViewProduct(p, suggestions)}
-                  />
-                </div>
+                <SuggestionsGrid
+                  title="Bestpickr Suggested Alternatives"
+                  subtitle="Suggested based on your search"
+                  items={suggestions}
+                  onSelect={(p) => onViewProduct(p, suggestions)}
+                />
               )}
             </>
           )}
@@ -313,6 +325,16 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
           {/* PATH B — CATEGORY / BRAND_CATEGORY / GENERIC */}
           {!loading && !error && (intent === 'CATEGORY' || intent === 'BRAND_CATEGORY' || intent === 'GENERIC') && (
             <>
+              {/* Spelling correction banner */}
+              {wasSpellingCorrected && correctedQuery && (
+                <div style={{
+                  background: 'var(--accent-bg)', border: '1px solid var(--accent)',
+                  borderRadius: 8, padding: '8px 14px', marginBottom: 12,
+                  fontSize: 13, color: 'var(--ink)',
+                }}>
+                  Showing results for <strong>{correctedQuery}</strong>
+                </div>
+              )}
               {/* AI Summary bar for category results */}
               {(suggestions || results).length > 0 && top && (
                 <div className="ai-summary">
@@ -334,6 +356,15 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
           {/* PATH C — LOW_CONFIDENCE: banner + suggestions */}
           {!loading && !error && intent === 'LOW_CONFIDENCE' && (
             <>
+              {wasSpellingCorrected && correctedQuery && (
+                <div style={{
+                  background: 'var(--accent-bg)', border: '1px solid var(--accent)',
+                  borderRadius: 8, padding: '8px 14px', marginBottom: 12,
+                  fontSize: 13, color: 'var(--ink)',
+                }}>
+                  Showing results for <strong>{correctedQuery}</strong>
+                </div>
+              )}
               <DidYouMeanBanner
                 product={primaryProduct || suggestions?.[0]}
                 confidence={confidence}
@@ -342,6 +373,7 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
               {suggestions && suggestions.length > 0 ? (
                 <SuggestionsGrid
                   title="You might be looking for…"
+                  subtitle="Based on related searches"
                   items={suggestions}
                   onSelect={(p) => onViewProduct(p, suggestions)}
                 />

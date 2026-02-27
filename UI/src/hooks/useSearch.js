@@ -19,19 +19,22 @@ function writeCache(q, data) {
 // ── Empty state ───────────────────────────────────────────────────
 function emptyState() {
   return {
-    intent:          null,
-    confidence:      null,
-    primaryProduct:  null,
-    suggestions:     [],
-    status:          'ready',
-    jobId:           null,
-    source:          null,
-    executionTimeMs: 0,
-    isLoading:       false,
-    error:           null,
-    fromCache:       false,
+    intent:                null,
+    confidence:            null,
+    matchType:             null,
+    primaryProduct:        null,
+    suggestions:           [],
+    status:                'ready',
+    jobId:                 null,
+    source:                null,
+    executionTimeMs:       0,
+    isLoading:             false,
+    error:                 null,
+    fromCache:             false,
+    wasSpellingCorrected:  false,
+    correctedQuery:        null,
     // Legacy compat — ResultsPage still reads .results in some paths
-    results:         [],
+    results:               [],
   }
 }
 
@@ -96,18 +99,21 @@ export function useSearch() {
       const data = await searchProducts(query.trim(), category)
 
       const next = {
-        intent:          data.intent          || null,
-        confidence:      data.confidence      ?? null,
-        primaryProduct:  data.primaryProduct  || null,
-        suggestions:     data.suggestions     || data.results || [],
-        results:         data.suggestions     || data.results || [],   // legacy
-        status:          data.status          || 'ready',
-        jobId:           data.jobId           || null,
-        source:          data.source          || null,
-        executionTimeMs: data.executionTimeMs || data.elapsed_ms || 0,
-        isLoading:       data.status === 'fetching',
-        error:           null,
-        fromCache:       data.fromCache       || false,
+        intent:                data.intent                || null,
+        confidence:            data.confidence            ?? null,
+        matchType:             data.matchType             || null,
+        primaryProduct:        data.primaryProduct        || null,
+        suggestions:           data.suggestions           || data.results || [],
+        results:               data.suggestions           || data.results || [],   // legacy
+        status:                data.status                || 'ready',
+        jobId:                 data.jobId                 || null,
+        source:                data.source                || null,
+        executionTimeMs:       data.executionTimeMs       || data.elapsed_ms || 0,
+        isLoading:             data.status === 'fetching',
+        error:                 null,
+        fromCache:             data.fromCache             || false,
+        wasSpellingCorrected:  data.wasSpellingCorrected  || false,
+        correctedQuery:        data.correctedQuery        || null,
         // Keep meta compat for existing ResultsPage
         meta: {
           fromCache:   data.fromCache,
@@ -116,6 +122,7 @@ export function useSearch() {
           source:      data.source,
           intent:      data.intent,
           confidence:  data.confidence,
+          matchType:   data.matchType,
         },
       }
 
@@ -135,21 +142,24 @@ export function useSearch() {
 
   return {
     // New contract
-    intent:          state.intent,
-    confidence:      state.confidence,
-    primaryProduct:  state.primaryProduct,
-    suggestions:     state.suggestions,
-    status:          state.status,
-    jobId:           state.jobId,
-    source:          state.source,
-    executionTimeMs: state.executionTimeMs,
-    isLoading:       state.isLoading,
-    error:           state.error,
-    fromCache:       state.fromCache,
-    meta:            state.meta,
+    intent:                state.intent,
+    confidence:            state.confidence,
+    matchType:             state.matchType,
+    primaryProduct:        state.primaryProduct,
+    suggestions:           state.suggestions,
+    status:                state.status,
+    jobId:                 state.jobId,
+    source:                state.source,
+    executionTimeMs:       state.executionTimeMs,
+    isLoading:             state.isLoading,
+    error:                 state.error,
+    fromCache:             state.fromCache,
+    wasSpellingCorrected:  state.wasSpellingCorrected,
+    correctedQuery:        state.correctedQuery,
+    meta:                  state.meta,
     // Legacy compat
-    results:         state.results,
-    loading:         state.isLoading,
+    results:               state.results,
+    loading:               state.isLoading,
     search,
   }
 }

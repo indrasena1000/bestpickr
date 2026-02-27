@@ -10,7 +10,7 @@ const logger               = require('../utils/logger')
 const amazonService        = require('./amazonService')
 const flipkartService      = require('./flipkartService')
 const myntraService        = require('./myntraService')
-const { runAnalysisPipeline } = require('../pipeline/analysisPipeline')
+const { enrichAll }        = require('./productEnricher')
 const { groupByProduct, aggregateGroup } = require('../utils/scorer')
 const { acquireLock, releaseLock } = require('../utils/redisLock')
 const { checkAndIncrement }        = require('../utils/dailyCap')
@@ -126,51 +126,47 @@ async function startLiveFetch(redis, jobId, query, intentResult) {
         .map((p, i) => ({ rank: i + 1, ...p }))
 
       let primary = scored[0] || null
+      const alternatives = scored.slice(1)  // products 2-10
 
-      // ── Run GPT-4o mini analysis pipeline on primary product ──────
-      // Requires ASIN (from raw Amazon results) + product name + category
-      let analysedCategory = intentResult.category || null
+      // ── Enrich all 10: Redis → MongoDB → ScraperAPI (primary only) ───
+      // For alternatives: cache-only (enrichAll scrapeLimit=0).
+      // For primary: ScraperAPI allowed only if ASIN available and
+      //              no cached analysis found (enrichAll scrapeLimit=1).
+      let allEnriched
       if (primary) {
-        if (primaryAsin) {
-          try {
-            const analysis = await runAnalysisPipeline(
-              primaryAsin,
-              primary.name,
-              intentResult.category || null,
-              { brand: primary.brand }
-            )
-            if (analysis) {
-              if (analysis.confirmedCategory) analysedCategory = analysis.confirmedCategory
-              // Enrich primary with AI-computed score and sentiment
-              primary = {
-                ...primary,
-                ...(analysis.aiScore   != null ? { aiScore:    analysis.aiScore }   : {}),
-                ...(analysis.positivePct != null ? { positivePct: analysis.positivePct } : {}),
-                ...(analysis.summary   ? { aiSummary: analysis.summary }   : {}),
-                ...(analysis.pros      ? { pros: analysis.pros }           : {}),
-                ...(analysis.cons      ? { cons: analysis.cons }           : {}),
-              }
-              logger.info(`LiveFetch: GPT analysis done — aiScore=${analysis.aiScore} for "${primary.name}"`)
-            }
-          } catch (err) {
-            logger.warn(`LiveFetch: analysisPipeline failed: ${err.message}`)
-          }
-        } else {
-          logger.warn(`LiveFetch: no ASIN — skipping GPT analysis for "${primary.name}"`)
+        // Attach ASIN to primary so enricher can look it up
+        const primaryWithAsin = primaryAsin ? { ...primary, asin: primaryAsin } : primary
+        allEnriched = await enrichAll(
+          [primaryWithAsin, ...alternatives],
+          { scrapeLimit: primaryAsin ? 1 : 0 }
+        )
+      } else {
+        allEnriched = []
+      }
+
+      primary = allEnriched[0] || null
+      const enrichedAlternatives = allEnriched.slice(1)
+      let analysedCategory = intentResult.category || null
+
+      // Surface category from enrichment result if pipeline confirmed it
+      if (primary?.confirmedCategory) analysedCategory = primary.confirmedCategory
+
+      // ── Save all enriched products to DB (non-blocking, best-effort) ──
+      if (prisma) {
+        for (const p of allEnriched.filter(Boolean)) {
+          saveToDb(p, analysedCategory).catch(err =>
+            logger.warn(`LiveFetch: DB save failed: ${err.message}`)
+          )
         }
       }
 
-      // ── Save to DB (non-blocking, best-effort) ────────────────────
-      if (prisma && primary) {
-        saveToDb(primary, analysedCategory).catch(err =>
-          logger.warn(`LiveFetch: DB save failed: ${err.message}`)
-        )
-      }
-
       // ── Fetch 9 related (Rule 7: category confirmed first) ────────
-      const suggestions = analysedCategory
-        ? await getRelated(redis, analysedCategory, null, primary?.name)
-        : []
+      // Use enriched alternatives as suggestions; fall back to top50
+      const suggestions = enrichedAlternatives.length >= 3
+        ? enrichedAlternatives
+        : analysedCategory
+          ? await getRelated(redis, analysedCategory, null, primary?.name)
+          : []
 
       // ── Mark job ready ────────────────────────────────────────────
       await updateJob(redis, jobId, {

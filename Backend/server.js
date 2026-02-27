@@ -151,13 +151,17 @@ async function start() {
     logger.info("✅ Prisma injected into rankingAgent");
 
     // Inject prisma into new search architecture services
-    const { setPrisma: setSearchCtrlPrisma } = require("./src/controllers/searchController");
+    const { setPrisma: setSearchCtrlPrisma }  = require("./src/controllers/searchController");
     const { setPrisma: setProductMatchPrisma } = require("./src/services/productMatchService");
     const { setPrisma: setLiveFetchPrisma }    = require("./src/services/liveProductFetchService");
+    const { setPrisma: setRelatedSvcPrisma }   = require("./src/services/relatedProductService");
+    const { setPrisma: setBgEnricherPrisma }   = require("./src/services/backgroundCategoryEnricher");
     setSearchCtrlPrisma(prisma);
     setProductMatchPrisma(prisma);
     setLiveFetchPrisma(prisma);
-    logger.info("✅ Prisma injected into search services (searchController, productMatchService, liveProductFetchService)");
+    setRelatedSvcPrisma(prisma);
+    setBgEnricherPrisma(prisma);
+    logger.info("✅ Prisma injected into search services (searchController, productMatchService, liveProductFetchService, relatedProductService, backgroundCategoryEnricher)");
 
     // Connect MongoDB (Mongoose) — AI analysis layer (non-fatal)
     // App works without it; AI features (analysis, price alerts) will be disabled

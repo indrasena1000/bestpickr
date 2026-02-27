@@ -1,9 +1,17 @@
 // src/controllers/searchController.js
 // ─────────────────────────────────────────────────────────────────
-// Path router — orchestrates the 4 search paths:
-//   A: PRODUCT_SPECIFIC  → DB lookup → live fetch on miss
-//   B: CATEGORY / BRAND_CATEGORY / GENERIC → Redis top50 + filter
-//   C: LOW_CONFIDENCE    → run A + B in parallel, pick winner
+// v2.0: Confidence-gated search with 3-tier internal matching.
+//
+// Flow:
+//   1. Normalize → extractAttributes → classifyIntent
+//   2. Redis confidence match (top50 cache) — if ≥ 85% → return
+//   3. PostgreSQL weighted search — if ≥ 85% → return
+//   4. Amazon API live fetch — ONLY if no high-confidence match
+//
+// Paths:
+//   A: PRODUCT_SPECIFIC  → Redis → DB → live fetch (last resort)
+//   B: CATEGORY/BRAND_CATEGORY/GENERIC → Redis top50 + filter
+//   C: LOW_CONFIDENCE    → run A + B in parallel
 //   D: FALLBACK          → trending multi-category
 // ─────────────────────────────────────────────────────────────────
 'use strict'
@@ -13,20 +21,25 @@ const logger                     = require('../utils/logger')
 const { getClient }              = require('../utils/redis')
 const { normalizeQuery }         = require('../utils/queryNormalizer')
 const { classifyIntent, INTENT } = require('../services/searchIntentService')
-const { findProduct, isStale, formatForResponse } = require('../services/productMatchService')
+const { findFromRedis, weightedSearch, findTopMatches, isStale, formatForResponse, CONFIDENCE }
+                                 = require('../services/productMatchService')
 const { getRelated }             = require('../services/relatedProductService')
 const { getFallback }            = require('../services/fallbackService')
 const { startLiveFetch }         = require('../services/liveProductFetchService')
 const { createJob, getJob }      = require('../services/jobStatusService')
+const { enrichWithAnalysis, enrichFromCache, enrichAll } = require('../services/productEnricher')
+const { triggerCategoryEnrichment } = require('../services/backgroundCategoryEnricher')
 
 const SEARCH_CACHE_TTL = 600   // 10 min per spec
 
 // ── Helpers ───────────────────────────────────────────────────────
 function makeResponse(overrides) {
   return {
-    intent: null, confidence: null, primaryProduct: null,
-    suggestions: [], source: null, status: 'ready', jobId: null,
-    executionTimeMs: 0, ...overrides,
+    intent: null, confidence: null, matchType: null,
+    primaryProduct: null, suggestions: [], source: null,
+    status: 'ready', jobId: null, executionTimeMs: 0,
+    wasSpellingCorrected: false, correctedQuery: null,
+    ...overrides,
   }
 }
 
@@ -57,42 +70,132 @@ async function getTop50(redis, category) {
   catch (_) { return [] }
 }
 
-// ── PATH A: PRODUCT_SPECIFIC ──────────────────────────────────────
+// ── PATH A: PRODUCT_SPECIFIC (confidence-gated) ──────────────────
+// Flow:
+//  1. Redis top50 confidence match → ≥ 85% = done (no Amazon)
+//  2. PostgreSQL weighted search → ≥ 85% = done (no Amazon)
+//  3. Legacy DB findTopMatches + enrich (backward compat)
+//  4. DB miss → async live fetch (Amazon API as last resort)
 async function pathA(redis, query, intentResult, startTime) {
-  const match = await findProduct(query)
 
-  if (match) {
-    const product  = formatForResponse(match.product)
-    const category = match.product.category || intentResult.category
+  // ── Step 1: Redis confidence match ─────────────────────────────
+  const redisResult = await findFromRedis(redis, intentResult)
 
-    // Rule 8: background re-analysis if stale (non-blocking)
-    if (isStale(match.product)) {
-      logger.info(`PathA: "${product.name}" stale — background re-analysis triggered`)
-      // analysisPipeline handles refresh; we return existing score immediately
-    }
+  if (redisResult.confidence >= CONFIDENCE.HIGH && redisResult.products.length > 0) {
+    // HIGH confidence from Redis → skip Amazon entirely
+    const primary    = await enrichFromCache(redisResult.products[0])
+    const rawRelated = redisResult.products.length > 1
+      ? redisResult.products.slice(1, 10)
+      : await getRelated(redis, intentResult.category, primary.id, primary.name)
+    const suggestions = await enrichAll(rawRelated, { scrapeLimit: 0 })
 
-    const suggestions = await getRelated(redis, category, product.id, product.name)
+    logger.info(`PathA: Redis HIGH confidence (${redisResult.confidence}) — "${primary.name}" — skipping Amazon`)
     return makeResponse({
-      intent: intentResult.intent, confidence: intentResult.confidence,
-      primaryProduct: product, suggestions, source: match.source,
-      status: 'ready', executionTimeMs: Date.now() - startTime,
+      intent: intentResult.intent, confidence: redisResult.confidence,
+      matchType: intentResult.matchType,
+      primaryProduct: primary, suggestions,
+      source: 'redis_high', status: 'ready',
+      executionTimeMs: Date.now() - startTime,
     })
   }
 
-  // DB miss → async live fetch
+  // ── Step 2: PostgreSQL weighted search ─────────────────────────
+  const dbResult = await weightedSearch(intentResult, 10)
+
+  if (dbResult.confidence >= CONFIDENCE.HIGH && dbResult.products.length > 0) {
+    // HIGH confidence from DB → skip Amazon
+    const formatted = dbResult.products.map(p => ({
+      ...formatForResponse(p),
+      asin: p.platform === 'AMAZON' ? p.platformId : null,
+    }))
+    const enriched    = await enrichAll(formatted, { scrapeLimit: 1 })
+    const primary     = enriched[0]
+    const suggestions = enriched.slice(1)
+
+    logger.info(`PathA: DB HIGH confidence (${dbResult.confidence}) — "${primary.name}" — skipping Amazon`)
+    return makeResponse({
+      intent: intentResult.intent, confidence: dbResult.confidence,
+      matchType: intentResult.matchType,
+      primaryProduct: primary, suggestions,
+      source: 'db_high', status: 'ready',
+      executionTimeMs: Date.now() - startTime,
+    })
+  }
+
+  // ── Step 3: Medium confidence — use DB results but consider refresh
+  if (dbResult.confidence >= CONFIDENCE.MEDIUM && dbResult.products.length > 0) {
+    const formatted = dbResult.products.map(p => ({
+      ...formatForResponse(p),
+      asin: p.platform === 'AMAZON' ? p.platformId : null,
+    }))
+    const enriched    = await enrichAll(formatted, { scrapeLimit: 1 })
+    const primary     = enriched[0]
+    const suggestions = enriched.slice(1)
+
+    if (isStale(dbResult.products[0])) {
+      logger.info(`PathA: DB MEDIUM conf (${dbResult.confidence}), stale — background refresh queued`)
+    }
+
+    return makeResponse({
+      intent: intentResult.intent, confidence: dbResult.confidence,
+      matchType: intentResult.matchType,
+      primaryProduct: primary, suggestions,
+      source: dbResult.source, status: 'ready',
+      executionTimeMs: Date.now() - startTime,
+    })
+  }
+
+  // ── Step 3b: Partial Redis results (< HIGH confidence) ────────
+  if (redisResult.products.length > 0 && redisResult.confidence >= CONFIDENCE.MEDIUM) {
+    const primary    = await enrichFromCache(redisResult.products[0])
+    const suggestions = await enrichAll(redisResult.products.slice(1, 10), { scrapeLimit: 0 })
+
+    return makeResponse({
+      intent: intentResult.intent, confidence: redisResult.confidence,
+      matchType: intentResult.matchType,
+      primaryProduct: primary, suggestions,
+      source: 'redis_partial', status: 'ready',
+      executionTimeMs: Date.now() - startTime,
+    })
+  }
+
+  // ── Step 4: Legacy findTopMatches fallback ─────────────────────
+  const dbMatches = await findTopMatches(query, 10)
+
+  if (dbMatches.length > 0) {
+    const formatted = dbMatches.map(p => ({
+      ...formatForResponse(p),
+      asin: p.platform === 'AMAZON' ? p.platformId : null,
+    }))
+    const enriched    = await enrichAll(formatted, { scrapeLimit: 1 })
+    const primary     = enriched[0]
+    const suggestions = enriched.slice(1)
+
+    logger.info(`PathA: legacy DB hit — ${enriched.length} enriched results`)
+    return makeResponse({
+      intent: intentResult.intent, confidence: intentResult.confidence,
+      matchType: intentResult.matchType,
+      primaryProduct: primary, suggestions,
+      source: 'db_legacy', status: 'ready',
+      executionTimeMs: Date.now() - startTime,
+    })
+  }
+
+  // ── Step 5: DB miss → async live fetch (Amazon as LAST RESORT) ─
   const jobId = await createJob(redis, normalizeQuery(query))
   setImmediate(() => startLiveFetch(redis, jobId, query, intentResult))
-  logger.info(`PathA: DB miss for "${query}" — job ${jobId} started`)
+  logger.info(`PathA: all internal sources miss for "${query}" — job ${jobId} → Amazon`)
 
   return makeResponse({
     intent: intentResult.intent, confidence: intentResult.confidence,
+    matchType: intentResult.matchType,
     status: 'fetching', jobId, source: 'pending',
     executionTimeMs: Date.now() - startTime,
   })
 }
 
 // ── PATH B: CATEGORY / BRAND_CATEGORY / GENERIC ───────────────────
-async function pathB(redis, intentResult, startTime, prisma) {
+async function pathB(redis, intentResult, startTime, prisma, rawQuery) {
   const { category, intent } = intentResult
   const products  = await getTop50(redis, category)
   let   filtered  = applyFilters(products, intentResult)
@@ -118,8 +221,24 @@ async function pathB(redis, intentResult, startTime, prisma) {
     } catch (err) { logger.warn(`PathB: DB fallback: ${err.message}`) }
   }
 
+  // ── Fire background enrichment if results are thin ─────────────
+  // This populates Redis top50:{category} + PostgreSQL for future queries
+  if (filtered.length < 5 && category) {
+    const hint = rawQuery || `best ${category}`
+    logger.info(`PathB: thin results (${filtered.length}) for "${category}" — triggering background enrichment`)
+    triggerCategoryEnrichment(redis, category, hint)
+  }
+
+  // ── If ZERO results, fall through to pathA live fetch ──────────
+  // So the user gets immediate results instead of an empty page
+  if (filtered.length === 0 && rawQuery) {
+    logger.info(`PathB: zero results for "${category}" — falling through to pathA live fetch`)
+    return pathA(redis, rawQuery, intentResult, startTime)
+  }
+
   return makeResponse({
     intent, confidence: intentResult.confidence,
+    matchType: intentResult.matchType,
     suggestions: filtered.slice(0, 10),
     source: products.length > 0 ? 'cache' : 'database',
     status: 'ready', executionTimeMs: Date.now() - startTime,
@@ -151,38 +270,59 @@ async function search(req, res) {
     return res.json({ success: true, ...cached, fromCache: true })
   }
 
-  // Step 2: Classify intent
+  // Step 2: Classify intent (now with structured attributes)
   const intentResult = classifyIntent(rawQuery, rawCat)
-  logger.info(`Search: "${rawQuery}" → ${intentResult.intent} conf=${intentResult.confidence} cat=${intentResult.category}`)
+  logger.info(
+    `Search: "${rawQuery}" → ${intentResult.intent} ` +
+    `conf=${intentResult.confidence} cat=${intentResult.category} ` +
+    `brand=${intentResult.brand} model=${intentResult.model} ` +
+    `match=${intentResult.matchType}` +
+    (intentResult.wasSpellingCorrected ? ` corrected="${intentResult.correctedQuery}"` : '')
+  )
 
-  // Rule 10: Analytics on every search
+  // Analytics
   logger.info('ANALYTICS ' + JSON.stringify({
     query: rawQuery, normalizedQuery: normalized,
     intent: intentResult.intent, confidence: intentResult.confidence,
+    matchType: intentResult.matchType,
+    brand: intentResult.brand, model: intentResult.model,
+    category: intentResult.category,
+    wasSpellingCorrected: intentResult.wasSpellingCorrected,
     timestamp: new Date().toISOString(),
   }))
 
   try {
-    const { intent, confidence } = intentResult
+    const { intent, confidence, wasSpellingCorrected, correctedQuery } = intentResult
     let result
 
-    if (intent === INTENT.FALLBACK || confidence < 0.5) {
+    // Spelling correction metadata — attached to all responses
+    const spellingMeta = wasSpellingCorrected
+      ? { wasSpellingCorrected: true, correctedQuery }
+      : { wasSpellingCorrected: false }
+
+    if (intent === INTENT.FALLBACK || confidence < 0.30) {
       const fb = await getFallback(redis, rawQuery)
-      result = makeResponse({ ...fb, intent: INTENT.FALLBACK, confidence, executionTimeMs: Date.now() - startTime })
+      result = makeResponse({
+        ...fb, ...spellingMeta,
+        intent: INTENT.FALLBACK, confidence,
+        executionTimeMs: Date.now() - startTime,
+      })
 
     } else if (intent === INTENT.LOW_CONFIDENCE) {
       const [aResult, bResult] = await Promise.all([
         pathA(redis, rawQuery, intentResult, startTime).catch(() => null),
-        pathB(redis, intentResult, startTime, prismaClient).catch(() => null),
+        pathB(redis, intentResult, startTime, prismaClient, rawQuery).catch(() => null),
       ])
       const winner = aResult?.primaryProduct ? aResult : (bResult || aResult)
-      result = { ...winner, intent: INTENT.LOW_CONFIDENCE, confidence }
+      result = { ...winner, ...spellingMeta, intent: INTENT.LOW_CONFIDENCE, confidence }
 
     } else if (intent === INTENT.PRODUCT_SPECIFIC) {
       result = await pathA(redis, rawQuery, intentResult, startTime)
+      result = { ...result, ...spellingMeta }
 
     } else {
-      result = await pathB(redis, intentResult, startTime, prismaClient)
+      result = await pathB(redis, intentResult, startTime, prismaClient, rawQuery)
+      result = { ...result, ...spellingMeta }
     }
 
     if (result.status === 'ready') setCached(redis, cacheKey, result).catch(() => {})

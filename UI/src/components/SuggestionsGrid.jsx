@@ -1,23 +1,39 @@
 // src/components/SuggestionsGrid.jsx
-// 9-card 3-column alternatives grid for PRODUCT_SPECIFIC + LOW_CONFIDENCE
+// v2.0: "Bestpickr Suggested Alternatives" grid (3-4 per row)
 import { PlatformPill } from './PlatformLogo.jsx'
 
 const fmt = (n) => n ? `₹${Number(n).toLocaleString('en-IN')}` : null
 
-export default function SuggestionsGrid({ title = 'Top Alternatives', items = [], onSelect }) {
+export default function SuggestionsGrid({
+  title = 'Bestpickr Suggested Alternatives',
+  subtitle = 'Suggested based on your search',
+  items = [],
+  onSelect,
+}) {
   if (!items || items.length === 0) return null
 
   return (
-    <div style={{ marginTop: 24 }}>
-      <div style={{
-        fontSize: 13, fontWeight: 700, color: 'var(--ink4)',
-        letterSpacing: '.4px', textTransform: 'uppercase', marginBottom: 14,
-      }}>
-        {title}
+    <div style={{ marginTop: 28 }}>
+      {/* Section header */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{
+          fontSize: 14, fontWeight: 800, color: 'var(--ink)',
+          letterSpacing: '.3px', display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span style={{ fontSize: 15 }}>✨</span>
+          {title}
+        </div>
+        {subtitle && (
+          <div style={{ fontSize: 12, color: 'var(--ink4)', marginTop: 3, fontWeight: 500 }}>
+            {subtitle}
+          </div>
+        )}
       </div>
+
+      {/* Grid: 3-4 per row responsive */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
         gap: 12,
       }}>
         {items.slice(0, 9).map((item, i) => (

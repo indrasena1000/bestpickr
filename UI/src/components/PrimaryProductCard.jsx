@@ -1,6 +1,6 @@
 // src/components/PrimaryProductCard.jsx
 // Progressive enhancement: skeleton → partial → ready → failed
-// status: 'fetching' | 'partial' | 'ready' | 'failed'
+// v2.0: "Best Match for Your Search" prominent badge + confidence indicator
 import { useState } from 'react'
 import { PlatformLogo } from './PlatformLogo.jsx'
 
@@ -18,7 +18,7 @@ function SkeletonPulse({ w = '100%', h = 16, r = 6, style = {} }) {
   )
 }
 
-export default function PrimaryProductCard({ product, status, onBuy }) {
+export default function PrimaryProductCard({ product, status, onBuy, confidence, matchType }) {
   const [imgErr, setImgErr] = useState(false)
 
   // ── FETCHING: full skeleton ───────────────────────────────────
@@ -40,7 +40,7 @@ export default function PrimaryProductCard({ product, status, onBuy }) {
     )
   }
 
-  const p        = product
+  const p         = product
   const platforms = p.platforms || []
   const bestPlt   = platforms.reduce((b, pl) => (!b || pl.price < b.price ? pl : b), null)
 
@@ -57,23 +57,43 @@ export default function PrimaryProductCard({ product, status, onBuy }) {
 
   // ── PARTIAL / READY ───────────────────────────────────────────
   const isPartial = status === 'partial'
+  const confPct = confidence ? Math.round(confidence * 100) : null
 
   return (
-    <div className="rcard" style={{ padding: 0, overflow: 'hidden' }}>
-      {/* Badge */}
+    <div className="rcard" style={{ padding: 0, overflow: 'hidden', border: '2px solid var(--accent)', position: 'relative' }}>
+      {/* Best Match Badge — prominent header */}
       <div style={{
-        background: 'var(--accent)', color: '#fff',
-        fontSize: 11, fontWeight: 700, letterSpacing: '.5px',
-        padding: '5px 14px', display: 'inline-block',
-        borderRadius: '0 0 8px 0',
+        background: 'linear-gradient(135deg, var(--accent), #228B47)',
+        color: '#fff', padding: '10px 18px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 12,
       }}>
-        #1 BEST PICK
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 16 }}>🏆</span>
+          <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '.5px', textTransform: 'uppercase' }}>
+            Best Match for Your Search
+          </span>
+        </div>
+        {confPct && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{
+              width: 40, height: 5, borderRadius: 3,
+              background: 'rgba(255,255,255,0.3)', overflow: 'hidden',
+            }}>
+              <div style={{
+                width: `${confPct}%`, height: '100%', borderRadius: 3,
+                background: '#fff',
+              }} />
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.9 }}>{confPct}% match</span>
+          </div>
+        )}
       </div>
 
       <div style={{ padding: '16px 20px 20px', display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* Image */}
         <div style={{
-          width: 110, height: 110, borderRadius: 10,
+          width: 120, height: 120, borderRadius: 10,
           background: 'var(--paper3)', display: 'flex', alignItems: 'center',
           justifyContent: 'center', flexShrink: 0, overflow: 'hidden',
         }}>
@@ -86,11 +106,11 @@ export default function PrimaryProductCard({ product, status, onBuy }) {
         {/* Info */}
         <div style={{ flex: 1, minWidth: 180 }}>
           <div style={{ fontSize: 12, color: 'var(--ink4)', fontWeight: 600, marginBottom: 2 }}>{p.brand}</div>
-          <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.3 }}>{p.name}</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.3 }}>{p.name}</div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 }}>
             {/* Price */}
-            <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent)', fontFamily: "'DM Mono',monospace" }}>
+            <span style={{ fontSize: 24, fontWeight: 800, color: 'var(--accent)', fontFamily: "'DM Mono',monospace" }}>
               {fmt(p.price || p.lowestPrice || bestPlt?.price)}
             </span>
             {/* AI Score */}
@@ -104,6 +124,17 @@ export default function PrimaryProductCard({ product, status, onBuy }) {
                   }}>AI {p.aiScore}/10</span>
                 : null}
           </div>
+
+          {/* AI Summary line */}
+          {p.aiSummary && (
+            <div style={{
+              fontSize: 12, color: 'var(--ink3)', marginTop: 8,
+              lineHeight: 1.5, maxHeight: 36, overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}>
+              {p.aiSummary}
+            </div>
+          )}
 
           {/* Platform pills */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
@@ -134,9 +165,9 @@ export default function PrimaryProductCard({ product, status, onBuy }) {
         {!isPartial && bestPlt && (
           <button onClick={() => onBuy?.(bestPlt)} style={{
             background: 'var(--accent)', color: '#fff',
-            fontWeight: 700, fontSize: 14, padding: '11px 22px',
+            fontWeight: 700, fontSize: 14, padding: '12px 24px',
             borderRadius: 10, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
-            alignSelf: 'center',
+            alignSelf: 'center', boxShadow: '0 4px 12px rgba(26,107,60,0.3)',
           }}>
             Buy on {bestPlt.name} →
           </button>
