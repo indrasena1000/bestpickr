@@ -9,8 +9,8 @@
 // ─────────────────────────────────────────────────────────────────
 'use strict'
 
-const { detectBrand, extractModel } = require('./productNameNormalizer')
-const { getCategory }               = require('./categoryKeyMap')
+const { detectBrand, extractModel }        = require('./productNameNormalizer')
+const { getCategory, KEYWORD_TO_CATEGORY } = require('./categoryKeyMap')
 
 // ── Spelling corrections (common misspellings → correct) ────────
 const SPELLING_MAP = {
@@ -38,6 +38,10 @@ const SPELLING_MAP = {
   'smartwach':  'smartwatch', 'smatwatch': 'smartwatch',
   'snekers':    'sneakers',   'sneekers':  'sneakers',
   'moisturiser':'moisturizer','serom':     'serum',      'shampo':    'shampoo',
+  // Compound-word typos (no space between words)
+  'washinmachine':  'washing machine', 'washingmachine': 'washing machine',
+  'airfryer':       'air fryer',        'airconditioner': 'air conditioner',
+  'aircon':         'air conditioner',
 }
 
 // Words that don't change search intent — removed before caching
@@ -169,22 +173,94 @@ function detectModel(query) {
   return null
 }
 
+// ── Levenshtein distance ──────────────────────────────────────────
+// Computes character-level edit distance between two strings.
+// Used by detectCategory fuzzy matching — same idea as SPELLING_MAP but
+// automatic: no manual entries needed, works for any keyword typo.
+function levenshtein(a, b) {
+  if (a === b) return 0
+  // Early exit: length difference alone exceeds any reasonable threshold
+  if (Math.abs(a.length - b.length) > 4) return 99
+  const la = a.length, lb = b.length
+  let prev = Array.from({ length: lb + 1 }, (_, i) => i)
+  for (let i = 1; i <= la; i++) {
+    const curr = [i]
+    for (let j = 1; j <= lb; j++) {
+      curr[j] = a[i - 1] === b[j - 1]
+        ? prev[j - 1]
+        : 1 + Math.min(prev[j], curr[j - 1], prev[j - 1])
+    }
+    prev = curr
+  }
+  return prev[lb]
+}
+
+// Precomputed keyword lists (built once at startup, not per-request):
+//   _KW_SINGLE  → all single-word keys, sorted longest-first
+//   _KW_SUBSTR  → single-word keys ≥6 chars (for substring check)
+const _KW_SINGLE = Object.entries(KEYWORD_TO_CATEGORY)
+  .filter(([kw]) => !kw.includes(' '))
+  .sort((a, b) => b[0].length - a[0].length)
+const _KW_SUBSTR = _KW_SINGLE.filter(([kw]) => kw.length >= 6)
+
 // ── Category Detection (from query words) ────────────────────────
+// Four-stage fallback so any user input eventually maps to a category:
+//   1. Multi-word exact phrase check  (e.g. "washing machine")
+//   2. Per-word exact lookup          (e.g. "headphones")
+//   3. Substring check                (e.g. "washinmachine" → contains "machine")
+//   4. Levenshtein edit-distance      (e.g. "laptopp" → "laptop", dist=1)
+//
+// Stage 4 is the same idea as the SPELLING_MAP but fully automatic — handles
+// any typo of any known keyword without a manual entry.
 function detectCategory(query) {
   const q = query.toLowerCase()
-  // Multi-word keywords first
+
+  // ── Stage 1: Multi-word phrase ────────────────────────────────
   const multiWord = [
     'air fryer', 'washing machine', 'air conditioner', 'running shoes',
     'gaming mouse', 'mechanical keyboard', 'robot vacuum', 'smart watch',
     'noise cancelling', 'true wireless',
   ]
   for (const kw of multiWord) {
-    if (q.includes(kw)) return getCategory(kw.split(' ')[0]) || null
+    if (q.includes(kw)) return getCategory(kw) || getCategory(kw.split(' ')[0]) || null
   }
+
+  // ── Stage 2: Exact word match ─────────────────────────────────
   for (const word of q.split(/\s+/)) {
     const cat = getCategory(word)
     if (cat) return cat
   }
+
+  // ── Stage 3: Substring — handles compound-word typos ─────────
+  // "washinmachine" → contains "machine" → appliances
+  // "earphones"     → contains "earphone" → headphones
+  // Longest keywords checked first to prefer specific over short matches.
+  for (const word of q.split(/\s+/)) {
+    if (word.length < 5) continue
+    for (const [kw, cat] of _KW_SUBSTR) {
+      if (word.includes(kw)) return cat
+    }
+  }
+
+  // ── Stage 4: Edit-distance — handles arbitrary typos ─────────
+  // Threshold scales with word length: ~1 allowed edit per 4 characters.
+  //   5-7 chars  → max 1 edit  (conservative — short words are ambiguous)
+  //   8-11 chars → max 2 edits
+  //   12+ chars  → max 3 edits
+  // Only single-word query tokens are checked here; multi-word already handled above.
+  for (const word of q.split(/\s+/)) {
+    const wl = word.length
+    if (wl < 5) continue
+    const maxDist = wl <= 7 ? 1 : wl <= 11 ? 2 : 3
+    let bestCat = null, bestDist = maxDist + 1
+    for (const [kw, cat] of _KW_SINGLE) {
+      if (Math.abs(wl - kw.length) > maxDist) continue  // fast skip
+      const dist = levenshtein(word, kw)
+      if (dist < bestDist) { bestDist = dist; bestCat = cat }
+    }
+    if (bestCat) return bestCat
+  }
+
   return null
 }
 

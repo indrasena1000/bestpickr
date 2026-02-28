@@ -266,6 +266,104 @@ async function setCategoryCache(categorySlug, results) {
   }
 }
 
+// ── TOP50 SNAPSHOTS ───────────────────────────────────────────────
+// top50:{category} — populated every 6h by rankingSnapshotCron
+
+async function getTop50Products(category) {
+  if (!redis || redis.status !== 'ready') return null
+  const key = `top50:${category}`
+  try {
+    const raw = await redis.get(key)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch (err) {
+    logger.error(`Redis GET failed for "${key}": ${err.message}`)
+    return null
+  }
+}
+
+async function setTop50Products(category, products) {
+  if (!redis || redis.status !== 'ready') return
+  const key = `top50:${category}`
+  try {
+    await redis.set(key, JSON.stringify(products), 'EX', 21600)
+  } catch (err) {
+    logger.error(`Redis SET failed for "${key}": ${err.message}`)
+  }
+}
+
+// ── BRAND INDEX ────────────────────────────────────────────────────
+// bestpickr:brand:{category}:{normalizedBrand} — built from top50 data
+
+function normalizeBrand(brand) {
+  return (brand || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+async function getBrandProducts(category, brand) {
+  if (!redis || redis.status !== 'ready') return null
+  const key = `bestpickr:brand:${category}:${normalizeBrand(brand)}`
+  try {
+    const raw = await redis.get(key)
+    return raw ? JSON.parse(raw) : null
+  } catch (err) {
+    logger.error(`Redis GET failed for "${key}": ${err.message}`)
+    return null
+  }
+}
+
+async function setBrandProducts(category, brand, products) {
+  if (!redis || redis.status !== 'ready') return
+  const key = `bestpickr:brand:${category}:${normalizeBrand(brand)}`
+  try {
+    await redis.set(key, JSON.stringify(products), 'EX', 21600)
+  } catch (err) {
+    logger.error(`Redis SET failed for "${key}": ${err.message}`)
+  }
+}
+
+// ── INDIVIDUAL PRODUCT CACHE ──────────────────────────────────────
+// bestpickr:product:{asin} — 24h TTL, stores full product data
+
+async function getProductCache(asin) {
+  if (!redis || redis.status !== 'ready') return null
+  const key = `bestpickr:product:${asin}`
+  try {
+    const raw = await redis.get(key)
+    return raw ? JSON.parse(raw) : null
+  } catch (err) {
+    logger.error(`Redis GET failed for "${key}": ${err.message}`)
+    return null
+  }
+}
+
+async function setProductCache(asin, product) {
+  if (!redis || redis.status !== 'ready') return
+  const key = `bestpickr:product:${asin}`
+  try {
+    await redis.set(key, JSON.stringify(product), 'EX', 86400)
+  } catch (err) {
+    logger.error(`Redis SET failed for "${key}": ${err.message}`)
+  }
+}
+
+// ── BACKGROUND ANALYSIS DEDUP ─────────────────────────────────────
+// bestpickr:analysis:queued:{asin} — 1h flag prevents duplicate GPT calls
+
+async function isAnalysisQueued(asin) {
+  if (!redis || redis.status !== 'ready') return false
+  try {
+    const val = await redis.get(`bestpickr:analysis:queued:${asin}`)
+    return val === '1'
+  } catch { return false }
+}
+
+async function markAnalysisQueued(asin) {
+  if (!redis || redis.status !== 'ready') return
+  try {
+    await redis.set(`bestpickr:analysis:queued:${asin}`, '1', 'EX', 3600)
+  } catch { /* non-fatal */ }
+}
+
 // ── UTILITIES ────────────────────────────────────────────────────
 
 async function invalidateCache(query, category) {
@@ -297,4 +395,14 @@ module.exports = {
   invalidateCache,
   flushBestpickrCache,
   getClient: () => redis,
+  // New Redis-first search helpers
+  getTop50Products,
+  setTop50Products,
+  getBrandProducts,
+  setBrandProducts,
+  getProductCache,
+  setProductCache,
+  isAnalysisQueued,
+  markAnalysisQueued,
+  normalizeBrand,
 }

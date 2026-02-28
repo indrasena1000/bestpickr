@@ -7,10 +7,11 @@
 const cron   = require('node-cron')
 const logger = require('../utils/logger')
 const { CANONICAL_CATEGORIES } = require('../utils/categoryKeyMap')
+const { setBrandProducts, normalizeBrand } = require('../utils/redis')
 
 const SNAPSHOT_TTL   = 21600   // 6h in seconds
 const FAILURE_EXTEND = 7200    // 2h extension on failure
-const TOP_N          = 50
+const TOP_N          = 10   // Seed with 10; pool grows to 50 as users search
 
 let redis  = null
 let prisma = null
@@ -75,7 +76,32 @@ async function snapshotCategory(category) {
   await redis.set(key, JSON.stringify(snapshot), 'EX', SNAPSHOT_TTL)
 
   logger.info(`SnapshotCron: "${key}" → ${snapshot.length} products (TTL=${SNAPSHOT_TTL}s)`)
+
+  // Build brand index — groups top50 products by brand for O(1) brand lookups
+  await buildBrandIndex(category, snapshot)
+
   return snapshot.length
+}
+
+// ── BRAND INDEX BUILDER ────────────────────────────────────────────
+// Called after every top50 write. Groups products by brand and stores
+// in bestpickr:brand:{category}:{normalizedBrand} (TTL 6h).
+// Zero extra API calls — derived entirely from already-fetched top50 data.
+async function buildBrandIndex(category, products) {
+  const brandMap = {}
+  for (const p of products) {
+    if (!p.brand) continue
+    const key = normalizeBrand(p.brand)
+    if (!brandMap[key]) brandMap[key] = []
+    brandMap[key].push(p)
+  }
+
+  const brands = Object.keys(brandMap)
+  for (const brand of brands) {
+    await setBrandProducts(category, brand, brandMap[brand])
+  }
+
+  logger.info(`SnapshotCron: built ${brands.length} brand indexes for "${category}"`)
 }
 
 async function runSnapshot() {

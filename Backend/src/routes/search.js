@@ -61,6 +61,11 @@ const {
   getCachedResults,
   cacheResults,
   getClient: getRedis,
+  getTop50Products,
+  setTop50Products,
+  getBrandProducts,
+  getProductCache,
+  setProductCache,
 } = require("../utils/redis");
 const { normalize, buildSearchKey } = require("../utils/queryNormalizer");
 const {
@@ -68,6 +73,8 @@ const {
   buildMockAnalysis,
 } = require("../utils/mockData");
 const logger = require("../utils/logger");
+const { classifyIntent, INTENT } = require("../services/searchIntentService");
+const { queueAnalysis } = require("../services/backgroundAnalysis");
 
 // ── Config
 const CACHE_TTL_MS = (parseInt(process.env.CACHE_TTL_SECONDS) || 21600) * 1000; // 6h in ms
@@ -950,6 +957,525 @@ async function enrichProductsBatched(products, category) {
 }
 
 // ═════════════════════════════════════════════════════════════════
+// REDIS-FIRST SEARCH: TOP50 → BRAND INDEX → AMAZON FALLBACK
+// ═════════════════════════════════════════════════════════════════
+
+const TOP50_MAX = 50  // Hard cap on pool size
+
+/**
+ * Convert a ranked (enriched) product to the top50 Redis snapshot shape.
+ */
+function enrichedToTop50Shape(p, category) {
+  return {
+    id:           p.asin,
+    name:         p.name,
+    brand:        p.brand,
+    category:     p.category || category,
+    imageUrl:     p.imageUrl,
+    price:        p.lowestPrice || p.platforms?.[0]?.price || null,
+    rating:       p.avgRating   || p.platforms?.[0]?.rating || null,
+    reviewCount:  p.totalReviews || p.platforms?.[0]?.reviewCount || 0,
+    aiScore:      p.aiScore,
+    affiliateLink:p.platforms?.[0]?.affiliateUrl || p.platforms?.[0]?.url || null,
+    platform:     p.platforms?.[0]?.name || 'Amazon',
+    analysedAt:   p.analysisDate || new Date().toISOString(),
+  }
+}
+
+/**
+ * Merge new products into the existing top50 pool.
+ * Deduplicates by id, preserves existing entries, appends new ones, caps at TOP50_MAX.
+ */
+function mergeIntoTop50(existing, incoming) {
+  const pool = existing || []
+  const seen = new Set(pool.map((p) => p.id))
+  for (const p of incoming) {
+    if (p.id && !seen.has(p.id)) {
+      pool.push(p)
+      seen.add(p.id)
+      if (pool.length >= TOP50_MAX) break
+    }
+  }
+  return pool
+}
+
+/**
+ * Format a product from the top50 Redis snapshot into the standard API response shape.
+ * Top50 shape: { id, name, brand, category, imageUrl, price, rating, reviewCount,
+ *                aiScore, affiliateLink, platform, analysedAt }
+ */
+function formatTop50AsResult(p, rank) {
+  const price = p.price || p.lowestPrice || null;
+  const rating = p.rating || null;
+  const reviewCount = p.reviewCount || 0;
+  const aiScore = p.aiScore || p.rankingScore || null;
+  const affiliateUrl = p.affiliateLink || null;
+  const platformName = p.platform || "Amazon";
+
+  const platforms = [];
+  if (price) {
+    platforms.push({
+      name: platformName,
+      price,
+      url: affiliateUrl,
+      affiliateUrl,
+      rating,
+      reviewCount,
+      inStock: true,
+    });
+  }
+
+  const positivePct = rating
+    ? Math.round(Math.max(50, Math.min(95, ((rating - 1) / 4) * 90 + 10)))
+    : 75;
+
+  const breakdown = {
+    ratingScore: rating ? +(rating * 2).toFixed(1) : aiScore || 0,
+    sentimentScore: +(positivePct / 10).toFixed(1),
+    valueScore: aiScore ? +(aiScore * 0.85).toFixed(1) : 0,
+    volumeScore: reviewCount > 1000 ? 9 : reviewCount > 100 ? 7 : 5,
+  };
+
+  return {
+    rank,
+    asin: p.id,
+    platformId: p.id,
+    name: p.name || "Unknown Product",
+    brand: p.brand || null,
+    imageUrl: p.imageUrl || null,
+    category: p.category || null,
+    aiScore,
+    authenticityBadge: null,
+    confidenceLevel: null,
+    platforms,
+    lowestPrice: price,
+    highestPrice: price,
+    totalReviews: reviewCount,
+    avgRating: rating,
+    positivePct,
+    breakdown,
+    bestDeal: price ? { platform: platformName, price, url: affiliateUrl } : null,
+    priceHistory: {
+      allTimeLow: price,
+      allTimeHigh: price,
+      current: price,
+      trend: "stable",
+    },
+    whatPeopleLove: [],
+    commonComplaints: [],
+    praiseSummary: null,
+    complaintSummary: null,
+    aspectScores: {},
+    buyRecommendation: null,
+    avoidIf: null,
+    reviewsAnalyzed: 0,
+    analysisDate: p.analysedAt || null,
+    _source: "redis_top50",
+  };
+}
+
+/**
+ * Serve CATEGORY or BRAND_CATEGORY queries entirely from the top50 Redis snapshot.
+ * Applies brand / price / feature filters. Returns null if top50 has no data.
+ * Amazon calls: 0. GPT calls: 0.
+ */
+async function serveFromTop50(intent, query) {
+  const cat = intent.category;
+  if (!cat) return null;
+
+  // Try brand index first (more specific slice of top50)
+  let pool = null;
+  if (intent.brand && intent.intent === INTENT.BRAND_CATEGORY) {
+    pool = await getBrandProducts(cat, intent.brand);
+    if (pool && pool.length > 0) {
+      logger.info(
+        `🔍 Top50: brand cache HIT — "${intent.brand}/${cat}" → ${pool.length} products`,
+      );
+    }
+  }
+
+  // Fall back to full top50 if brand index misses or intent is plain CATEGORY
+  if (!pool || pool.length === 0) {
+    pool = await getTop50Products(cat);
+    if (!pool || pool.length === 0) {
+      logger.info(`🔍 Top50: MISS — category="${cat}" not in Redis yet`);
+      return null;
+    }
+    logger.info(`🔍 Top50: category HIT — "${cat}" → ${pool.length} products`);
+
+    // Brand filter within full top50 (if brand specified)
+    if (intent.brand) {
+      const brandLower = intent.brand.toLowerCase();
+      const brandMatches = pool.filter(
+        (p) => p.brand && p.brand.toLowerCase().includes(brandLower),
+      );
+      if (brandMatches.length > 0) pool = brandMatches;
+    }
+  }
+
+  // Price filter
+  if (intent.price_min !== null || intent.price_max !== null) {
+    const priceMatches = pool.filter((p) => {
+      const price = p.price || p.lowestPrice;
+      if (!price) return false;
+      if (intent.price_min && price < intent.price_min) return false;
+      if (intent.price_max && price > intent.price_max) return false;
+      return true;
+    });
+    if (priceMatches.length >= 2) pool = priceMatches;
+  }
+
+  // Feature/keyword filter (won't filter below 3 results)
+  if (intent.features && intent.features.length > 0) {
+    const featMatches = pool.filter((p) => {
+      const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
+      return intent.features.some((f) => text.includes(f.toLowerCase()));
+    });
+    if (featMatches.length >= 3) pool = featMatches;
+  }
+
+  // Query keyword filter (apply loosely — only tighten if we have enough results)
+  const queryWords = (query || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => !QUERY_STOP_WORDS.has(w) && w.length > 2);
+  if (queryWords.length > 0) {
+    const kwMatches = pool.filter((p) => {
+      const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
+      return queryWords.some((w) => text.includes(w));
+    });
+    if (kwMatches.length >= 3) pool = kwMatches;
+  }
+
+  if (pool.length === 0) return null;
+
+  const ranked = pool
+    .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
+    .slice(0, MAX_RESPONSE_RESULTS);
+
+  logger.info(
+    `🔍 Top50: serving ${ranked.length} products for intent="${intent.intent}" ` +
+      `cat="${cat}" brand="${intent.brand || "-"}" query="${query}" (0 API calls)`,
+  );
+  return ranked.map((p, i) => formatTop50AsResult(p, i + 1));
+}
+
+/**
+ * Serve GENERIC / LOW_CONFIDENCE / FALLBACK queries from a known category.
+ * Returns null only if top50 is completely empty (cron hasn't run).
+ */
+async function serveGeneric(intent, query) {
+  const cat = intent.category;
+  if (!cat) return null;
+
+  const pool = await getTop50Products(cat);
+  if (!pool || pool.length === 0) return null;
+
+  const queryWords = (query || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => !QUERY_STOP_WORDS.has(w) && w.length > 2);
+
+  let filtered = pool;
+  if (queryWords.length > 0) {
+    const kwMatches = pool.filter((p) => {
+      const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
+      return queryWords.some((w) => text.includes(w));
+    });
+    // Only tighten if filter leaves meaningful results; otherwise show full category
+    if (kwMatches.length >= 2) filtered = kwMatches;
+  }
+
+  const ranked = filtered
+    .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
+    .slice(0, MAX_RESPONSE_RESULTS);
+
+  if (ranked.length === 0) return null;
+
+  logger.info(
+    `🔍 Generic: serving ${ranked.length} from top50 for "${query}" cat="${cat}" (0 API calls)`,
+  );
+  return ranked.map((p, i) => formatTop50AsResult(p, i + 1));
+}
+
+/**
+ * Cross-category keyword search — scans ALL loaded top50 snapshots.
+ * Used when the query has no detectable category. Returns best matches
+ * across all categories, scored by how many query words appear in the
+ * product name/brand. Amazon calls: 0.
+ */
+async function searchAcrossAllCategories(query) {
+  const { CANONICAL_CATEGORIES } = require("../utils/categoryKeyMap");
+
+  const qWords = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !QUERY_STOP_WORDS.has(w));
+
+  if (qWords.length === 0) return null;
+
+  const allMatches = [];
+
+  for (const cat of CANONICAL_CATEGORIES) {
+    const pool = await getTop50Products(cat);
+    if (!pool || pool.length === 0) continue;
+
+    for (const p of pool) {
+      const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
+      const score = qWords.filter((w) => text.includes(w)).length;
+      if (score > 0) allMatches.push({ ...p, _matchScore: score, _cat: cat });
+    }
+  }
+
+  if (allMatches.length === 0) return null;
+
+  const ranked = allMatches
+    .sort(
+      (a, b) =>
+        b._matchScore - a._matchScore ||
+        (b.aiScore || 0) - (a.aiScore || 0),
+    )
+    .slice(0, MAX_RESPONSE_RESULTS);
+
+  logger.info(
+    `🔍 CrossCategory: found ${ranked.length} matches for "${query}" across all top50s (0 API calls)`,
+  );
+  return ranked.map((p, i) => formatTop50AsResult(p, i + 1));
+}
+
+/**
+ * Find the best name-matching product in a top50 pool for a given query.
+ * Scores each product by how many non-stopword query words appear in its name/brand.
+ * Brand match adds extra weight. Returns null if no product scores above threshold.
+ */
+function findBestNameMatch(pool, query, brand) {
+  if (!pool || pool.length === 0) return null;
+
+  const qWords = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !QUERY_STOP_WORDS.has(w));
+
+  if (qWords.length === 0) return null;
+
+  let bestScore = 0;
+  let bestProduct = null;
+
+  for (const p of pool) {
+    const pText = `${p.name || ''} ${p.brand || ''}`.toLowerCase();
+    let score = 0;
+
+    for (const word of qWords) {
+      if (pText.includes(word)) score++;
+    }
+
+    // Brand match is worth 2 extra points — ensures brand-specific searches rank correctly
+    if (brand && p.brand && p.brand.toLowerCase().includes(brand.toLowerCase())) {
+      score += 2;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestProduct = p;
+    }
+  }
+
+  // Need at least 2 meaningful word matches (brand match alone = 2, needs 1 more)
+  const minScore = brand ? 3 : 2;
+  return bestScore >= minScore ? bestProduct : null;
+}
+
+/**
+ * Serve PRODUCT_SPECIFIC queries.
+ * Priority order (cheapest first):
+ * 1. Name-match against top50 Redis snapshot → 0 API calls
+ * 2. Fetch from Amazon (1 call) + top50 suggestions
+ * 3. Amazon fails but top50 exists → return top50 for category (no mock fallback)
+ */
+async function serveProductSpecific(intent, query, category, req, res, requestStart, rawQuery, normalizedQuery) {
+  const cat = category || intent.category;
+
+  // Load top50 first — needed for name matching AND suggestions regardless of path
+  let top50Pool = null;
+  if (cat) {
+    top50Pool = await getTop50Products(cat);
+  }
+
+  // ── PATH A: Name match in top50 (product was in a prior category search) ──
+  if (top50Pool && top50Pool.length > 0) {
+    const matched = findBestNameMatch(top50Pool, query, intent.brand);
+    if (matched) {
+      logger.info(`🔍 ProductSpecific: top50 name match — "${matched.name}" for "${query}" (0 API calls)`);
+
+      const primaryProduct = formatTop50AsResult(matched, 1);
+      const suggestions = top50Pool
+        .filter((p) => p.id !== matched.id)
+        .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
+        .slice(0, 5)
+        .map((p, i) => formatTop50AsResult(p, i + 1));
+
+      const results = [primaryProduct, ...suggestions.slice(0, 4)];
+      cacheResults(query, category, results).catch(() => {});
+      saveToMongoCache(query, normalizedQuery, category, results.map((r) => r.asin).filter(Boolean)).catch(() => {});
+
+      req._searchLog.outcome = "redis_top50_product";
+      req._searchLog.resultCount = results.length;
+
+      return res.json({
+        success: true,
+        query: rawQuery,
+        normalized: normalizedQuery,
+        category: cat || null,
+        intent: "PRODUCT_SPECIFIC",
+        primaryProduct,
+        totalResults: results.length,
+        cached: false,
+        source: "redis_top50",
+        lastUpdated: new Date().toISOString(),
+        elapsed_ms: Date.now() - requestStart,
+        results,
+        suggestions,
+      });
+    }
+  }
+
+  // ── PATH B: Amazon fetch (product not in top50) ───────────────
+  logger.info(`🔍 ProductSpecific: Amazon search for "${query}" (model="${intent.model || "-"}")`);
+
+  let amazonProducts = [];
+  try {
+    amazonProducts = await amazonService.searchProducts(query, category);
+    logger.info(`🔍 ProductSpecific: Amazon returned ${amazonProducts.length} products`);
+  } catch (err) {
+    logger.error(`🔍 ProductSpecific: Amazon failed — ${err.message}`);
+  }
+
+  // ── PATH C: Amazon returned 0 but we have top50 → return category products ──
+  if (amazonProducts.length === 0) {
+    if (top50Pool && top50Pool.length > 0) {
+      logger.warn(`🔍 ProductSpecific: Amazon empty — falling back to top50 for category "${cat}"`);
+      const fallback = top50Pool
+        .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
+        .slice(0, MAX_RESPONSE_RESULTS)
+        .map((p, i) => formatTop50AsResult(p, i + 1));
+
+      cacheResults(query, category, fallback).catch(() => {});
+      req._searchLog.outcome = "redis_top50_fallback";
+      req._searchLog.resultCount = fallback.length;
+
+      return res.json({
+        success: true,
+        query: rawQuery,
+        normalized: normalizedQuery,
+        category: cat || null,
+        intent: "PRODUCT_SPECIFIC",
+        primaryProduct: null,
+        totalResults: fallback.length,
+        cached: false,
+        source: "redis_top50",
+        lastUpdated: new Date().toISOString(),
+        elapsed_ms: Date.now() - requestStart,
+        results: fallback,
+        suggestions: fallback,
+      });
+    }
+    return null; // no top50 either — fall through to mock
+  }
+
+  // For each product: get affiliate links (non-blocking analysis queued separately)
+  const toProcess = amazonProducts.slice(0, 5);
+  const processed = await Promise.allSettled(
+    toProcess.map(async (p) => {
+      const asin = p.asin || p.platformId;
+      if (!asin) return null;
+
+      // Check individual product cache
+      const cached = await getProductCache(asin);
+      if (cached) {
+        logger.info(`🔍 ProductSpecific: product cache HIT for ${asin}`);
+        return cached;
+      }
+
+      // Get affiliate links (fast — Cuelinks API only)
+      let affiliateData = { flipkart: null, myntra: null };
+      try {
+        affiliateData = await getAffiliateLinks(asin, p.name, p.brand, category);
+      } catch { /* non-fatal */ }
+
+      const result = formatProductResult(
+        {
+          ...p,
+          flipkartPrice: affiliateData?.flipkart?.price || null,
+          flipkartUrl:   affiliateData?.flipkart?.affiliateUrl || affiliateData?.flipkart?.url || null,
+          myntraPrice:   affiliateData?.myntra?.price || null,
+          myntraUrl:     affiliateData?.myntra?.affiliateUrl || affiliateData?.myntra?.url || null,
+        },
+        null,
+        1,
+      );
+      if (!result) return null;
+
+      await setProductCache(asin, result).catch(() => {});
+      queueAnalysis(asin, p.name, cat, p.brand).catch(() => {});
+
+      return result;
+    }),
+  );
+
+  const results = processed
+    .filter((r) => r.status === "fulfilled" && r.value)
+    .map((r) => r.value)
+    .map((p, i) => ({ ...p, rank: i + 1 }));
+
+  if (results.length === 0) return null;
+
+  // Suggestions from top50 — exclude any product whose id matches an Amazon result
+  let suggestions = [];
+  if (top50Pool && top50Pool.length > 0) {
+    const resultAsins = new Set(results.map((r) => r.asin));
+    suggestions = top50Pool
+      .filter((p) => !resultAsins.has(p.id))
+      .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
+      .slice(0, 5)
+      .map((p, i) => formatTop50AsResult(p, i + 1));
+  }
+
+  cacheResults(query, category, results).catch(() => {});
+  saveToMongoCache(query, normalizedQuery, category, results.map((p) => p.asin).filter(Boolean)).catch(() => {});
+
+  // Merge into top50:{cat} pool (grows up to 50 as users search)
+  if (cat && results.length > 0) {
+    const incoming = results.map((p) => enrichedToTop50Shape(p, cat));
+    const merged = mergeIntoTop50(top50Pool, incoming);
+    if (merged.length !== (top50Pool || []).length) {
+      setTop50Products(cat, merged).catch(() => {});
+      logger.info(`🔍 ProductSpecific: top50:${cat} grew ${(top50Pool || []).length} → ${merged.length} products`);
+    }
+  }
+
+  req._searchLog.outcome = "amazon_live_product";
+  req._searchLog.resultCount = results.length;
+
+  return res.json({
+    success: true,
+    query: rawQuery,
+    normalized: normalizedQuery,
+    category: cat || null,
+    intent: "PRODUCT_SPECIFIC",
+    primaryProduct: results[0] || null,
+    totalResults: results.length,
+    cached: false,
+    source: "amazon_live",
+    lastUpdated: new Date().toISOString(),
+    elapsed_ms: Date.now() - requestStart,
+    results,
+    suggestions: suggestions.length > 0 ? suggestions : results.slice(1),
+  });
+}
+
+// ═════════════════════════════════════════════════════════════════
 // MAIN SEARCH HANDLER
 // ═════════════════════════════════════════════════════════════════
 
@@ -1062,6 +1588,181 @@ async function handleSearch(req, res) {
     logger.warn(`🔍 Search: MongoDB check threw — ${mongoErr.message}`);
   }
 
+  // ── STEP 3.5: Intent-based Redis-first routing ───────────────
+  // Classify the user's intent and attempt to serve from Redis (top50 / brand index)
+  // before touching any external API. Amazon is only called for PRODUCT_SPECIFIC misses.
+  //
+  // effectiveCategory: URL param takes priority; falls back to intent-detected category.
+  // This is critical — users almost never send a `category` URL param, so `category`
+  // is usually "". Without the fallback, all Redis seeding and caching uses "" as the
+  // key, making top50 completely useless.
+  let effectiveCategory = category || null;
+  let detectedIntent = null;
+
+  try {
+    const intent = classifyIntent(query, category);
+    detectedIntent = intent;
+    effectiveCategory = category || intent.category || null;
+    logger.info(
+      `🔍 Intent: ${intent.intent} confidence=${intent.confidence} ` +
+        `cat=${intent.category || "-"} brand=${intent.brand || "-"} ` +
+        `model=${intent.model || "-"} price=${intent.price_min || "*"}–${intent.price_max || "*"}` +
+        ` effectiveCat="${effectiveCategory || "none"}"`,
+    );
+
+    if (
+      intent.intent === INTENT.CATEGORY ||
+      intent.intent === INTENT.BRAND_CATEGORY
+    ) {
+      // Load raw pool once — reuse for both name-match and category listing
+      const rawPool = effectiveCategory ? await getTop50Products(effectiveCategory) : null;
+
+      // ── Name-match check: if query looks like a specific product name (≥4 meaningful
+      // words), try to find the exact product in top50 and return it as primaryProduct.
+      // This handles: user searched "washing machine" → copied result name → searched again.
+      const meaningfulWords = query.toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length >= 3 && !QUERY_STOP_WORDS.has(w));
+
+      if (meaningfulWords.length >= 4 && rawPool && rawPool.length > 0) {
+        const nameMatch = findBestNameMatch(rawPool, query, intent.brand);
+        if (nameMatch) {
+          logger.info(`🔍 Category→ProductSpecific: name match "${nameMatch.name?.slice(0, 50)}" (0 API calls)`);
+          const primaryProduct = formatTop50AsResult(nameMatch, 1);
+          const suggestions = rawPool
+            .filter((p) => p.id !== nameMatch.id)
+            .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
+            .slice(0, 5)
+            .map((p, i) => formatTop50AsResult(p, i + 1));
+          const results = [primaryProduct, ...suggestions.slice(0, 4)];
+          cacheResults(query, effectiveCategory, results).catch(() => {});
+          req._searchLog.outcome = "redis_top50_product";
+          req._searchLog.resultCount = results.length;
+          return res.json({
+            success: true,
+            query: rawQuery,
+            normalized: normalizedQuery,
+            category: effectiveCategory || null,
+            intent: "PRODUCT_SPECIFIC",
+            primaryProduct,
+            totalResults: results.length,
+            cached: false,
+            source: "redis_top50",
+            lastUpdated: new Date().toISOString(),
+            elapsed_ms: Date.now() - requestStart,
+            results,
+            suggestions,
+          });
+        }
+      }
+
+      // ── Regular category listing from top50
+      const top50Results = rawPool && rawPool.length > 0
+        ? await serveFromTop50(intent, query)  // serveFromTop50 re-reads top50 (fast Redis read)
+        : null;
+      if (top50Results && top50Results.length > 0) {
+        const filtered = filterByQueryRelevance(top50Results, query);
+        const final = filtered.length >= 3 ? filtered : top50Results;
+        cacheResults(query, effectiveCategory, final).catch(() => {});
+        req._searchLog.outcome = "redis_top50";
+        req._searchLog.resultCount = final.length;
+        return res.json({
+          success: true,
+          query: rawQuery,
+          normalized: normalizedQuery,
+          category: effectiveCategory || null,
+          intent: intent.intent,
+          totalResults: final.length,
+          cached: false,
+          source: "redis_top50",
+          lastUpdated: new Date().toISOString(),
+          elapsed_ms: Date.now() - requestStart,
+          results: addRanks(final),
+          suggestions: addRanks(final),
+        });
+      }
+      // top50 empty for this category — try cross-category before Amazon
+      logger.info(`🔍 Intent: top50 miss for "${effectiveCategory}" — trying cross-category search`);
+      const crossFallback = await searchAcrossAllCategories(query);
+      if (crossFallback && crossFallback.length > 0) {
+        cacheResults(query, effectiveCategory, crossFallback).catch(() => {});
+        req._searchLog.outcome = "redis_cross_category";
+        req._searchLog.resultCount = crossFallback.length;
+        return res.json({
+          success: true,
+          query: rawQuery,
+          normalized: normalizedQuery,
+          category: effectiveCategory || null,
+          intent: intent.intent,
+          totalResults: crossFallback.length,
+          cached: false,
+          source: "redis_top50",
+          lastUpdated: new Date().toISOString(),
+          elapsed_ms: Date.now() - requestStart,
+          results: addRanks(crossFallback),
+          suggestions: addRanks(crossFallback),
+        });
+      }
+      logger.info(`🔍 Intent: cross-category also empty — falling through to Amazon`);
+    } else if (intent.intent === INTENT.PRODUCT_SPECIFIC) {
+      // Search Amazon for specific product + queue background analysis
+      const productResponse = await serveProductSpecific(
+        intent, query, effectiveCategory, req, res, requestStart, rawQuery, normalizedQuery,
+      );
+      if (productResponse) return productResponse; // response already sent
+      // Amazon failed — fall through to mock/error handling below
+    } else {
+      // GENERIC / LOW_CONFIDENCE / FALLBACK — try keyword filter on top50
+      const genericResults = await serveGeneric(intent, query);
+      if (genericResults && genericResults.length > 0) {
+        cacheResults(query, category, genericResults).catch(() => {});
+        req._searchLog.outcome = "redis_generic";
+        req._searchLog.resultCount = genericResults.length;
+        return res.json({
+          success: true,
+          query: rawQuery,
+          normalized: normalizedQuery,
+          category: category || intent.category || null,
+          intent: intent.intent,
+          totalResults: genericResults.length,
+          cached: false,
+          source: "redis_top50",
+          lastUpdated: new Date().toISOString(),
+          elapsed_ms: Date.now() - requestStart,
+          results: addRanks(genericResults),
+          suggestions: addRanks(genericResults),
+        });
+      }
+
+      // No category detected or top50 empty — try searching across ALL categories
+      // before touching Amazon. Handles queries like "noise cancelling", "inverter ac", etc.
+      const crossResults = await searchAcrossAllCategories(query);
+      if (crossResults && crossResults.length > 0) {
+        cacheResults(query, category, crossResults).catch(() => {});
+        req._searchLog.outcome = "redis_cross_category";
+        req._searchLog.resultCount = crossResults.length;
+        return res.json({
+          success: true,
+          query: rawQuery,
+          normalized: normalizedQuery,
+          category: null,
+          intent: intent.intent,
+          totalResults: crossResults.length,
+          cached: false,
+          source: "redis_top50",
+          lastUpdated: new Date().toISOString(),
+          elapsed_ms: Date.now() - requestStart,
+          results: addRanks(crossResults),
+          suggestions: addRanks(crossResults),
+        });
+      }
+      // Still nothing — fall through to Amazon
+    }
+  } catch (intentErr) {
+    logger.warn(`🔍 Intent routing error — ${intentErr.message} — falling through to Amazon`);
+  }
+
   // ── STEP 4: Cache MISS — Fetch from Amazon PA-API (or mock fallback) ──
   logger.info(
     `🔍 Search: cache miss — fetching from Amazon PA-API for "${query}"`,
@@ -1071,7 +1772,7 @@ async function handleSearch(req, res) {
   let usingMockData = false;
 
   try {
-    amazonProducts = await amazonService.searchProducts(query, category);
+    amazonProducts = await amazonService.searchProducts(query, effectiveCategory);
     logger.info(`🔍 Search: Amazon returned ${amazonProducts.length} products`);
   } catch (amazonErr) {
     logger.error(`🔍 Search: Amazon PA-API failed — ${amazonErr.message}`);
@@ -1083,7 +1784,7 @@ async function handleSearch(req, res) {
     logger.warn(
       `🔍 Search: Amazon returned 0 products — falling back to mock data`,
     );
-    amazonProducts = getMockProductsForSearch(query, category);
+    amazonProducts = getMockProductsForSearch(query, effectiveCategory);
     usingMockData = amazonProducts.length > 0;
 
     if (usingMockData) {
@@ -1115,7 +1816,7 @@ async function handleSearch(req, res) {
 
   let enrichedProducts;
   try {
-    enrichedProducts = await enrichProductsBatched(toEnrich, category);
+    enrichedProducts = await enrichProductsBatched(toEnrich, effectiveCategory);
   } catch (enrichErr) {
     logger.error(`🔍 Search: enrichment batch failed — ${enrichErr.message}`);
     enrichedProducts = [];
@@ -1132,31 +1833,22 @@ async function handleSearch(req, res) {
   }
 
   // ── STEP 5.5: Strict category post-filter ────────────────────
-  // Validate that enriched products actually belong to the requested category.
-  // This catches: Amazon SearchIndex mismatch, stale cache data slipping through,
-  // and mock fallback returning products from the wrong category.
-  if (category) {
-    const catFiltered = filterByCategory(enrichedProducts, category);
+  // Uses effectiveCategory (URL param OR intent-detected) so filtering works
+  // even when the user didn't send a category URL param.
+  if (effectiveCategory) {
+    const catFiltered = filterByCategory(enrichedProducts, effectiveCategory);
     if (catFiltered.length > 0) {
       if (catFiltered.length < enrichedProducts.length) {
         logger.info(
-          `🔍 Category filter: "${category}" kept ${catFiltered.length}/${enrichedProducts.length} products`,
+          `🔍 Category filter: "${effectiveCategory}" kept ${catFiltered.length}/${enrichedProducts.length} products`,
         );
       }
       enrichedProducts = catFiltered;
     } else {
-      // No products matched — return a clean empty state
       logger.warn(
-        `🔍 Category filter: all ${enrichedProducts.length} live results failed category="${category}" filter — returning empty`,
+        `🔍 Category filter: all ${enrichedProducts.length} live results failed category="${effectiveCategory}" filter — skipping filter`,
       );
-      return res.status(404).json({
-        success: false,
-        error: `No products found for "${category}". Try a different search or browse another category.`,
-        query: rawQuery,
-        category,
-        totalResults: 0,
-        results: [],
-      });
+      // Don't return 404 — just skip the filter and show what we have
     }
   }
 
@@ -1184,18 +1876,34 @@ async function handleSearch(req, res) {
   );
 
   // ── STEP 7: Save to Caches (non-blocking) ────────────────────
-  // Neither save should block the response.
   const asinList = ranked.map((p) => p.asin).filter(Boolean);
 
-  // Redis: save full result objects (so cache hits return full data, not just ASINs)
-  cacheResults(query, category, ranked).catch((err) =>
+  // Redis search cache — use effectiveCategory so the key is meaningful
+  cacheResults(query, effectiveCategory, ranked).catch((err) =>
     logger.warn(`🔍 Search: Redis save failed — ${err.message}`),
   );
 
-  // MongoDB SearchCache: save ASIN list (TTL index handles expiry)
-  saveToMongoCache(query, normalizedQuery, category, asinList).catch((err) =>
+  // MongoDB SearchCache — ASINs only, TTL index handles expiry
+  saveToMongoCache(query, normalizedQuery, effectiveCategory, asinList).catch((err) =>
     logger.warn(`🔍 Search: MongoDB cache save failed — ${err.message}`),
   );
+
+  // Merge Amazon results into top50:{effectiveCategory} pool (max 50).
+  // Cron seeds only 10; pool grows organically as users search.
+  // Deduplicates by id so repeat searches don't bloat the pool.
+  // Skip if mock data or no detected category.
+  if (effectiveCategory && ranked.length > 0 && !usingMockData) {
+    getTop50Products(effectiveCategory).then((existing) => {
+      if (!existing || existing.length < TOP50_MAX) {
+        const incoming = ranked.map((p) => enrichedToTop50Shape(p, effectiveCategory));
+        const merged = mergeIntoTop50(existing, incoming);
+        if (merged.length !== (existing || []).length) {
+          setTop50Products(effectiveCategory, merged).catch(() => {});
+          logger.info(`🔍 Search: top50:${effectiveCategory} grew ${(existing || []).length} → ${merged.length} products`);
+        }
+      }
+    }).catch(() => {});
+  }
 
   // ── STEP 8: Return Response ───────────────────────────────────
   const elapsed = Date.now() - requestStart;
@@ -1211,7 +1919,7 @@ async function handleSearch(req, res) {
     success: true,
     query: rawQuery,
     normalized: normalizedQuery,
-    category: category || null,
+    category: effectiveCategory || null,
     totalResults: ranked.length,
     cached: false,
     cacheSource: null,
