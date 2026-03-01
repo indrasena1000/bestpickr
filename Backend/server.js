@@ -13,35 +13,26 @@ const {
   connectRedis,
   disconnectRedis,
   getCacheInfo,
+  getClient: getRedisClient,
 } = require("./src/utils/redis");
 const {
   connectMongoDB,
   disconnectMongoDB,
   getMongoStatus,
 } = require("./src/utils/mongodb");
-const {
-  setSearchAgent,
-  startCron,
-  stopCron,
-} = require("./src/cron/categoryPreloader");
-const {
-  startNightlyRefresh,
-  stopNightlyRefresh,
-  triggerManually: triggerNightlyRefresh,
-  getJobStatus: getNightlyJobStatus,
-} = require("./src/jobs/nightlyRefresh");
-const {
-  setPrisma: setTelegramPrisma,
-  startTelegramReport,
-  stopTelegramReport,
-} = require("./src/jobs/telegramReport");
+
+// ── CRON IMPORTS ──────────────────────────────────────────────────
+const { setSearchAgent, startCron, stopCron } = require("./src/cron/categoryPreloader");
+const { startNightlyRefresh, stopNightlyRefresh } = require("./src/jobs/nightlyRefresh");
+const { setPrisma: setTelegramPrisma, startTelegramReport, stopTelegramReport } = require("./src/jobs/telegramReport");
+const snapshotCron  = require("./src/cron/rankingSnapshotCron");
+const priceRefreshCron = require("./src/cron/priceRefreshCron");
 
 const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5001;
 
 // ── CORS ─────────────────────────────────────────────────────────
-// FIX: was a single string — must be an array to support multiple origins
 const ALLOWED_ORIGINS = [
   process.env.FRONTEND_URL || "http://localhost:5173",
   "https://bestpickr.in",
@@ -84,14 +75,10 @@ app.use("/api/products", require("./src/routes/products"));
 app.use("/api/categories", require("./src/routes/categories"));
 app.use("/api/health", require("./src/routes/health"));
 
-// Analytics — FIX: these were missing from server.js completely
 const { router: analyticsRouter } = require("./src/routes/analytics");
 app.use("/api/analytics", analyticsRouter);
 
-// Admin (maintenance mode) — FIX: also missing
 app.use("/api/admin", require("./src/routes/admin"));
-
-// Blog — AI-generated content system
 app.use("/api/blog", require("./src/routes/blog"));
 
 // ── STATUS ENDPOINT ──────────────────────────────────────────────
@@ -137,20 +124,16 @@ app.use((err, req, res, next) => {
 // ── START ─────────────────────────────────────────────────────────
 async function start() {
   try {
-    // Connect PostgreSQL (Prisma) — existing data layer
+    // Connect PostgreSQL (Prisma)
     await prisma.$connect();
-    app.locals.prisma = prisma; // Share with routes that use req.app.locals.prisma
+    app.locals.prisma = prisma;
     logger.info("✅ Database (Postgres) connected");
 
-    // FIX: Inject the shared prisma instance into rankingAgent
-    // This ensures there is ONE PrismaClient across the whole app.
-    // rankingAgent was previously creating its own — with Neon pooler
-    // this causes connection exhaustion and silent DB save failures.
+    // Inject prisma into agents + services
     const { setPrisma } = require("./src/agents/rankingAgent");
     setPrisma(prisma);
     logger.info("✅ Prisma injected into rankingAgent");
 
-    // Inject prisma into new search architecture services
     const { setPrisma: setSearchCtrlPrisma }  = require("./src/controllers/searchController");
     const { setPrisma: setProductMatchPrisma } = require("./src/services/productMatchService");
     const { setPrisma: setLiveFetchPrisma }    = require("./src/services/liveProductFetchService");
@@ -161,10 +144,23 @@ async function start() {
     setLiveFetchPrisma(prisma);
     setRelatedSvcPrisma(prisma);
     setBgEnricherPrisma(prisma);
-    logger.info("✅ Prisma injected into search services (searchController, productMatchService, liveProductFetchService, relatedProductService, backgroundCategoryEnricher)");
+    logger.info("✅ Prisma injected into all search services");
 
-    // Connect MongoDB (Mongoose) — AI analysis layer (non-fatal)
-    // App works without it; AI features (analysis, price alerts) will be disabled
+    // Auto-load dynamic brand detection from DB
+    try {
+      const brandRecords = await prisma.product.findMany({
+        select:   { brand: true },
+        distinct: ['brand'],
+        where:    { brand: { not: null } },
+      });
+      const { setDynamicBrands } = require("./src/utils/productNameNormalizer");
+      setDynamicBrands(brandRecords.map((b) => b.brand).filter(Boolean));
+      logger.info(`✅ Dynamic brand detection loaded (${brandRecords.length} brands from DB)`);
+    } catch (brandErr) {
+      logger.warn(`⚠️  Dynamic brand loading failed (non-fatal): ${brandErr.message}`);
+    }
+
+    // Connect MongoDB
     const mongoOk = await connectMongoDB();
     if (mongoOk) {
       logger.info("✅ MongoDB (Mongoose) connected — AI analysis layer active");
@@ -172,39 +168,47 @@ async function start() {
       logger.warn("⚠️  MongoDB not connected — AI analysis features disabled");
     }
 
-    // Connect Redis (non-fatal — app works without it)
+    // Connect Redis
     await connectRedis();
 
-    // Wire cron: inject the ranking agent's search function into the preloader
-    // This avoids circular dependencies (cron → rankingAgent → redis → ...)
-    const { runSearchAgent } = require("./src/agents/rankingAgent");
-    setSearchAgent(runSearchAgent);
-    startCron();
-    logger.info("✅ Cron scheduler started (preloads categories at 12 AM IST)");
+    // ── CRONS (commented out for dev restart) ────────────────────────
 
-    // Start ranking snapshot cron (replaces top50:{category} every 6 hours)
-    const snapshotCron = require("./src/cron/rankingSnapshotCron");
-    const { getClient: getRedisClient } = require("./src/utils/redis");
-    snapshotCron.init(getRedisClient(), prisma);
-    snapshotCron.start();
-    logger.info("✅ Ranking snapshot cron started (refreshes top50 keys every 6h)");
+    // // 1. Category preloader (runs at 12 AM IST)
+    // const { runSearchAgent } = require("./src/agents/rankingAgent");
+    // setSearchAgent(runSearchAgent);
+    // startCron();
+    // logger.info("✅ Category preloader cron started (12 AM IST)");
 
-    // Start nightly product refresh (runs at 12:01 AM IST — 1 min after categoryPreloader)
-    startNightlyRefresh();
-    logger.info(
-      "✅ Nightly refresh job started (refreshes products + prices at 12:01 AM IST)",
-    );
+    // // 2. Ranking snapshot cron — refreshes top50:{category} every 6h
+    // snapshotCron.init(getRedisClient(), prisma);
+    // snapshotCron.start();
+    // logger.info("✅ Ranking snapshot cron started (every 6h)");
 
-    // Start Telegram daily report (runs at 9:00 AM IST)
-    setTelegramPrisma(prisma);
-    startTelegramReport();
-    logger.info("✅ Telegram daily report scheduled (9:00 AM IST)");
+    // // 3. Seed sub-type pools immediately on startup so search works right away
+    // snapshotCron.runSubTypeSnapshot().catch(err =>
+    //   logger.error(`SubTypeCron: startup seed failed: ${err.message}`)
+    // );
+    // logger.info("✅ Sub-type snapshot seeding started in background (~3-4 min)");
 
-    // Blog generation cron (3:30 AM UTC = 9:00 AM IST, daily)
-    const cron = require("node-cron");
-    const { runBlogGeneration } = require("./src/jobs/blogGenerator");
-    cron.schedule("30 3 * * *", runBlogGeneration);
-    logger.info("✅ Blog generation cron scheduled (3:30 AM UTC / 9:00 AM IST)");
+    // // 4. Nightly product refresh (12:01 AM IST)
+    // startNightlyRefresh();
+    // logger.info("✅ Nightly refresh job started (12:01 AM IST)");
+
+    // // 5. Telegram daily report (9:00 AM IST)
+    // setTelegramPrisma(prisma);
+    // startTelegramReport();
+    // logger.info("✅ Telegram daily report scheduled (9:00 AM IST)");
+
+    // // 6. Blog generation cron (9:00 AM IST)
+    // const cron = require("node-cron");
+    // const { runBlogGeneration } = require("./src/jobs/blogGenerator");
+    // cron.schedule("30 3 * * *", runBlogGeneration);
+    // logger.info("✅ Blog generation cron scheduled (3:30 AM UTC / 9:00 AM IST)");
+
+    // // 7. Daily price refresh (3:00 AM IST) — lightweight Creators API price check
+    // priceRefreshCron.init(prisma);
+    // priceRefreshCron.startPriceRefresh();
+    // logger.info("✅ Price refresh cron started (daily 3:00 AM IST)");
 
     app.listen(PORT, () => {
       logger.info(`bestpickr API on http://localhost:${PORT}`);
@@ -220,6 +224,7 @@ process.on("SIGINT", async () => {
   stopCron();
   stopNightlyRefresh();
   stopTelegramReport();
+  priceRefreshCron.stopPriceRefresh();
   disconnectRedis();
   await disconnectMongoDB();
   await prisma.$disconnect();
@@ -229,6 +234,7 @@ process.on("SIGTERM", async () => {
   stopCron();
   stopNightlyRefresh();
   stopTelegramReport();
+  priceRefreshCron.stopPriceRefresh();
   disconnectRedis();
   await disconnectMongoDB();
   await prisma.$disconnect();

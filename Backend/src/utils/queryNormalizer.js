@@ -173,6 +173,120 @@ function detectModel(query) {
   return null
 }
 
+// ── Sub-type detection ───────────────────────────────────────────
+// Maps specific product keywords to a sub-type slug within their category.
+// e.g. "washing machine" → 'washing_machine', "stove" → 'stove'
+// Used to route searches to top50:{category}:{subType} Redis pools.
+// Multi-word phrases are checked before single words (longest match wins).
+const KEYWORD_TO_SUBTYPE = {
+  // Appliances — multi-word first
+  'washing machine':   'washing_machine',
+  'air conditioner':   'air_conditioner',
+  'water purifier':    'water_purifier',
+  'air fryer':         'air_fryer',
+  'gas stove':         'stove',
+  'induction cooktop': 'induction_cooktop',
+  'induction stove':   'induction_cooktop',
+  'pressure cooker':   'pressure_cooker',
+  'water heater':      'geyser',
+  'running shoes':     'running_shoes',
+  'running shoe':      'running_shoes',
+  'face wash':         'face_wash',
+  'action camera':     'action_camera',
+  // Appliances — single word
+  'washing':    'washing_machine',
+  'washer':     'washing_machine',
+  'refrigerator':'refrigerator',
+  'fridge':     'refrigerator',
+  'freezer':    'refrigerator',
+  'microwave':  'microwave',
+  'airfryer':   'air_fryer',
+  'fryer':      'air_fryer',
+  'stove':      'stove',
+  'cooktop':    'stove',
+  'geyser':     'geyser',
+  'heater':     'geyser',
+  'purifier':   'water_purifier',
+  'mixer':      'mixer_grinder',
+  'grinder':    'mixer_grinder',
+  'blender':    'mixer_grinder',
+  'juicer':     'mixer_grinder',
+  'vacuum':     'vacuum_cleaner',
+  'robovac':    'vacuum_cleaner',
+  'tv':         'tv',
+  'television': 'tv',
+  'chimney':    'chimney',
+  'dishwasher': 'dishwasher',
+  'induction':  'induction_cooktop',
+  'cooker':     'pressure_cooker',
+  'iron':       'iron',
+  // Headphones
+  'earphone':   'earphones',
+  'earphones':  'earphones',
+  'earbuds':    'earphones',
+  'earbud':     'earphones',
+  'tws':        'earphones',
+  'neckband':   'neckband',
+  'headphone':  'over_ear',
+  'headphones': 'over_ear',
+  'headset':    'over_ear',
+  'speaker':    'speaker',
+  'speakers':   'speaker',
+  'soundbar':   'soundbar',
+  'woofer':     'speaker',
+  // Footwear
+  'sandal':   'sandals',
+  'sandals':  'sandals',
+  'slipper':  'slippers',
+  'slippers': 'slippers',
+  'boot':     'boots',
+  'boots':    'boots',
+  'sneaker':  'sneakers',
+  'sneakers': 'sneakers',
+  // Skincare
+  'sunscreen':   'sunscreen',
+  'serum':       'serum',
+  'moisturizer': 'moisturizer',
+  'facewash':    'face_wash',
+  'cleanser':    'face_wash',
+  'toner':       'toner',
+  // Camera
+  'dslr':       'dslr',
+  'mirrorless': 'mirrorless',
+  'webcam':     'webcam',
+  'gopro':      'action_camera',
+  // Gaming
+  'controller': 'controller',
+  'gamepad':    'controller',
+  'console':    'console',
+  'playstation':'console',
+  'xbox':       'console',
+  'ps5':        'console',
+}
+
+// Multi-word phrases to check first — sorted longest first to prefer specific matches
+const _SUBTYPE_PHRASES = Object.keys(KEYWORD_TO_SUBTYPE)
+  .filter(k => k.includes(' '))
+  .sort((a, b) => b.length - a.length)
+
+function detectSubType(query) {
+  if (!query) return null
+  const q = query.toLowerCase()
+
+  // Phase 1: multi-word phrase match
+  for (const phrase of _SUBTYPE_PHRASES) {
+    if (q.includes(phrase)) return KEYWORD_TO_SUBTYPE[phrase]
+  }
+
+  // Phase 2: single-word match
+  for (const word of q.split(/\s+/)) {
+    const sub = KEYWORD_TO_SUBTYPE[word]
+    if (sub) return sub
+  }
+
+  return null
+}
+
 // ── Levenshtein distance ──────────────────────────────────────────
 // Computes character-level edit distance between two strings.
 // Used by detectCategory fuzzy matching — same idea as SPELLING_MAP but
@@ -327,9 +441,12 @@ function extractAttributes(rawQuery) {
   words = words.map(w => SYNONYMS[w] || w)
   const cleanQuery = [...new Set(words)].join(' ').trim()
 
+  const subType = detectSubType(corrected)
+
   return {
     brand:       brand || null,
     category:    category || null,
+    subType:     subType || null,
     model:       model || null,
     capacity,
     rating,
@@ -393,4 +510,5 @@ module.exports = {
   buildSearchKey,
   buildCategoryKey,
   correctSpelling,
+  detectSubType,
 }

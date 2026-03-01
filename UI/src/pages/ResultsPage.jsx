@@ -13,6 +13,7 @@ import SuggestionsGrid    from '../components/SuggestionsGrid.jsx'
 import ProductGrid        from '../components/ProductGrid.jsx'
 import DidYouMeanBanner   from '../components/DidYouMeanBanner.jsx'
 import FallbackView       from '../components/FallbackView.jsx'
+import RefineSearchBanner from '../components/RefineSearchBanner.jsx'
 
 const RANK_CLASS = ['','g','s','b','n','n','n','n','n','n','n']
 const fmt = (n) => n ? `₹${Number(n).toLocaleString('en-IN')}` : '—'
@@ -263,8 +264,8 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
 
           {/* ── INTENT-BASED LAYOUT ROUTER ─────────────────── */}
 
-          {/* Loading / polling state */}
-          {(loading || status === 'fetching' || status === 'partial') && !primaryProduct && (
+          {/* Loading / polling state — not shown during lazy_pending (suggestions already visible) */}
+          {(loading || status === 'fetching' || status === 'partial') && !primaryProduct && status !== 'lazy_pending' && (
             <div>
               <div className="loading-wrap" style={{ padding:'16px 0 20px', flexDirection:'row', justifyContent:'flex-start' }}>
                 <div className="loading-spinner"/>
@@ -292,7 +293,8 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
           )}
 
           {/* PATH A — PRODUCT_SPECIFIC: primary card + alternatives grid */}
-          {!loading && !error && intent === 'PRODUCT_SPECIFIC' && (
+          {/* Also renders during lazy_pending: skeleton primary + instant suggestions */}
+          {!loading && !error && (intent === 'PRODUCT_SPECIFIC' || status === 'lazy_pending') && (
             <>
               {/* Spelling correction banner */}
               {wasSpellingCorrected && correctedQuery && (
@@ -310,6 +312,7 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
                 confidence={confidence}
                 matchType={matchType}
                 onBuy={(plt) => plt?.url && window.open(plt.url, '_blank')}
+                onViewDetails={(p) => onViewProduct(p, suggestions || [])}
               />
               {suggestions && suggestions.length > 0 && (
                 <SuggestionsGrid

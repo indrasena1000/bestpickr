@@ -131,6 +131,12 @@ const KEYWORD_TO_CATEGORY = {
   iron:             'appliances',
   inverter:         'appliances',
   ac:               'appliances',
+  stove:            'appliances',
+  cooktop:          'appliances',
+  geyser:           'appliances',
+  tv:               'appliances',
+  television:       'appliances',
+  robovac:          'appliances',
 
   // Footwear
   footwear:   'footwear',
@@ -213,4 +219,156 @@ function getCategory(keyword) {
   return KEYWORD_TO_CATEGORY[keyword.toLowerCase().trim()] || null
 }
 
-module.exports = { KEYWORD_TO_CATEGORY, CANONICAL_CATEGORIES, getRedisKey, getCategory }
+// ─────────────────────────────────────────────────────────────────
+// SUB-TYPE SYSTEM
+// Resolves specific product types within broad categories.
+// e.g. "washing machine" → subType='washing_machine' within 'appliances'
+//
+// Why: top50:appliances mixes 15 sub-types. A user searching "washing machine"
+// should see only washing machines, not fridges, stoves, and ACs.
+// Sub-type pools (top50:appliances:washing_machine) are seeded by the 1 AM
+// cron and served free all day — 0 Amazon calls per search.
+// ─────────────────────────────────────────────────────────────────
+
+// Amazon search queries for each sub-type — used by 1 AM cron only
+// Designed to return the best Indian market results for that sub-type
+const SUBTYPE_AMAZON_QUERIES = {
+  appliances: {
+    washing_machine:    'best washing machine india',
+    refrigerator:       'best refrigerator india',
+    air_conditioner:    'best split air conditioner india',
+    microwave:          'best microwave oven india',
+    air_fryer:          'best air fryer india',
+    stove:              'best gas stove 4 burner india',
+    geyser:             'best geyser water heater india',
+    water_purifier:     'best ro water purifier india',
+    mixer_grinder:      'best mixer grinder india',
+    vacuum_cleaner:     'best vacuum cleaner india',
+    tv:                 'best smart tv 43 inch india',
+    chimney:            'best kitchen chimney auto clean india',
+    induction_cooktop:  'best induction cooktop india',
+    pressure_cooker:    'best electric pressure cooker india',
+    dishwasher:         'best dishwasher india',
+    iron:               'best steam iron india',
+  },
+  headphones: {
+    earphones:  'best wireless earbuds tws india',
+    neckband:   'best neckband earphones bluetooth india',
+    over_ear:   'best over ear headphones india',
+    speaker:    'best bluetooth speaker portable india',
+    soundbar:   'best soundbar for tv india',
+  },
+  mobile: {
+    smartphone: 'best smartphone india 2025',
+  },
+  laptop: {
+    laptop: 'best laptop india 2025',
+  },
+  tablets: {
+    tablet: 'best tablet india 2025',
+  },
+  smartwatch: {
+    smartwatch: 'best smartwatch india 2025',
+  },
+  camera: {
+    dslr:          'best dslr camera india',
+    mirrorless:    'best mirrorless camera india',
+    action_camera: 'best action camera india',
+    webcam:        'best webcam india',
+  },
+  gaming: {
+    controller: 'best gaming controller india',
+    console:    'best gaming console india',
+  },
+  footwear: {
+    running_shoes: 'best running shoes india',
+    sneakers:      'best casual sneakers india',
+    sandals:       'best sandals india',
+    slippers:      'best slippers india',
+  },
+  skincare: {
+    sunscreen:    'best sunscreen spf50 india',
+    serum:        'best vitamin c serum india',
+    moisturizer:  'best face moisturizer india',
+    face_wash:    'best face wash india',
+    toner:        'best face toner india',
+  },
+  books: {
+    books: 'bestseller books india',
+  },
+  fashion: {
+    tshirt: 'best casual t-shirt men india',
+  },
+}
+
+// Keywords to filter a broad category pool down to a specific sub-type.
+// Used when sub-type Redis pool is empty — filters top50:{category} in-memory.
+// Sorted by specificity (most specific first to avoid false matches).
+const SUBTYPE_FILTER_KEYWORDS = {
+  washing_machine:   ['washing machine', 'front load', 'top load', 'washer', 'fully automatic', 'semi automatic'],
+  refrigerator:      ['refrigerator', 'fridge', 'double door', 'single door', 'side by side', 'frost free'],
+  air_conditioner:   ['air conditioner', 'split ac', 'window ac', 'inverter ac', 'ton ac'],
+  microwave:         ['microwave', 'microwave oven', 'convection', 'solo microwave'],
+  air_fryer:         ['air fryer', 'airfryer', 'digital air fryer'],
+  stove:             ['gas stove', 'stove', 'cooktop', 'burner stove', 'glass top'],
+  geyser:            ['geyser', 'water heater', 'instant geyser', 'storage geyser'],
+  water_purifier:    ['water purifier', 'ro purifier', 'uv purifier', 'ro uv purifier'],
+  mixer_grinder:     ['mixer grinder', 'mixer', 'wet grinder', 'juicer mixer'],
+  vacuum_cleaner:    ['vacuum cleaner', 'robot vacuum', 'robovac', 'wet dry vacuum'],
+  tv:                ['smart tv', 'television', 'qled', 'oled', '4k tv', 'led tv', 'android tv'],
+  chimney:           ['chimney', 'kitchen chimney', 'auto clean chimney'],
+  induction_cooktop: ['induction cooktop', 'induction stove', 'induction cooker'],
+  pressure_cooker:   ['pressure cooker', 'electric cooker', 'instant pot'],
+  dishwasher:        ['dishwasher'],
+  iron:              ['steam iron', 'dry iron', 'clothes iron'],
+  // headphones
+  earphones:         ['earbuds', 'tws', 'true wireless', 'earphone', 'in-ear'],
+  neckband:          ['neckband'],
+  over_ear:          ['over-ear', 'over ear', 'on-ear', 'headphone', 'headset'],
+  speaker:           ['bluetooth speaker', 'portable speaker', 'wireless speaker'],
+  soundbar:          ['soundbar', 'sound bar'],
+  // footwear
+  running_shoes:     ['running shoe', 'running', 'sport shoe', 'athletic'],
+  sneakers:          ['sneaker', 'casual shoe', 'trainer'],
+  sandals:           ['sandal', 'flip flop', 'open toe'],
+  slippers:          ['slipper', 'chappal', 'indoor'],
+  // skincare
+  sunscreen:         ['sunscreen', 'spf', 'sun block', 'sun protection'],
+  serum:             ['serum', 'face serum', 'vitamin c'],
+  moisturizer:       ['moisturizer', 'moisturiser', 'face cream'],
+  face_wash:         ['face wash', 'facewash', 'cleanser', 'foaming wash'],
+  toner:             ['toner', 'face toner'],
+  // camera
+  dslr:              ['dslr'],
+  mirrorless:        ['mirrorless'],
+  webcam:            ['webcam'],
+  action_camera:     ['action camera', 'gopro'],
+  // gaming
+  controller:        ['controller', 'gamepad', 'joystick'],
+  console:           ['console', 'playstation', 'xbox', 'nintendo'],
+  // general
+  smartphone:        ['smartphone', 'android phone', 'iphone', '5g phone'],
+  laptop:            ['laptop', 'notebook', 'macbook', 'chromebook'],
+  tablet:            ['tablet', 'ipad', 'android tablet'],
+  smartwatch:        ['smartwatch', 'smart watch', 'fitness band'],
+}
+
+// Flat list of all sub-types — used by 1 AM cron to iterate
+const CANONICAL_SUBTYPES = Object.entries(SUBTYPE_AMAZON_QUERIES).flatMap(
+  ([category, subtypes]) =>
+    Object.entries(subtypes).map(([subType, searchQuery]) => ({
+      category,
+      subType,
+      searchQuery,
+    }))
+)
+
+module.exports = {
+  KEYWORD_TO_CATEGORY,
+  CANONICAL_CATEGORIES,
+  SUBTYPE_AMAZON_QUERIES,
+  SUBTYPE_FILTER_KEYWORDS,
+  CANONICAL_SUBTYPES,
+  getRedisKey,
+  getCategory,
+}

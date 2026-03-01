@@ -18,21 +18,37 @@ function SkeletonPulse({ w = '100%', h = 16, r = 6, style = {} }) {
   )
 }
 
-export default function PrimaryProductCard({ product, status, onBuy, confidence, matchType }) {
+export default function PrimaryProductCard({ product, status, onBuy, onViewDetails, confidence, matchType }) {
   const [imgErr, setImgErr] = useState(false)
 
-  // ── FETCHING: full skeleton ───────────────────────────────────
-  if (status === 'fetching' || !product) {
+  // ── LAZY_PENDING: skeleton with "Finding exact match" label ─────
+  if (status === 'lazy_pending' || status === 'fetching' || !product) {
     return (
-      <div className="rcard" style={{ padding: 20, display: 'flex', gap: 20, alignItems: 'flex-start' }}>
-        <div style={{ width: 100, height: 100, borderRadius: 8, background: 'var(--paper3)', flexShrink: 0 }} />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <SkeletonPulse w="60%" h={20} />
-          <SkeletonPulse w="40%" h={14} />
-          <SkeletonPulse w="30%" h={28} r={4} style={{ marginTop: 8 }} />
-          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-            <SkeletonPulse w={80} h={28} r={20} />
-            <SkeletonPulse w={80} h={28} r={20} />
+      <div className="rcard" style={{ padding: 20 }}>
+        {status === 'lazy_pending' && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            fontSize: 12, color: 'var(--ink3)', marginBottom: 14,
+          }}>
+            <div style={{
+              width: 10, height: 10, borderRadius: '50%',
+              border: '2px solid var(--accent)', borderTopColor: 'transparent',
+              animation: 'spin 0.8s linear infinite', flexShrink: 0,
+            }} />
+            Finding exact match on Amazon…
+            <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+          <div style={{ width: 100, height: 100, borderRadius: 8, background: 'var(--paper3)', flexShrink: 0 }} />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <SkeletonPulse w="60%" h={20} />
+            <SkeletonPulse w="40%" h={14} />
+            <SkeletonPulse w="30%" h={28} r={4} style={{ marginTop: 8 }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <SkeletonPulse w={80} h={28} r={20} />
+              <SkeletonPulse w={80} h={28} r={20} />
+            </div>
           </div>
         </div>
         <style>{`@keyframes bp-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
@@ -161,17 +177,29 @@ export default function PrimaryProductCard({ product, status, onBuy, confidence,
           </div>
         </div>
 
-        {/* Buy button */}
-        {!isPartial && bestPlt && (
-          <button onClick={() => onBuy?.(bestPlt)} style={{
-            background: 'var(--accent)', color: '#fff',
-            fontWeight: 700, fontSize: 14, padding: '12px 24px',
-            borderRadius: 10, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
-            alignSelf: 'center', boxShadow: '0 4px 12px rgba(26,107,60,0.3)',
-          }}>
-            Buy on {bestPlt.name} →
-          </button>
-        )}
+        {/* Action buttons */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignSelf: 'center' }}>
+          {onViewDetails && !isPartial && (
+            <button onClick={() => onViewDetails(product)} style={{
+              background: 'var(--paper2)', color: 'var(--accent)',
+              fontWeight: 700, fontSize: 13, padding: '10px 20px',
+              borderRadius: 10, border: '1.5px solid var(--accent)', cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}>
+              View Details
+            </button>
+          )}
+          {!isPartial && bestPlt && (
+            <button onClick={() => onBuy?.(bestPlt)} style={{
+              background: 'var(--accent)', color: '#fff',
+              fontWeight: 700, fontSize: 14, padding: '12px 24px',
+              borderRadius: 10, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
+              boxShadow: '0 4px 12px rgba(26,107,60,0.3)',
+            }}>
+              Buy on {bestPlt.name} →
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

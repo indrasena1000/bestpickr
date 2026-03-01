@@ -346,6 +346,38 @@ async function setProductCache(asin, product) {
   }
 }
 
+// ── SUB-TYPE PRODUCTS ─────────────────────────────────────────────
+// top50:{category}:{subType} — populated at 1 AM IST daily by rankingSnapshotCron
+// Separate from top50:{category} (broad pool) — these are product-type specific.
+// e.g. top50:appliances:washing_machine — only washing machines, never fridges or ACs.
+// TTL: 24h (refreshed nightly). Higher TTL than 6h snapshot because cron runs once/day.
+
+const SUBTYPE_TTL = 86400  // 24h
+
+async function getSubTypeProducts(category, subType) {
+  if (!redis || redis.status !== 'ready') return null
+  const key = `top50:${category}:${subType}`
+  try {
+    const raw = await redis.get(key)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch (err) {
+    logger.error(`Redis GET failed for "${key}": ${err.message}`)
+    return null
+  }
+}
+
+async function setSubTypeProducts(category, subType, products) {
+  if (!redis || redis.status !== 'ready') return
+  const key = `top50:${category}:${subType}`
+  try {
+    await redis.set(key, JSON.stringify(products), 'EX', SUBTYPE_TTL)
+    logger.info(`SubType SET: "${key}" | ${products.length} products | TTL=${SUBTYPE_TTL}s (24h)`)
+  } catch (err) {
+    logger.error(`Redis SET failed for "${key}": ${err.message}`)
+  }
+}
+
 // ── BACKGROUND ANALYSIS DEDUP ─────────────────────────────────────
 // bestpickr:analysis:queued:{asin} — 1h flag prevents duplicate GPT calls
 
@@ -395,7 +427,7 @@ module.exports = {
   invalidateCache,
   flushBestpickrCache,
   getClient: () => redis,
-  // New Redis-first search helpers
+  // Redis-first search helpers
   getTop50Products,
   setTop50Products,
   getBrandProducts,
@@ -405,4 +437,7 @@ module.exports = {
   isAnalysisQueued,
   markAnalysisQueued,
   normalizeBrand,
+  // Sub-type helpers (product-type specific pools within a category)
+  getSubTypeProducts,
+  setSubTypeProducts,
 }

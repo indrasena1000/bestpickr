@@ -98,6 +98,60 @@ export function useSearch() {
     try {
       const data = await searchProducts(query.trim(), category)
 
+      // ── LAZY LOAD: server has DB suggestions ready but primary is pending ──
+      // Show suggestions instantly; fetch primary product in the background.
+      if (data.primaryPending && data.liveFetchUrl) {
+        const suggestions = data.suggestions || data.results || []
+        const lazyState = {
+          intent:               data.intent                || 'PRODUCT_SPECIFIC',
+          confidence:           data.confidence            ?? null,
+          matchType:            data.matchType             || null,
+          primaryProduct:       null,
+          suggestions,
+          results:              suggestions,
+          status:               'lazy_pending',
+          jobId:                null,
+          source:               data.source                || null,
+          executionTimeMs:      data.elapsed_ms            || 0,
+          isLoading:            false,
+          error:                null,
+          fromCache:            false,
+          wasSpellingCorrected: data.wasSpellingCorrected  || false,
+          correctedQuery:       data.correctedQuery        || null,
+          meta: {
+            fromCache: false, elapsed: data.elapsed_ms,
+            source: data.source, intent: data.intent,
+          },
+        }
+        setState(lazyState)
+
+        // Fire background fetch — silently updates primary when ready
+        ;(async () => {
+          try {
+            const liveRes  = await fetch(data.liveFetchUrl)
+            const liveData = await liveRes.json()
+            if (liveData.success && liveData.primaryProduct) {
+              setState(prev => {
+                const next = {
+                  ...prev,
+                  primaryProduct: liveData.primaryProduct,
+                  status:         'ready',
+                }
+                writeCache(query, next)
+                return next
+              })
+            } else {
+              // Primary fetch failed — mark ready so skeleton disappears
+              setState(prev => ({ ...prev, status: 'ready' }))
+            }
+          } catch {
+            setState(prev => ({ ...prev, status: 'ready' }))
+          }
+        })()
+
+        return
+      }
+
       const next = {
         intent:                data.intent                || null,
         confidence:            data.confidence            ?? null,

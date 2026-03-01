@@ -363,10 +363,80 @@ function mapToAmazonIndex(category) {
 }
 
 // ═════════════════════════════════════════════════════════════════
+// CREATORS API — SINGLE ASIN PRICE LOOKUP
+// ═════════════════════════════════════════════════════════════════
+// PA-API GetItems is deprecated. Creators API only has keyword search,
+// but searching by ASIN returns the exact product as the top result.
+// Used by priceRefreshCron — 1 API call per ASIN, sequential with delay.
+
+async function getItemPrice(asin) {
+  if (!asin) return null;
+  if (!CLIENT_ID || !CLIENT_SECRET || !TOKEN_ENDPOINT) {
+    logger.warn('PriceRefresh: Creators API creds not set — skipping price refresh');
+    return null;
+  }
+
+  try {
+    const token = await getAccessToken();
+
+    const payload = {
+      keywords:    asin,           // ASIN as keyword → exact product returned
+      marketplace: MARKETPLACE,
+      partnerTag:  ASSOCIATE_TAG,
+      limit:       1,             // only need top result
+      resources: [
+        'offersV2.listings.price',
+        'offersV2.listings.availability',
+      ],
+    };
+
+    const res = await axios.post(CREATORS_API_URL, payload, {
+      headers: {
+        'Authorization': `Bearer ${token}, Version ${CRED_VERSION}`,
+        'Content-Type':  'application/json',
+        'x-marketplace': MARKETPLACE,
+      },
+      timeout: 12000,
+    });
+
+    const items = res.data?.searchResult?.items || [];
+    const item  = items.find(i => i.asin === asin) || items[0];
+    if (!item) return null;
+
+    const listing = item.offersV2?.listings?.[0] || {};
+    return {
+      platformId: asin,
+      price:      listing.price?.money?.amount ? parseFloat(listing.price.money.amount) : null,
+      inStock:    listing.availability?.type === 'IN_STOCK',
+    };
+  } catch (err) {
+    if (err.response?.status === 429) {
+      logger.warn(`PriceRefresh: rate limited on ASIN ${asin} — will skip`);
+    } else {
+      logger.warn(`PriceRefresh: Creators API error for ${asin} — ${err.message}`);
+    }
+    return null;
+  }
+}
+
+// Kept for backward compat / batch callers — resolves sequentially with delay
+async function getItemPrices(asins, delayMs = 600) {
+  const results = [];
+  for (const asin of asins) {
+    const result = await getItemPrice(asin);
+    if (result) results.push(result);
+    if (asins.length > 1) await new Promise(r => setTimeout(r, delayMs));
+  }
+  return results;
+}
+
+// ═════════════════════════════════════════════════════════════════
 // EXPORTS
 // ═════════════════════════════════════════════════════════════════
 
 module.exports = {
   searchProducts,
+  getItemPrice,
+  getItemPrices,
   getAccessToken, // exported for testing
 };

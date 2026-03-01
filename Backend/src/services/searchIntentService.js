@@ -59,7 +59,7 @@ function classifyIntent(rawQuery, categoryHint = '') {
   // Override category from hint if provided
   const category = categoryHint || attrs.category
   const { brand, model, capacity, rating, features,
-          price_min, price_max, cleanQuery,
+          price_min, price_max, cleanQuery, subType,
           correctedQuery, wasSpellingCorrected } = attrs
 
   // ── Confidence scoring ─────────────────────────────────────────
@@ -132,6 +132,7 @@ function classifyIntent(rawQuery, categoryHint = '') {
     intent,
     matchType,
     category:    category || null,
+    subType:     subType  || null,
     brand:       brand    || null,
     model:       model    || null,
     capacity,
