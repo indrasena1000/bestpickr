@@ -96,6 +96,9 @@ export const getCategories = () => api.get("/categories").then((r) => r.data);
 export const getTopProducts = (category, limit = 10) =>
   api.get("/products/top", { params: { category, limit } }).then((r) => r.data);
 
+export const getTopIndiaProducts = () =>
+  api.get("/products/top-india").then((r) => r.data);
+
 export const getProduct = (id) => api.get(`/products/${id}`).then((r) => r.data);
 
 export const checkHealth = () => api.get("/health").then((r) => r.data);

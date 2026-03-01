@@ -9,7 +9,7 @@
 // Affiliate URLs: Cleaned to dp/ASIN?tag= format
 
 import { useState, useEffect, useRef } from "react";
-import { getCategories, searchProducts } from "../services/api.js";
+import { getCategories, searchProducts, getTopIndiaProducts } from "../services/api.js";
 import { HomeTableSkeleton } from "../components/Skeleton.jsx";
 import BlogCarousel from "../components/BlogCarousel.jsx";
 
@@ -69,6 +69,8 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
   const [activeCat, setActive] = useState("headphones");
   const [products, setProds] = useState([]);
   const [loadingProds, setLoad] = useState(false);
+  const [topIndia, setTopIndia] = useState([]);
+  const [loadingTopIndia, setLoadingTopIndia] = useState(true);
   // BUG #19 FIX: scroll to top visibility
   const [showScroll, setShowScroll] = useState(false);
   const inputRef = useRef(null);
@@ -77,6 +79,13 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
     getCategories()
       .then((d) => setCats(d.categories || FALLBACK_CATS))
       .catch(() => setCats(FALLBACK_CATS));
+  }, []);
+
+  useEffect(() => {
+    getTopIndiaProducts()
+      .then((d) => setTopIndia(d.products || []))
+      .catch(() => setTopIndia([]))
+      .finally(() => setLoadingTopIndia(false));
   }, []);
 
   useEffect(() => {
@@ -318,6 +327,79 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
           </div>
         </div>
       </div>
+
+      {/* ── TOP PRODUCTS IN INDIA ─────────────── */}
+      {(loadingTopIndia || topIndia.length > 0) && (
+        <div style={{ background:'var(--paper2)', borderTop:'1px solid var(--line)', padding:'40px 0' }}>
+          <div className="wrap">
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:20, flexWrap:'wrap', gap:12 }}>
+              <div>
+                <div style={{ fontSize:11, fontWeight:700, letterSpacing:'.5px', textTransform:'uppercase', color:'var(--accent)', background:'var(--accent-bg)', borderRadius:'var(--r)', padding:'3px 10px', display:'inline-block', marginBottom:10 }}>
+                  🏆 bestpickr picks
+                </div>
+                <h2 style={{ fontSize:'clamp(18px,3vw,26px)', fontWeight:700, letterSpacing:'-.4px', color:'var(--ink)', margin:'0 0 4px', lineHeight:1.2 }}>
+                  Top Products in India
+                </h2>
+                <p style={{ fontSize:13, color:'var(--ink3)', margin:0 }}>Best-rated pick from every category — sourced from our AI rankings</p>
+              </div>
+            </div>
+            {loadingTopIndia ? (
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:14 }}>
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} style={{ background:'var(--paper)', borderRadius:'var(--r3)', border:'1px solid var(--line)', padding:16, height:220,
+                    background:'linear-gradient(90deg,var(--paper3) 25%,var(--line) 50%,var(--paper3) 75%)',
+                    backgroundSize:'200% 100%', animation:'bp-shimmer 1.4s infinite' }} />
+                ))}
+                <style>{`@keyframes bp-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+              </div>
+            ) : (
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:14 }}>
+                {topIndia.map((p) => (
+                  <div key={p.id || p.name} onClick={() => onViewProduct(p, topIndia)}
+                    style={{ background:'var(--paper)', borderRadius:'var(--r3)', border:'1px solid var(--line)',
+                      padding:16, cursor:'pointer', transition:'box-shadow .15s,border-color .15s',
+                      display:'flex', flexDirection:'column', gap:10 }}
+                    onMouseEnter={e => { e.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,.08)'; e.currentTarget.style.borderColor='var(--accent)' }}
+                    onMouseLeave={e => { e.currentTarget.style.boxShadow='none'; e.currentTarget.style.borderColor='var(--line)' }}
+                  >
+                    {/* Category tag */}
+                    <div style={{ fontSize:11, fontWeight:700, color:'var(--accent)', background:'var(--accent-bg)', borderRadius:'var(--r)', padding:'2px 8px', display:'inline-flex', alignItems:'center', gap:4, alignSelf:'flex-start' }}>
+                      <span>{p.emoji}</span> {p.category}
+                    </div>
+                    {/* Image */}
+                    {p.imageUrl ? (
+                      <img src={p.imageUrl} alt={p.name}
+                        style={{ width:'100%', height:110, objectFit:'contain', borderRadius:'var(--r2)', background:'#fff' }} />
+                    ) : (
+                      <div style={{ width:'100%', height:110, display:'flex', alignItems:'center', justifyContent:'center',
+                        fontSize:40, background:'var(--paper2)', borderRadius:'var(--r2)' }}>{p.emoji}</div>
+                    )}
+                    {/* Info */}
+                    <div>
+                      <div style={{ fontSize:11, color:'var(--ink4)', fontWeight:600, marginBottom:2 }}>{p.brand}</div>
+                      <div style={{ fontSize:13, fontWeight:700, color:'var(--ink)', lineHeight:1.3,
+                        display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{p.name}</div>
+                    </div>
+                    {/* Score + Price */}
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:'auto' }}>
+                      {p.aiScore && (
+                        <span style={{ fontSize:12, fontWeight:800, color:'var(--accent)', background:'var(--accent-bg)', padding:'2px 8px', borderRadius:5, fontFamily:"'DM Mono',monospace" }}>
+                          AI {p.aiScore}/10
+                        </span>
+                      )}
+                      {p.price && (
+                        <span style={{ fontSize:14, fontWeight:800, color:'var(--ink)', fontFamily:"'DM Mono',monospace" }}>
+                          ₹{Number(p.price).toLocaleString('en-IN')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── BLOG SECTION ── */}
       <div style={{ background:'var(--paper2)', borderTop:'1px solid var(--line)', padding:'40px 0 48px' }}>

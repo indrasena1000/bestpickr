@@ -860,6 +860,31 @@ module.exports = {
   // Main pipeline
   runAnalysisPipeline,
 
+  /**
+   * lookupAnalysis(asin) — Redis → MongoDB ONLY (no scraping).
+   * Returns cached analysis object or null if not found in either cache.
+   * Used by productEnricher to avoid unnecessary ScraperAPI calls.
+   */
+  async lookupAnalysis(asin) {
+    const cleanAsin = asin?.trim().toUpperCase()
+    if (!cleanAsin) return null
+
+    // 1. Redis check (fastest)
+    const cached = await getAnalysisFromRedis(cleanAsin)
+    if (cached) return { ...cached, _analysisSource: 'redis' }
+
+    // 2. MongoDB check
+    const existing = await getExistingAnalysis(cleanAsin)
+    if (existing) {
+      const result = mongoDocToResult(existing)
+      // Warm Redis for next call (non-blocking)
+      cacheAnalysisInRedis(cleanAsin, result).catch(() => {})
+      return { ...result, _analysisSource: 'mongodb' }
+    }
+
+    return null
+  },
+
   // Batch operations (cron)
   runBatchAnalysis,
   findStaleAnalyses,
