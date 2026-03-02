@@ -2244,6 +2244,9 @@ async function handleSearch(req, res) {
     `🔍 Search: validated q="${query}" → normalized="${normalizedQuery}" category="${category}"`,
   );
 
+  // ── TRENDING: track every valid search (fire-and-forget) ─────
+  trackTrending(query);
+
   // ── STEP 2: Redis Cache Check ─────────────────────────────────
   // getCachedResults() in redis.js uses buildSearchKey() internally
   // and handles all the HIT/MISS logging + hit count update.
@@ -2681,6 +2684,8 @@ async function handleSearch(req, res) {
 
   if (amazonProducts.length === 0) {
     logger.warn(`🔍 Search: no products from Amazon or mock for "${query}"`);
+    // Log as a miss so the weekly auto-seed cron can retry this query
+    trackMiss(query);
     // Graceful empty — never a 404 that makes Axios throw and breaks the UI.
     return res.json({
       success: true,
@@ -2909,6 +2914,66 @@ async function handleSearch(req, res) {
 // ═════════════════════════════════════════════════════════════════
 // SUGGESTIONS ENDPOINT
 // ═════════════════════════════════════════════════════════════════
+// ── MISS TRACKING: log zero-result searches for weekly auto-seed ─
+// Keeps the top 500 misses by frequency in a Redis sorted set.
+// Fire-and-forget — never blocks the response.
+function trackMiss(query) {
+  const redis = getRedis();
+  if (!redis || redis.status !== "ready") return;
+  const key  = "bestpickr:search_misses";
+  const term = query.toLowerCase().slice(0, 80);
+  redis.zincrby(key, 1, term).catch(() => {});
+  // Trim to top 500 so the set stays bounded
+  redis.zremrangebyrank(key, 0, -501).catch(() => {});
+}
+
+// GET /api/search/misses?limit=20
+// Returns top missed queries (sorted by frequency) — used by auto-seed cron + admin
+async function handleMisses(req, res) {
+  const redis = getRedis();
+  if (!redis || redis.status !== "ready") {
+    return res.json({ misses: [] });
+  }
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  try {
+    const raw    = await redis.zrevrange("bestpickr:search_misses", 0, limit - 1, "WITHSCORES");
+    const misses = [];
+    for (let i = 0; i < raw.length; i += 2) {
+      misses.push({ query: raw[i], count: parseInt(raw[i + 1], 10) });
+    }
+    return res.json({ misses, total: misses.length });
+  } catch (_) {
+    return res.json({ misses: [] });
+  }
+}
+
+// ── TRENDING: increment score for this query in a sorted set ────
+// Keeps the top 200 queries by search frequency. Fire-and-forget.
+function trackTrending(query) {
+  const redis = getRedis();
+  if (!redis || redis.status !== "ready") return;
+  const key = "bestpickr:trending";
+  const term = query.toLowerCase().slice(0, 80);
+  redis.zincrby(key, 1, term).catch(() => {});
+  // Trim to top 200 so the set stays bounded
+  redis.zremrangebyrank(key, 0, -201).catch(() => {});
+}
+
+// GET /api/search/trending
+// Returns top 8 trending queries from Redis sorted set (no rate limit — very cheap)
+async function handleTrending(req, res) {
+  const redis = getRedis();
+  if (!redis || redis.status !== "ready") {
+    return res.json({ trending: [] });
+  }
+  try {
+    const items = await redis.zrevrange("bestpickr:trending", 0, 7);
+    return res.json({ trending: items });
+  } catch (_) {
+    return res.json({ trending: [] });
+  }
+}
+
 // GET /api/search/suggestions?q=sony
 // Autocomplete — currently static list, can be upgraded to:
 //   - Top N queries from MongoDB SearchCache (real user data)
@@ -3141,6 +3206,12 @@ async function handleLiveSearch(req, res) {
 
 // Suggestions — no rate limit (lightweight, no external API calls)
 router.get("/suggestions", handleSuggestions);
+
+// Trending searches — top 8 from Redis sorted set (fire-and-forget writes)
+router.get("/trending", handleTrending);
+
+// Search misses — top zero-result queries (used by auto-seed cron + admin debug)
+router.get("/misses", handleMisses);
 
 // Live fetch — lazy-loads the primary Amazon product after a primaryPending response
 router.get("/live", searchRateLimiter, requestLogger, handleLiveSearch);

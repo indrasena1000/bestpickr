@@ -10,6 +10,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { getCategories, searchProducts, getTopIndiaProducts } from "../services/api.js";
+import { useSuggestions } from "../hooks/useSearch.js";
+import SearchDropdown from "../components/SearchDropdown.jsx";
 import { HomeTableSkeleton } from "../components/Skeleton.jsx";
 import BlogCarousel from "../components/BlogCarousel.jsx";
 
@@ -65,6 +67,7 @@ function AITooltip({ reason, children }) {
 
 export default function HomePage({ onSearch, onViewProduct, onNav }) {
   const [q, setQ] = useState("");
+  const sugg = useSuggestions();
   const [categories, setCats] = useState([]);
   const [activeCat, setActive] = useState("headphones");
   const [products, setProds] = useState([]);
@@ -77,7 +80,6 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
   const inputRef = useRef(null);
   const topIndiaSentinelRef = useRef(null);
 
-  const TOP_INDIA_SESSION_KEY = 'bp_top_india';
 
   useEffect(() => {
     getCategories()
@@ -97,20 +99,9 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
         observer.disconnect();
         setTopIndiaVisible(true);
 
-        // Session cache hit — instant, no network
-        try {
-          const cached = sessionStorage.getItem(TOP_INDIA_SESSION_KEY);
-          if (cached) { setTopIndia(JSON.parse(cached)); return; }
-        } catch (_) {}
-
-        // Fetch from API
         setLoadingTopIndia(true);
         getTopIndiaProducts()
-          .then((d) => {
-            const products = d.products || [];
-            setTopIndia(products);
-            try { sessionStorage.setItem(TOP_INDIA_SESSION_KEY, JSON.stringify(products)); } catch (_) {}
-          })
+          .then((d) => setTopIndia(d.products || []))
           .catch(() => setTopIndia([]))
           .finally(() => setLoadingTopIndia(false));
       },
@@ -137,9 +128,13 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  function pickSuggestion(s) {
+    setQ(s); sugg.saveRecent(s); sugg.clear(); onSearch(s, "");
+  }
+
   function handleSearch(e) {
     e?.preventDefault();
-    if (q.trim()) onSearch(q.trim(), "");
+    if (q.trim()) { sugg.saveRecent(q.trim()); sugg.clear(); onSearch(q.trim(), ""); }
   }
 
   const cat = categories.find((c) => c.slug === activeCat);
@@ -160,26 +155,34 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
               bestpickr compares ratings, reviews &amp; prices across Amazon,
               Flipkart &amp; Myntra — then ranks them so you always pick the right one.
             </p>
-            <form onSubmit={handleSearch}>
-              <div className="big-search">
-                <input
-                  ref={inputRef}
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder='Try "Sony headphones" or "running shoes under ₹3000"…'
-                  autoFocus
-                />
-                {/* BUG #3 FIX: Button disabled when search bar empty */}
-                <button
-                  type="submit"
-                  className="big-search-go"
-                  disabled={!q.trim()}
-                  style={{ opacity: q.trim() ? 1 : 0.45, cursor: q.trim() ? 'pointer' : 'not-allowed' }}
-                >
-                  Find Best →
-                </button>
-              </div>
-            </form>
+            <div style={{ position: 'relative' }}>
+              <form onSubmit={handleSearch}>
+                <div className="big-search">
+                  <input
+                    ref={inputRef}
+                    value={q}
+                    onChange={(e) => { setQ(e.target.value); sugg.fetch(e.target.value) }}
+                    onFocus={() => sugg.onFocus(q)}
+                    onBlur={sugg.onBlur}
+                    onKeyDown={e => sugg.handleKeyDown(e, pickSuggestion)}
+                    placeholder='Try "Sony headphones" or "running shoes under ₹3000"…'
+                    autoFocus
+                  />
+                  {/* BUG #3 FIX: Button disabled when search bar empty */}
+                  <button
+                    type="submit"
+                    className="big-search-go"
+                    disabled={!q.trim()}
+                    style={{ opacity: q.trim() ? 1 : 0.45, cursor: q.trim() ? 'pointer' : 'not-allowed' }}
+                  >
+                    Find Best →
+                  </button>
+                </div>
+              </form>
+              {sugg.showDropdown && (
+                <SearchDropdown items={sugg.items} selIndex={sugg.selIndex} onPick={pickSuggestion} />
+              )}
+            </div>
             <div className="hero-suggests">
               <span>Popular:</span>
               {SUGGESTS.map((s) => (

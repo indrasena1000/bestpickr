@@ -31,9 +31,9 @@ const { getClient: getRedis } = require("../utils/redis");
 const logger = require("../utils/logger");
 
 // ── CONFIG ──────────────────────────────────────────────────────
-const ANALYSIS_CACHE_TTL = 24 * 60 * 60; // 24 hours in Redis
+const ANALYSIS_CACHE_TTL = 7 * 24 * 60 * 60; // 7 days in Redis — matches MongoDB staleness window
 const ANALYSIS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in MongoDB
-const REVIEW_JUMP_THRESHOLD = 100; // Re-analyze when +100 reviews
+const REVIEW_CHANGE_PCT = 0.10; // Re-analyze if review count grew ≥10% (smarter than absolute threshold)
 const REDIS_KEY_PREFIX = "bestpickr:analysis"; // Matches existing key convention
 
 // ═════════════════════════════════════════════════════════════════
@@ -346,13 +346,16 @@ function shouldReanalyze(existingAnalysis, currentReviewCount = null) {
     return true;
   }
 
-  // Check review count jump: +100 new reviews
-  if (currentReviewCount !== null && existingAnalysis.reviewsAnalyzed) {
+  // Check review count change: re-analyze if reviews grew ≥10%
+  // (percentage-based: avoids unnecessary re-runs on high-volume products
+  //  where +100 reviews is barely 2% of 5,000 total)
+  if (currentReviewCount !== null && existingAnalysis.reviewsAnalyzed > 0) {
     const delta = currentReviewCount - existingAnalysis.reviewsAnalyzed;
-    if (delta >= REVIEW_JUMP_THRESHOLD) {
+    const pctChange = delta / existingAnalysis.reviewsAnalyzed;
+    if (pctChange >= REVIEW_CHANGE_PCT) {
       logger.info(
-        `🔬 shouldReanalyze: review count jumped +${delta} ` +
-          `(${existingAnalysis.reviewsAnalyzed} → ${currentReviewCount})`,
+        `🔬 shouldReanalyze: review count grew ${Math.round(pctChange * 100)}% ` +
+          `(${existingAnalysis.reviewsAnalyzed} → ${currentReviewCount}, +${delta})`,
       );
       return true;
     }

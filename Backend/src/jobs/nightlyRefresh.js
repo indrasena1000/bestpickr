@@ -323,14 +323,22 @@ async function runPriority1(summary, startTime, budget) {
           asin,
           meta.productName,
           meta.category,
-          { forceRefresh: true, brand: meta.brand },
+          { brand: meta.brand },
+          // No forceRefresh — pipeline's shouldReanalyze() gates on 7-day staleness.
+          // Scraper + GPT only fire if the analysis is actually stale.
         );
 
         if (result && result.aiScore !== null) {
           p1Stats.succeeded++;
-          summary.apiCalls.scraperApi += 5; // ~5 pages per analysis
-          summary.apiCalls.openAi += 1; // 1 GPT call per analysis
-          logger.info(`🌙 P1: ✅ ${asin} → aiScore=${result.aiScore}`);
+          // Only count API costs when a fresh analysis actually ran
+          if (result._pipelineMeta?.source === 'fresh-analysis') {
+            summary.apiCalls.scraperApi += 5;
+            summary.apiCalls.openAi += 1;
+          }
+          logger.info(
+            `🌙 P1: ✅ ${asin} → aiScore=${result.aiScore} ` +
+            `source=${result._pipelineMeta?.source || 'unknown'}`,
+          );
         } else {
           p1Stats.failed++;
           summary.failures.push({

@@ -91,6 +91,9 @@ export const searchProducts = (query, category = "") =>
 export const getSuggestions = (q) =>
   api.get("/search/suggestions", { params: { q } }).then((r) => r.data);
 
+export const getTrending = () =>
+  api.get("/search/trending").then((r) => r.data);
+
 export const getCategories = () => api.get("/categories").then((r) => r.data);
 
 export const getTopProducts = (category, limit = 10) =>

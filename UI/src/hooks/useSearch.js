@@ -2,7 +2,7 @@
 // Updated contract for hybrid intent-based search architecture.
 // Handles: immediate response, async job polling, session cache restore.
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { searchProducts, getSuggestions } from '../services/api'
+import { searchProducts, getSuggestions, getTrending } from '../services/api'
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
@@ -225,22 +225,75 @@ export function useSearch() {
   }
 }
 
-// ── Debounced suggestions (unchanged) ────────────────────────────
+// ── Recent searches (localStorage) ───────────────────────────────
+const RECENT_KEY = 'bp_recent_searches'
+const MAX_RECENT = 5
+
+function getRecents() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') } catch { return [] }
+}
+
+export function saveRecent(query) {
+  try {
+    const existing = getRecents().filter(q => q !== query)
+    localStorage.setItem(RECENT_KEY, JSON.stringify([query, ...existing].slice(0, MAX_RECENT)))
+  } catch {}
+}
+
+// ── Autocomplete suggestions with trending + recents + keyboard nav ────────────
+// items: [{ label: string, type: 'recent' | 'trending' | 'suggestion' }]
 export function useSuggestions() {
-  const [suggestions, setSuggestions] = useState([])
-  const timerRef = useRef(null)
+  const [items, setItems]       = useState([])
+  const [selIndex, setSelIndex] = useState(-1)
+  const timerRef    = useRef(null)
+  const trendingRef = useRef([])   // cached on mount, refreshed on focus after 5 min
+
+  // Pre-fetch trending on mount
+  useEffect(() => {
+    getTrending().then(d => { trendingRef.current = d.trending || [] }).catch(() => {})
+  }, [])
 
   const fetch = useCallback((q) => {
     clearTimeout(timerRef.current)
-    if (!q || q.length < 2) { setSuggestions([]); return }
+    setSelIndex(-1)
+
+    if (!q || q.length < 2) {
+      // Show recents + trending when query is short/empty
+      const recents  = getRecents().slice(0, 3).map(l => ({ label: l, type: 'recent' }))
+      const trending = trendingRef.current.slice(0, 5).map(l => ({ label: l, type: 'trending' }))
+      setItems([...recents, ...trending])
+      return
+    }
+
     timerRef.current = setTimeout(async () => {
       try {
         const data = await getSuggestions(q)
-        setSuggestions(data.suggestions || [])
-      } catch { setSuggestions([]) }
+        setItems((data.suggestions || []).slice(0, 6).map(l => ({ label: l, type: 'suggestion' })))
+        setSelIndex(-1)
+      } catch { setItems([]) }
     }, 250)
   }, [])
 
-  return { suggestions, fetch, clear: () => setSuggestions([]) }
+  function onFocus(q)  { fetch(q || '') }
+  function clear()     { clearTimeout(timerRef.current); setItems([]); setSelIndex(-1) }
+  function onBlur()    { setTimeout(clear, 150) }
+
+  function handleKeyDown(e, onPick) {
+    if (!items.length) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelIndex(i => Math.min(i + 1, items.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelIndex(i => Math.max(i - 1, -1))
+    } else if (e.key === 'Enter' && selIndex >= 0) {
+      e.preventDefault()
+      onPick(items[selIndex].label)
+    } else if (e.key === 'Escape') {
+      clear()
+    }
+  }
+
+  return { items, showDropdown: items.length > 0, selIndex, fetch, onFocus, onBlur, clear, handleKeyDown, saveRecent }
 }
 

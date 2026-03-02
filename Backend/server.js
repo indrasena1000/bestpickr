@@ -27,6 +27,7 @@ const { startNightlyRefresh, stopNightlyRefresh } = require("./src/jobs/nightlyR
 const { setPrisma: setTelegramPrisma, startTelegramReport, stopTelegramReport } = require("./src/jobs/telegramReport");
 const snapshotCron  = require("./src/cron/rankingSnapshotCron");
 const priceRefreshCron = require("./src/cron/priceRefreshCron");
+const autoSeedCron  = require("./src/cron/autoSeedCron");
 
 const app = express();
 const prisma = new PrismaClient();
@@ -212,6 +213,11 @@ async function start() {
     // priceRefreshCron.init(prisma);
     // priceRefreshCron.startPriceRefresh();
     // logger.info("✅ Price refresh cron started (daily 3:00 AM IST)");
+
+    // // 8. Auto-seed cron (Monday 3:10 AM IST) — re-runs top zero-result queries
+    // autoSeedCron.init(getRedisClient());
+    // autoSeedCron.startAutoSeedCron();
+    // logger.info("✅ Auto-seed cron scheduled (weekly Monday 3:10 AM IST)");
 
     app.listen(PORT, () => {
       logger.info(`bestpickr API on http://localhost:${PORT}`);

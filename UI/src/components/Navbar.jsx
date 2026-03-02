@@ -7,11 +7,12 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useSuggestions } from '../hooks/useSearch.js'
+import SearchDropdown from './SearchDropdown.jsx'
 
 export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) {
   const [q, setQ]           = useState(currentQuery || '')
   const [menuOpen, setMenu] = useState(false)
-  const { suggestions, fetch: fetchSugg, clear } = useSuggestions()
+  const sugg    = useSuggestions()
   const inputRef = useRef(null)
   const isHome = currentPage === 'home' || currentPage === '/' || currentPage === ''
 
@@ -20,16 +21,16 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
 
   function handleSubmit(e) {
     e?.preventDefault()
-    if (q.trim()) { onSearch(q.trim()); clear(); setMenu(false) }
+    if (q.trim()) { sugg.saveRecent(q.trim()); sugg.clear(); onSearch(q.trim()); setMenu(false) }
   }
 
   function handleChange(val) {
     setQ(val)
-    fetchSugg(val)
+    sugg.fetch(val)
   }
 
   function pickSuggestion(s) {
-    setQ(s); clear(); onSearch(s)
+    setQ(s); sugg.saveRecent(s); sugg.clear(); onSearch(s)
   }
 
   return (
@@ -74,7 +75,9 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
                   ref={inputRef}
                   value={q}
                   onChange={e => handleChange(e.target.value)}
-                  onBlur={() => setTimeout(clear, 150)}
+                  onFocus={() => sugg.onFocus(q)}
+                  onBlur={sugg.onBlur}
+                  onKeyDown={e => sugg.handleKeyDown(e, pickSuggestion)}
                   placeholder="Search any product…"
                   aria-label="Search products"
                   // BUG #2 FIX: No autoFocus — prevents keyboard on back navigation
@@ -82,30 +85,8 @@ export default function Navbar({ currentPage, currentQuery, onSearch, onHome }) 
                 <button type="submit" className="nav-search-btn">Search</button>
               </form>
 
-              {/* Autocomplete dropdown */}
-              {suggestions.length > 0 && (
-                <div style={{
-                  position:'absolute', top:'calc(100% + 4px)', left:0, right:0,
-                  background:'var(--paper)', border:'1px solid var(--line)',
-                  borderRadius:'var(--r2)', boxShadow:'0 8px 24px rgba(0,0,0,.08)',
-                  zIndex:200, overflow:'hidden',
-                }}>
-                  {suggestions.map((s, i) => (
-                    <div
-                      key={i}
-                      onMouseDown={() => pickSuggestion(s)}
-                      style={{
-                        padding:'10px 14px', fontSize:13, fontWeight:500,
-                        cursor:'pointer', color:'var(--ink2)',
-                        borderBottom: i < suggestions.length-1 ? '1px solid var(--line)' : 'none',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background='var(--paper2)'}
-                      onMouseLeave={e => e.currentTarget.style.background=''}
-                    >
-                      🔍 {s}
-                    </div>
-                  ))}
-                </div>
+              {sugg.showDropdown && (
+                <SearchDropdown items={sugg.items} selIndex={sugg.selIndex} onPick={pickSuggestion} />
               )}
             </div>
           )}
