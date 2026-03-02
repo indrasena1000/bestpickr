@@ -377,6 +377,7 @@ footer{background:var(--paper);border-top:1px solid var(--line);padding:40px 0 2
   .admin-stat-grid{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:640px){
+  .results-wrap{padding:12px 0 40px}
   .nav-links{display:none}
   .nav-search{max-width:none;flex:1}
   .hero{padding:24px 0}
@@ -390,9 +391,16 @@ footer{background:var(--paper);border-top:1px solid var(--line);padding:40px 0 2
   .dh-emoji{width:80px;height:80px}
   .review-grid{grid-template-columns:1fr}
   .review-highlights{grid-template-columns:1fr}
-  .rcard-bottom{grid-template-columns:1fr 1fr}
-  .rcard-top{gap:12px}
-  .rcard-emoji{width:60px;height:60px;font-size:28px}
+  /* ResultsPage result cards — mobile */
+  .results-title{font-size:16px}
+  .rcard{padding:12px 14px}
+  .rcard-bottom{grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .rcard-bottom>div:last-child{grid-column:1/-1}
+  .rcard .view-btn{width:100%;text-align:center;padding:11px 20px}
+  .rcard .score-big,.rcard .score-label{display:none}
+  .rcard-price-main{font-size:16px}
+  .rcard-top{gap:10px}
+  .rcard-emoji{width:56px;height:56px;font-size:26px}
   .rcard-name{font-size:14px}
   .footer-grid{grid-template-columns:1fr}
   .picks-row{grid-template-columns:28px 1fr auto !important}

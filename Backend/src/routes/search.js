@@ -68,6 +68,9 @@ const {
   setProductCache,
   getSubTypeProducts,
   setSubTypeProducts,
+  acquireSearchLock,
+  releaseSearchLock,
+  waitForSearchCache,
 } = require("../utils/redis");
 const { normalize, buildSearchKey } = require("../utils/queryNormalizer");
 const {
@@ -232,31 +235,39 @@ function filterByQueryRelevance(results, query) {
 // Search is our most expensive endpoint (ScraperAPI + GPT costs).
 // 30/min = 1800/hour — plenty for real users, blocks scrapers.
 
+// ── Per-query rate limiter ───────────────────────────────────────
+// Key = IP + normalised query.  Each unique search query has its own
+// independent counter so a user searching 10 different products in a minute
+// is NOT blocked — only hammering the *same* query repeatedly is throttled.
+// This protects Amazon PA-API credits without penalising real browsing.
+// Cache hits (Redis/DB) are cheap but we still count them — the thundering-
+// herd lock (acquireSearchLock) already prevents duplicate Amazon calls.
 const searchRateLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute window
-  max: 30, // 30 requests per window per IP
-  standardHeaders: true, // Return RateLimit-* headers (RFC 6585)
-  legacyHeaders: false, // No X-RateLimit-* (deprecated)
+  windowMs: 60 * 1000,     // 1-minute window per query
+  max: 15,                  // 15 requests of the SAME query per IP per minute
+  standardHeaders: true,
+  legacyHeaders: false,
   keyGenerator: (req) => {
-    // Respect proxy forwarding (Vercel/Render sets X-Forwarded-For)
-    return (
+    const ip =
       req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
       req.headers["x-real-ip"] ||
-      req.ip
-    );
+      req.ip;
+    // Normalise the query so "JBL Speakers" and "jbl speakers" share the same bucket
+    const raw = (req.query.q || req.query.query || req.body?.query || '').trim();
+    const normQ = normalize(raw).slice(0, 60);   // cap key length
+    return `${ip}:${normQ}`;
   },
   handler: (req, res) => {
     const ip = req.headers["x-forwarded-for"]?.split(",")[0] || req.ip;
-    logger.warn(`🔍 Search: rate limit hit — IP=${ip} query="${req.query.q}"`);
+    const q  = req.query.q || req.body?.query || '';
+    logger.warn(`🔍 Search: rate limit hit — IP=${ip} query="${q}"`);
     res.status(429).json({
       success: false,
-      error:
-        "Too many search requests. Please wait a moment before searching again.",
+      error: "You've searched for this too many times in the last minute. Please wait a moment.",
       retryAfter: 60,
     });
   },
   skip: (req) => {
-    // Skip rate limiting for health checks and internal calls
     return req.headers["x-internal-call"] === process.env.ADMIN_TOKEN;
   },
 });
@@ -1584,13 +1595,18 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   const cat     = category || intent.category;
   const subType = intent.subType;
 
+  console.log(`\n━━━ [SEARCH] "${rawQuery}" ━━━`);
+  console.log(`[STEP 1] Intent: ${intent.intent} | brand="${intent.brand||'-'}" | model="${intent.model||'-'}" | category="${cat||'-'}" | subType="${subType||'-'}"`);
+
   // Load the most specific pool available — sub-type pool preferred, falls back to category
   let top50Pool = null;
   if (cat && subType) {
     top50Pool = await getSubTypeProducts(cat, subType);
+    console.log(`[STEP 2] SubType pool top50:${cat}:${subType} → ${top50Pool?.length||0} products`);
   }
   if ((!top50Pool || top50Pool.length === 0) && cat) {
     top50Pool = await getTop50Products(cat);
+    console.log(`[STEP 2] Category pool top50:${cat} → ${top50Pool?.length||0} products`);
     // Filter by sub-type if available to get relevant suggestions
     if (top50Pool && subType) {
       const keywords = SUBTYPE_FILTER_KEYWORDS[subType] || [];
@@ -1599,10 +1615,14 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
           const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
           return keywords.some((kw) => text.includes(kw));
         });
-        if (filtered.length >= 3) top50Pool = filtered;
+        if (filtered.length >= 3) {
+          top50Pool = filtered;
+          console.log(`[STEP 2] After subType filter → ${top50Pool.length} products`);
+        }
       }
     }
   }
+  if (!cat) console.log(`[STEP 2] No category detected — will scan all pools (cross-category)`);
 
   // ── PRE-STEP: No category in query? Scan ALL top50 pools ────────────────
   // Handles product-name-only searches e.g. "Blaupunkt BH71 Moksha" or "pTron Bassbuds"
@@ -1758,8 +1778,10 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   }
 
   // ── PATH A: Name match in top50 (product was in a prior category search) ──
+  console.log(`[PATH A] Checking top50 name-match in pool (${top50Pool?.length||0} products)...`);
   if (top50Pool && top50Pool.length > 0) {
     const matched = findBestNameMatch(top50Pool, query, intent.brand);
+    console.log(`[PATH A] findBestNameMatch → ${matched ? `FOUND "${matched.name?.slice(0,50)}"` : 'no match (score too low)'}`);
     if (matched) {
       logger.info(`🔍 ProductSpecific: top50 name match — "${matched.name}" for "${query}" (0 API calls)`);
 
@@ -1847,9 +1869,13 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   // Product not in Redis top50 — check our DB before hitting Amazon.
   // Works even with no category/brand (falls back to cleanQuery word match).
   // Cost: 0 Amazon calls, 0 GPT calls.
+  console.log(`[PATH A.5] Checking Postgres DB (weightedSearch)...`);
   try {
     const dbResult = await weightedSearch(intent, 5);
+    console.log(`[PATH A.5] Postgres → ${dbResult.products.length} products, confidence=${dbResult.confidence} (threshold=${CONFIDENCE.MEDIUM})`);
+    if (dbResult.products.length > 0) console.log(`[PATH A.5] Top result: "${dbResult.products[0].name?.slice(0,50)}"`);
     if (dbResult.confidence >= CONFIDENCE.MEDIUM && dbResult.products.length > 0) {
+      console.log(`[PATH A.5] ✅ POSTGRES HIT → serving from DB, no Amazon call`);
       logger.info(
         `🔍 ProductSpecific: Postgres DB hit — "${dbResult.products[0].name?.slice(0, 50)}" ` +
         `conf=${dbResult.confidence} (0 API calls)`,
@@ -1928,28 +1954,53 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   //   2. If ≥3 related products found → return lazy instantly, client fetches
   //      primary from /api/search/live in background (saves 1 Amazon call)
   //   3. If <3 related products → call Amazon now for primary product
+  console.log(`[PATH B] Building fill pool from Redis+Postgres (0 Amazon calls)...`);
 
   const inferredCat = cat || null;
 
   // ── Build fill pool (Redis → Postgres, 0 Amazon calls) ──────────────────
   let fillPool = (top50Pool || []);
+  console.log(`[PATH B] top50Pool has ${fillPool.length} products`);
 
   if (fillPool.length < MAX_RESPONSE_RESULTS - 1 && inferredCat) {
     const catPool = (await getTop50Products(inferredCat).catch(() => null)) || [];
     const existingIds = new Set(fillPool.map((p) => p.id));
     fillPool = [...fillPool, ...catPool.filter((p) => !existingIds.has(p.id))];
+    console.log(`[PATH B] After category pool merge → ${fillPool.length} products`);
   }
 
   if (fillPool.length < MAX_RESPONSE_RESULTS - 1) {
     try {
-      const fillIntent = { ...intent, category: inferredCat, cleanQuery: intent.cleanQuery || query };
+      // Use only brand+category for fill — NOT the original query words.
+      // Using query words like "studio" or "pro" causes OR matches against
+      // unrelated products (e.g. washing machines with "Studio Pro" in name).
+      const fillIntent = {
+        brand:      intent.brand  || null,
+        model:      null,                    // want alternatives, not same model
+        category:   inferredCat  || null,
+        cleanQuery: inferredCat  || intent.brand || '',  // category name only
+        capacity:   null,
+        features:   [],
+      };
       const dbFill = await weightedSearch(fillIntent, MAX_RESPONSE_RESULTS - 1);
       if (dbFill.products.length > 0) {
         const existingIds = new Set(fillPool.map((p) => p.id));
         const dbShapes = dbFill.products
-          .filter((p) => !existingIds.has(p.id))
+          .filter((p) => {
+            if (!existingIds.has(p.id)) {
+              // Extra category guard: skip products from a clearly different category
+              if (inferredCat && p.category) {
+                const pc = p.category.toLowerCase();
+                const ic = inferredCat.toLowerCase();
+                return pc.includes(ic) || ic.includes(pc);
+              }
+              return true;
+            }
+            return false;
+          })
           .map(postgresProductToTop50Shape);
         fillPool = [...fillPool, ...dbShapes];
+        console.log(`[PATH B] After Postgres fill → ${fillPool.length} products`);
       }
     } catch (dbErr) {
       logger.warn(`🔍 ProductSpecific: DB fill failed — ${dbErr.message}`);
@@ -1961,8 +2012,20 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
     .slice(0, MAX_RESPONSE_RESULTS - 1)
     .map((p, i) => formatTop50AsResult(p, i + 2));
 
-  // ── Lazy-load path: ≥3 DB results → respond instantly (skip Amazon call) ──
-  if (fillResults.length >= 3) {
+  // ── Brand guard: if user searched for a specific brand and no brand product
+  // is in the fill pool, we MUST call Amazon to show at least one matching product.
+  // Without this, e.g. "Sony WH-1000XM5" shows only Boat/JBL suggestions — confusing.
+  const brandFilter = (intent.brand || '').toLowerCase();
+  const hasBrandInFill = !brandFilter || fillResults.some(
+    (p) => (p.brand || '').toLowerCase().includes(brandFilter),
+  );
+
+  console.log(`[PATH B] Fill pool final: ${fillResults.length} products → brand="${brandFilter||'-'}" hasBrandInFill=${hasBrandInFill}`);
+  console.log(`[PATH B] Decision: ${fillResults.length >= 3 && hasBrandInFill ? '✅ lazy-load' : '❌ calling Amazon'}`);
+  if (fillResults.length > 0) console.log(`[PATH B] Fill products: ${fillResults.map(p=>p.name?.slice(0,30)).join(' | ')}`);
+
+  // ── Lazy-load path: ≥3 DB results AND at least 1 brand match → respond instantly ──
+  if (fillResults.length >= 3 && hasBrandInFill) {
     logger.info(
       `🔍 ProductSpecific: lazy-load — returning ${fillResults.length} related products instantly, ` +
       `primary will be fetched from /api/search/live`,
@@ -1993,6 +2056,28 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   }
 
   // ── Sync path: <3 DB results → call Amazon now ──────────────────────────
+  // Search lock: prevent N concurrent identical searches from all hitting Amazon + GPT.
+  // First caller gets the lock and fetches live data. Others wait and get the cached result.
+  {
+    const gotLock = await acquireSearchLock(query, category).catch(() => true);
+    if (!gotLock) {
+      logger.info(`🔍 ProductSpecific: lock active for "${query}" — waiting for concurrent fetch…`);
+      const coalesced = await waitForSearchCache(query, category).catch(() => null);
+      if (coalesced && coalesced.length > 0) {
+        req._searchLog.outcome = 'coalesced';
+        return res.json({
+          success: true, query: rawQuery, normalized: normalizedQuery,
+          category: inferredCat || null, intent: 'PRODUCT_SPECIFIC',
+          primaryProduct: coalesced[0] || null,
+          totalResults: coalesced.length, cached: true, source: 'coalesced',
+          lastUpdated: new Date().toISOString(), elapsed_ms: Date.now() - requestStart,
+          results: coalesced, suggestions: coalesced.slice(1),
+        });
+      }
+      logger.warn(`🔍 ProductSpecific: coalesce wait expired — proceeding with independent Amazon fetch`);
+    }
+  }
+
   logger.info(`🔍 ProductSpecific: Amazon search for "${query}" (model="${intent.model || "-"}")`);
 
   let amazonProducts = [];
@@ -2035,6 +2120,9 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
     return null; // no top50 either — fall through to mock
   }
 
+  console.log(`[PATH B] ⚠️  CALLING AMAZON for "${rawQuery}" (${amazonProducts.length} results)`);
+  if (amazonProducts.length > 0) console.log(`[PATH B] Amazon top results: ${amazonProducts.slice(0,3).map(p=>p.name?.slice(0,40)).join(' | ')}`);
+
   const topProduct = amazonProducts[0];
   const topAsin    = topProduct.asin || topProduct.platformId;
   if (!topAsin) return null;
@@ -2074,19 +2162,34 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
 
   const allResults = [primaryResult, ...deduped];
 
-  // Grow the top50 pool with the Amazon result (next search = 0 cost)
+  // Grow the top50 pool with ALL Amazon results (next search = 0 cost)
+  // Previously only primary was merged — now all results are persisted so
+  // e.g. "icall wireless" fetches 5 products → all 5 available for "icall Wireless Bluetooth Over-Ear" search
   const resolvedCat = inferredCat || topProduct.category || null;
   if (resolvedCat) {
-    const incoming = [enrichedToTop50Shape(primaryResult, resolvedCat)];
-    const basePool  = top50Pool || (await getTop50Products(resolvedCat).catch(() => null) || []);
-    const merged    = mergeIntoTop50(basePool, incoming);
+    const basePool = top50Pool || (await getTop50Products(resolvedCat).catch(() => null) || []);
+    // Build incoming list: primary + all other Amazon results that have an ASIN
+    const allAmazonFormatted = [primaryResult, ...amazonProducts.slice(1)
+      .map(p => {
+        try { return formatProductResult(p, null, 1); } catch { return null; }
+      })
+      .filter(Boolean),
+    ];
+    const incoming = allAmazonFormatted.map(p => enrichedToTop50Shape(p, resolvedCat));
+    const merged   = mergeIntoTop50(basePool, incoming);
     if (merged.length !== basePool.length) {
       setTop50Products(resolvedCat, merged).catch(() => {});
+      console.log(`[PATH B] ✅ top50:${resolvedCat} grew ${basePool.length} → ${merged.length} products (merged ${incoming.length} Amazon results)`);
       logger.info(`🔍 ProductSpecific: top50:${resolvedCat} grew to ${merged.length} products`);
+    } else {
+      console.log(`[PATH B] top50:${resolvedCat} unchanged at ${basePool.length} (all products already present)`);
     }
   }
 
-  cacheResults(query, cat, allResults).catch(() => {});
+  // Cache results and release lock so concurrent waiters get this response
+  cacheResults(query, cat, allResults)
+    .then(() => releaseSearchLock(query, category).catch(() => {}))
+    .catch(() => releaseSearchLock(query, category).catch(() => {}));
   saveToMongoCache(query, normalizedQuery, cat, allResults.map((p) => p.asin).filter(Boolean)).catch(() => {});
 
   req._searchLog.outcome     = 'amazon_live_product';
@@ -2144,13 +2247,17 @@ async function handleSearch(req, res) {
   // ── STEP 2: Redis Cache Check ─────────────────────────────────
   // getCachedResults() in redis.js uses buildSearchKey() internally
   // and handles all the HIT/MISS logging + hit count update.
+  console.log(`\n━━━ [SEARCH] "${rawQuery}" ━━━`);
+  console.log(`[CACHE] Checking Redis cache for "${query}" category="${category||'-'}"...`);
   try {
     const redisResults = await checkRedisCache(query, category);
+    console.log(`[CACHE] Redis → ${redisResults?.length||0} results`);
 
     if (redisResults && redisResults.length > 0) {
       // Apply strict category filter — prevents returning wrong-category cached data
       const redisFiltered = filterByCategory(redisResults, category);
       if (redisFiltered.length === 0 && category) {
+        console.log(`[CACHE] Redis has results but none match category="${category}" → cache miss`);
         logger.warn(
           `🔍 Category filter: Redis has ${redisResults.length} results but NONE match category="${category}" — cache miss, refetching`,
         );
@@ -2160,6 +2267,7 @@ async function handleSearch(req, res) {
         // Apply query relevance — prevents e.g. all appliances when searching "washing machines"
         // Then re-rank so most-keyword-matched product is always first (fixes stale cache order)
         const finalRedis = rankByQueryScore(filterByQueryRelevance(catMatched, query), query);
+        console.log(`[CACHE] ✅ REDIS HIT → returning ${finalRedis.length} results. Top: "${finalRedis[0]?.name?.slice(0,50)}"`);
         req._searchLog.outcome = "redis_hit";
         return res.json({
           success: true,
@@ -2224,13 +2332,7 @@ async function handleSearch(req, res) {
   }
 
   // ── STEP 3.5: Intent-based Redis-first routing ───────────────
-  // Classify the user's intent and attempt to serve from Redis (top50 / brand index)
-  // before touching any external API. Amazon is only called for PRODUCT_SPECIFIC misses.
-  //
-  // effectiveCategory: URL param takes priority; falls back to intent-detected category.
-  // This is critical — users almost never send a `category` URL param, so `category`
-  // is usually "". Without the fallback, all Redis seeding and caching uses "" as the
-  // key, making top50 completely useless.
+  console.log(`[CACHE] Redis MISS and Mongo MISS → classifying intent...`);
   let effectiveCategory = category || null;
   let detectedIntent = null;
 
@@ -2238,6 +2340,7 @@ async function handleSearch(req, res) {
     const intent = classifyIntent(query, category);
     detectedIntent = intent;
     effectiveCategory = category || intent.category || null;
+    console.log(`[INTENT] ${intent.intent} | brand="${intent.brand||'-'}" | model="${intent.model||'-'}" | cat="${effectiveCategory||'-'}"`);
     logger.info(
       `🔍 Intent: ${intent.intent} confidence=${intent.confidence} ` +
         `cat=${intent.category || "-"} brand=${intent.brand || "-"} ` +
@@ -2520,6 +2623,32 @@ async function handleSearch(req, res) {
   }
 
   // ── STEP 4: Cache MISS — Fetch from Amazon PA-API (or mock fallback) ──
+  // ── Search lock: prevent duplicate Amazon calls for concurrent identical searches ──
+  // Industry pattern (Cloudflare, Netflix, etc.): only ONE request fetches live data.
+  // All other concurrent requests wait and get the cached result once ready.
+  {
+    const gotLock = await acquireSearchLock(query, effectiveCategory).catch(() => true);
+    if (!gotLock) {
+      logger.info(`🔍 Search: lock active for "${query}" — waiting for concurrent fetch…`);
+      const coalesced = await waitForSearchCache(query, effectiveCategory).catch(() => null);
+      if (coalesced && coalesced.length > 0) {
+        req._searchLog.outcome = 'coalesced';
+        return res.json({
+          success: true, query: rawQuery, normalized: normalizedQuery,
+          category: effectiveCategory || null,
+          totalResults: Math.min(coalesced.length, MAX_RESPONSE_RESULTS),
+          cached: true, cacheSource: 'coalesced',
+          lastUpdated: new Date().toISOString(),
+          elapsed_ms: Date.now() - requestStart,
+          results: addRanks(coalesced.slice(0, MAX_RESPONSE_RESULTS)),
+        });
+      }
+      // Lock expired without a result — proceed with our own fetch
+      logger.warn(`🔍 Search: coalesce wait expired — proceeding with independent Amazon fetch`);
+    }
+    // Lock holder falls through to fetch. Lock auto-expires in 60s via TTL.
+  }
+
   logger.info(
     `🔍 Search: cache miss — fetching from Amazon PA-API for "${query}"`,
   );
@@ -2552,12 +2681,17 @@ async function handleSearch(req, res) {
 
   if (amazonProducts.length === 0) {
     logger.warn(`🔍 Search: no products from Amazon or mock for "${query}"`);
-    return res.status(404).json({
-      success: false,
-      error: "No products found. Try a different search term.",
+    // Graceful empty — never a 404 that makes Axios throw and breaks the UI.
+    return res.json({
+      success: true,
       query: rawQuery,
+      normalized: normalizedQuery,
+      category: effectiveCategory || null,
       totalResults: 0,
       results: [],
+      suggestions: [],
+      message: 'No products found. Try a different search term.',
+      elapsed_ms: Date.now() - requestStart,
     });
   }
 
@@ -2580,10 +2714,16 @@ async function handleSearch(req, res) {
 
   if (enrichedProducts.length === 0) {
     logger.warn(`🔍 Search: all products failed enrichment for "${query}"`);
-    return res.status(500).json({
-      success: false,
-      error: "Product analysis failed. Please try again.",
+    // Graceful empty — never a 500 that crashes the frontend.
+    return res.json({
+      success: true,
       query: rawQuery,
+      normalized: normalizedQuery,
+      category: effectiveCategory || null,
+      totalResults: 0,
+      results: [],
+      suggestions: [],
+      message: 'Could not analyse products right now. Please try again shortly.',
       elapsed_ms: Date.now() - requestStart,
     });
   }
@@ -2613,11 +2753,73 @@ async function handleSearch(req, res) {
   // e.g. "washing machines" → only washing machines, not fridges + irons.
   enrichedProducts = filterByQueryRelevance(enrichedProducts, query);
 
+  // ── STEP 5.7: Brand guard — when user searched a specific brand ──
+  // Ensure brand products appear first. If zero brand products found,
+  // do a supplemental Amazon fetch so users see at least 1 on-brand result.
+  // Also fires when usingMockData (Amazon failed) — we try a brand-specific query
+  // as a second chance before showing unrelated mock products.
+  if (detectedIntent?.brand) {
+    const brandLow = detectedIntent.brand.toLowerCase();
+    const brandMatched = enrichedProducts.filter(
+      (p) => (p.brand || p.name || '').toLowerCase().includes(brandLow),
+    );
+    const nonBrand = enrichedProducts.filter(
+      (p) => !(p.brand || p.name || '').toLowerCase().includes(brandLow),
+    );
+
+    if (brandMatched.length > 0) {
+      // Re-order: brand products first, then fill with category-matched others
+      enrichedProducts = [...brandMatched, ...nonBrand];
+      logger.info(
+        `🔍 Brand guard: ${brandMatched.length} brand-matched (${detectedIntent.brand}) moved to top`,
+      );
+    } else {
+      // Zero on-brand products — re-fetch Amazon with brand-specific query
+      logger.warn(
+        `🔍 Brand guard: no "${detectedIntent.brand}" products in results — fetching brand-specific`,
+      );
+      try {
+        const brandQuery = `${detectedIntent.brand} ${effectiveCategory || ''}`.trim();
+        const brandProducts = await amazonService.searchProducts(brandQuery, effectiveCategory);
+        if (brandProducts.length > 0) {
+          const brandEnriched = await enrichProductsBatched(brandProducts.slice(0, 3), effectiveCategory);
+          const brandFiltered = brandEnriched.filter(
+            (p) => (p.brand || p.name || '').toLowerCase().includes(brandLow),
+          );
+          if (brandFiltered.length > 0) {
+            // If we were on mock data, replace entirely with real brand results
+            if (usingMockData) {
+              enrichedProducts = brandFiltered;
+              usingMockData = false; // now we have real data
+            } else {
+              enrichedProducts = [...brandFiltered, ...enrichedProducts];
+            }
+            logger.info(
+              `🔍 Brand guard: supplemental fetch added ${brandFiltered.length} "${detectedIntent.brand}" products${usingMockData ? ' (replaced mock)' : ''}`,
+            );
+          }
+        }
+      } catch (brandErr) {
+        logger.warn(`🔍 Brand guard: supplemental fetch failed — ${brandErr.message}`);
+      }
+    }
+  }
+
   // ── STEP 6: Sort by AI Score, Take Top 10 ────────────────────
+  // When brand is detected, brand-matching products are pinned above non-brand
+  // regardless of aiScore — so "jbl speakers" never shows Truke at top.
+  const sortBrand = detectedIntent?.brand ? detectedIntent.brand.toLowerCase() : null;
   const ranked = enrichedProducts
     .filter((p) => p !== null)
     .sort((a, b) => {
-      // Products with aiScore rank first; null scores go to bottom
+      // Brand pin: if searching a specific brand, brand-matched products always rank above non-brand
+      if (sortBrand) {
+        const aIsBrand = (a.brand || a.name || '').toLowerCase().includes(sortBrand);
+        const bIsBrand = (b.brand || b.name || '').toLowerCase().includes(sortBrand);
+        if (aIsBrand && !bIsBrand) return -1;
+        if (!aIsBrand && bIsBrand) return 1;
+      }
+      // Within same brand tier: sort by aiScore
       if (a.aiScore === null && b.aiScore === null) return 0;
       if (a.aiScore === null) return 1;
       if (b.aiScore === null) return -1;
@@ -2635,9 +2837,13 @@ async function handleSearch(req, res) {
   const asinList = ranked.map((p) => p.asin).filter(Boolean);
 
   // Redis search cache — use effectiveCategory so the key is meaningful
-  cacheResults(query, effectiveCategory, ranked).catch((err) =>
-    logger.warn(`🔍 Search: Redis save failed — ${err.message}`),
-  );
+  // Release search lock after caching so concurrent waiters can read the result
+  cacheResults(query, effectiveCategory, ranked)
+    .then(() => releaseSearchLock(query, effectiveCategory).catch(() => {}))
+    .catch((err) => {
+      logger.warn(`🔍 Search: Redis save failed — ${err.message}`);
+      releaseSearchLock(query, effectiveCategory).catch(() => {});
+    });
 
   // MongoDB SearchCache — ASINs only, TTL index handles expiry
   saveToMongoCache(query, normalizedQuery, effectiveCategory, asinList).catch((err) =>

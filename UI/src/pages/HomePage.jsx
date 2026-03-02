@@ -70,10 +70,14 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
   const [products, setProds] = useState([]);
   const [loadingProds, setLoad] = useState(false);
   const [topIndia, setTopIndia] = useState([]);
-  const [loadingTopIndia, setLoadingTopIndia] = useState(true);
+  const [loadingTopIndia, setLoadingTopIndia] = useState(false);
+  const [topIndiaVisible, setTopIndiaVisible] = useState(false);
   // BUG #19 FIX: scroll to top visibility
   const [showScroll, setShowScroll] = useState(false);
   const inputRef = useRef(null);
+  const topIndiaSentinelRef = useRef(null);
+
+  const TOP_INDIA_SESSION_KEY = 'bp_top_india';
 
   useEffect(() => {
     getCategories()
@@ -81,11 +85,39 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
       .catch(() => setCats(FALLBACK_CATS));
   }, []);
 
+  // Lazy-load top-india when the section scrolls into view.
+  // Uses sessionStorage so navigating away and back never re-fetches.
   useEffect(() => {
-    getTopIndiaProducts()
-      .then((d) => setTopIndia(d.products || []))
-      .catch(() => setTopIndia([]))
-      .finally(() => setLoadingTopIndia(false));
+    const sentinel = topIndiaSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        observer.disconnect();
+        setTopIndiaVisible(true);
+
+        // Session cache hit — instant, no network
+        try {
+          const cached = sessionStorage.getItem(TOP_INDIA_SESSION_KEY);
+          if (cached) { setTopIndia(JSON.parse(cached)); return; }
+        } catch (_) {}
+
+        // Fetch from API
+        setLoadingTopIndia(true);
+        getTopIndiaProducts()
+          .then((d) => {
+            const products = d.products || [];
+            setTopIndia(products);
+            try { sessionStorage.setItem(TOP_INDIA_SESSION_KEY, JSON.stringify(products)); } catch (_) {}
+          })
+          .catch(() => setTopIndia([]))
+          .finally(() => setLoadingTopIndia(false));
+      },
+      { rootMargin: '200px' }  // start loading 200px before it enters viewport
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -328,8 +360,11 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
         </div>
       </div>
 
+      {/* Sentinel — IntersectionObserver watches this to trigger lazy load */}
+      <div ref={topIndiaSentinelRef} style={{ height: 1 }} />
+
       {/* ── TOP PRODUCTS IN INDIA ─────────────── */}
-      {(loadingTopIndia || topIndia.length > 0) && (
+      {(topIndiaVisible || loadingTopIndia || topIndia.length > 0) && (
         <div style={{ background:'var(--paper2)', borderTop:'1px solid var(--line)', padding:'40px 0' }}>
           <div className="wrap">
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:20, flexWrap:'wrap', gap:12 }}>

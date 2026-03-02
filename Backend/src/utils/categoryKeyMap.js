@@ -85,7 +85,7 @@ const KEYWORD_TO_CATEGORY = {
   webcam:       'camera',
   lens:         'camera',
 
-  // Gaming
+  // Gaming + Computer Peripherals
   gaming:       'gaming',
   game:         'gaming',
   gamer:        'gaming',
@@ -97,6 +97,13 @@ const KEYWORD_TO_CATEGORY = {
   ps5:          'gaming',
   ps4:          'gaming',
   nintendo:     'gaming',
+  keyboard:     'gaming',
+  keyboards:    'gaming',
+  mouse:        'gaming',
+  mice:         'gaming',
+  monitor:      'gaming',
+  monitors:     'gaming',
+  mousepad:     'gaming',
 
   // Appliances
   appliance:        'appliances',

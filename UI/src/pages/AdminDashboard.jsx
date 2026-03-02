@@ -18,6 +18,7 @@ import {
   adminRefresh,
   setAccessToken,
   clearAccessToken,
+  getAccessToken,
 } from "../services/api.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
@@ -692,6 +693,184 @@ function BlogAdminPanel() {
   );
 }
 
+// ── PRODUCT DEBUG TAB ──────────────────────────────────────────────
+// Shows raw Amazon API response and annotates which fields are real vs fallback.
+const STATUS_STYLE = {
+  real:     { background: '#E8F5E9', color: '#2E7D32', fontWeight: 700 },
+  computed: { background: '#FFF8E1', color: '#F57F17', fontWeight: 700 },
+  fallback: { background: '#FFF3E0', color: '#E65100', fontWeight: 700 },
+  missing:  { background: '#FFEBEE', color: '#C62828', fontWeight: 700 },
+}
+
+function ProductDebugTab({ apiBase }) {
+  const [query,   setQuery]   = useState('')
+  const [loading, setLoading] = useState(false)
+  const [data,    setData]    = useState(null)
+  const [error,   setError]   = useState('')
+  const [expanded, setExpanded] = useState({})
+
+  async function runDebug() {
+    if (!query.trim()) return
+    setLoading(true); setError(''); setData(null)
+    try {
+      const token = getAccessToken() || ''
+      const r = await fetch(`${apiBase}/admin/product-debug?q=${encodeURIComponent(query)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const json = await r.json()
+      if (!r.ok) throw new Error(json.error || r.statusText)
+      setData(json)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const FIELDS_META = {
+    asin:             'ASIN',
+    name:             'Product Name',
+    brand:            'Brand',
+    price:            'Price (Amazon)',
+    mrp:              'MRP',
+    discountPct:      'Discount %',
+    imageUrl:         'Image URL',
+    url:              'Product URL',
+    rating:           'Star Rating',
+    reviewCount:      'Review Count',
+    inStock:          'In Stock',
+    features:         'Features list',
+    aiScore:          'AI Score (GPT)',
+    positivePct:      'Positive Sentiment %',
+    reviewsAnalyzed:  'Reviews Analysed',
+    whatPeopleLove:   'What People Love',
+    commonComplaints: 'Common Complaints',
+    authenticityBadge:'Authenticity Badge',
+  }
+
+  const LEGEND = [
+    { status: 'real',     label: 'Real — from Amazon API or GPT analysis' },
+    { status: 'missing',  label: 'Missing — not returned by Amazon or no AI analysis yet' },
+    { status: 'fallback', label: 'Fallback — approximate value used instead' },
+  ]
+
+  return (
+    <div>
+      <div className="admin-card" style={{ marginBottom: 20 }}>
+        <div className="admin-card-title" style={{ marginBottom: 12 }}>🔍 Product Data Inspector</div>
+        <div style={{ fontSize: 12, color: 'var(--ink4)', marginBottom: 14, lineHeight: 1.6 }}>
+          Enter any search query to see exactly what Amazon PA-API returns and which fields are real data vs hardcoded fallbacks.
+          Fields highlighted <span style={{ ...STATUS_STYLE.real, padding: '1px 6px', borderRadius: 4 }}>green</span> are real,{' '}
+          <span style={{ ...STATUS_STYLE.missing, padding: '1px 6px', borderRadius: 4 }}>red</span> are missing (need AI analysis or Amazon doesn't provide them).
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && runDebug()}
+            placeholder="e.g. Sony WH-1000XM5, boAt earphones..."
+            style={{
+              flex: 1, padding: '8px 12px', borderRadius: 8,
+              border: '1px solid var(--line)', fontSize: 13,
+              background: 'var(--paper)', color: 'var(--ink)',
+            }}
+          />
+          <button
+            className="admin-btn"
+            onClick={runDebug}
+            disabled={loading}
+            style={{ minWidth: 100 }}
+          >
+            {loading ? 'Fetching…' : 'Inspect'}
+          </button>
+        </div>
+        {error && <div style={{ color: '#C62828', marginTop: 8, fontSize: 12 }}>⚠ {error}</div>}
+      </div>
+
+      {data && (
+        <>
+          <div style={{ fontSize: 12, color: 'var(--ink4)', marginBottom: 12 }}>
+            Amazon returned <strong>{data.count}</strong> products for "{data.query}" in {data.elapsed_ms}ms
+          </div>
+
+          {/* Legend */}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+            {LEGEND.map(l => (
+              <span key={l.status} style={{ ...STATUS_STYLE[l.status], padding: '3px 10px', borderRadius: 20, fontSize: 11 }}>
+                {l.label}
+              </span>
+            ))}
+          </div>
+
+          {data.results.map((product, idx) => (
+            <div key={product.asin || idx} className="admin-card" style={{ marginBottom: 12 }}>
+              {/* Header */}
+              <div
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                onClick={() => setExpanded(prev => ({ ...prev, [idx]: !prev[idx] }))}
+              >
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>
+                    {idx + 1}. {product.name?.slice(0, 70) || '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink4)', marginTop: 2 }}>
+                    ASIN: {product.asin || '—'} · Brand: {product.brand || '—'} ·{' '}
+                    {product.hasAnalysis
+                      ? <span style={{ color: '#2E7D32' }}>✓ AI analysis exists</span>
+                      : <span style={{ color: '#C62828' }}>✗ No AI analysis — run analysis pipeline first</span>
+                    }
+                  </div>
+                </div>
+                <span style={{ fontSize: 18, color: 'var(--ink4)' }}>{expanded[idx] ? '▲' : '▼'}</span>
+              </div>
+
+              {/* Field table — expanded */}
+              {expanded[idx] && (
+                <div style={{ marginTop: 14, overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid var(--line)' }}>
+                        {['Field', 'Value', 'Status'].map(h => (
+                          <th key={h} style={{ textAlign: 'left', padding: '6px 10px', color: 'var(--ink4)', fontWeight: 700, fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(product.fields).map(([key, { value, status }]) => (
+                        <tr key={key} style={{ borderBottom: '1px solid var(--line)' }}>
+                          <td style={{ padding: '6px 10px', color: 'var(--ink3)', fontWeight: 600 }}>{FIELDS_META[key] || key}</td>
+                          <td style={{ padding: '6px 10px', fontFamily: "'DM Mono', monospace", color: 'var(--ink)' }}>
+                            {value === null || value === undefined ? <span style={{ color: 'var(--ink4)' }}>—</span> : String(value)}
+                          </td>
+                          <td style={{ padding: '6px 10px' }}>
+                            <span style={{ ...STATUS_STYLE[status], padding: '2px 8px', borderRadius: 20, fontSize: 10, textTransform: 'uppercase' }}>
+                              {status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {!product.hasAnalysis && (
+                    <div style={{
+                      marginTop: 10, padding: '10px 14px', borderRadius: 8,
+                      background: '#FFF8E1', border: '1px solid #FFE082',
+                      fontSize: 12, color: '#5D4037', lineHeight: 1.6,
+                    }}>
+                      ⚠ <strong>No AI analysis stored.</strong> To get real aiScore, positivePct, whatPeopleLove, etc., the product needs to go through the analysis pipeline (review scrape + GPT-4o-mini). This happens automatically when a user searches for it and the backend calls <code>queueAnalysis(asin)</code>.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── BLOG TAB VIEW — sub-tabs: Analytics | Posts ───────────────────
 function BlogTabView() {
   const [blogTab, setBlogTab] = useState("analytics"); // "analytics" | "posts"
@@ -1029,7 +1208,7 @@ export default function AdminDashboard({
 
         {/* ── TAB BAR ── */}
         <div style={{ display: "flex", gap: 4, borderBottom: "2px solid var(--line)", marginBottom: 24 }}>
-          {[["analytics", "📊 Analytics"], ["blog", "📝 Blog"]].map(([key, label]) => (
+          {[["analytics", "📊 Analytics"], ["blog", "📝 Blog"], ["debug", "🔍 Data Debug"]].map(([key, label]) => (
             <button
               key={key}
               className={`admin-tab-btn ${activeTab === key ? "active" : ""}`}
@@ -1042,6 +1221,10 @@ export default function AdminDashboard({
 
         {activeTab === "blog" && (
           <BlogTabView />
+        )}
+
+        {activeTab === "debug" && (
+          <ProductDebugTab apiBase={API_BASE} />
         )}
 
         {activeTab === "analytics" && <>

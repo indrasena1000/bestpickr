@@ -18,26 +18,133 @@ const CAT_BRANDS = {
 }
 
 // ── Budget chips per category ─────────────────────────────────────
+// chip.cat is passed as the category arg to onSearch so backend filters correctly
 const CAT_BUDGETS = {
-  mobile:      [{ label: 'Under ₹10K', q: 'mobile under 10000' }, { label: 'Under ₹20K', q: 'mobile under 20000' }, { label: '₹20K–40K', q: 'mobile 20000 to 40000' }, { label: 'Above ₹50K', q: 'flagship mobile above 50000' }],
-  laptop:      [{ label: 'Under ₹30K', q: 'laptop under 30000' }, { label: 'Under ₹50K', q: 'laptop under 50000' }, { label: '₹50K–80K', q: 'laptop 50000 to 80000' }, { label: 'Above ₹80K', q: 'premium laptop above 80000' }],
-  headphones:  [{ label: 'Under ₹1K', q: 'headphones under 1000' }, { label: 'Under ₹5K', q: 'headphones under 5000' }, { label: 'Under ₹15K', q: 'headphones under 15000' }, { label: 'Above ₹15K', q: 'premium headphones above 15000' }],
-  tablets:     [{ label: 'Under ₹15K', q: 'tablet under 15000' }, { label: 'Under ₹30K', q: 'tablet under 30000' }, { label: 'Above ₹40K', q: 'premium tablet above 40000' }],
-  smartwatch:  [{ label: 'Under ₹3K', q: 'smartwatch under 3000' }, { label: 'Under ₹10K', q: 'smartwatch under 10000' }, { label: 'Above ₹20K', q: 'premium smartwatch above 20000' }],
-  camera:      [{ label: 'Under ₹30K', q: 'camera under 30000' }, { label: 'Under ₹60K', q: 'camera under 60000' }, { label: 'Above ₹1L', q: 'professional camera above 100000' }],
-  appliances:  [{ label: 'Under ₹10K', q: 'appliance under 10000' }, { label: 'Under ₹30K', q: 'appliance under 30000' }, { label: 'Above ₹50K', q: 'premium appliance above 50000' }],
-  footwear:    [{ label: 'Under ₹2K', q: 'shoes under 2000' }, { label: 'Under ₹5K', q: 'shoes under 5000' }, { label: 'Above ₹8K', q: 'premium shoes above 8000' }],
+  mobile:      [{ label: 'Under ₹10K', q: 'budget smartphone', cat: 'smartphones' }, { label: 'Under ₹20K', q: 'mid range smartphone', cat: 'smartphones' }, { label: '₹20K–40K', q: 'premium mid range smartphone', cat: 'smartphones' }, { label: 'Above ₹50K', q: 'flagship smartphone', cat: 'smartphones' }],
+  laptop:      [{ label: 'Under ₹30K', q: 'budget laptop', cat: 'laptops' }, { label: 'Under ₹50K', q: 'mid range laptop', cat: 'laptops' }, { label: '₹50K–80K', q: 'premium laptop', cat: 'laptops' }, { label: 'Above ₹80K', q: 'high end laptop', cat: 'laptops' }],
+  headphones:  [{ label: 'Under ₹1K', q: 'budget earphones', cat: 'headphones' }, { label: 'Under ₹5K', q: 'best earphones', cat: 'headphones' }, { label: 'Under ₹15K', q: 'best wireless headphones', cat: 'headphones' }, { label: 'Above ₹15K', q: 'premium headphones noise cancelling', cat: 'headphones' }],
+  tablets:     [{ label: 'Under ₹15K', q: 'budget tablet', cat: 'tablets' }, { label: 'Under ₹30K', q: 'mid range tablet', cat: 'tablets' }, { label: 'Above ₹40K', q: 'premium tablet', cat: 'tablets' }],
+  smartwatch:  [{ label: 'Under ₹3K', q: 'budget smartwatch', cat: 'smartwatch' }, { label: 'Under ₹10K', q: 'best smartwatch', cat: 'smartwatch' }, { label: 'Above ₹20K', q: 'premium smartwatch', cat: 'smartwatch' }],
+  camera:      [{ label: 'Under ₹30K', q: 'budget DSLR camera', cat: 'camera' }, { label: 'Under ₹60K', q: 'mid range mirrorless camera', cat: 'camera' }, { label: 'Above ₹1L', q: 'professional camera', cat: 'camera' }],
+  appliances:  [{ label: 'Under ₹10K', q: 'best home appliance', cat: 'appliances' }, { label: 'Under ₹30K', q: 'mid range appliance', cat: 'appliances' }, { label: 'Above ₹50K', q: 'premium appliance', cat: 'appliances' }],
+  footwear:    [{ label: 'Under ₹2K', q: 'budget running shoes', cat: 'footwear' }, { label: 'Under ₹5K', q: 'best sports shoes', cat: 'footwear' }, { label: 'Above ₹8K', q: 'premium sneakers', cat: 'footwear' }],
 }
 
-// ── Use-case chips per category ───────────────────────────────────
+// ── Use-case chips per category (for CATEGORY/GENERIC searches) ──
 const CAT_USE_CASES = {
-  mobile:     [{ label: 'Gaming', q: 'gaming phone' }, { label: 'Best camera', q: 'best camera phone' }, { label: 'Long battery', q: 'long battery phone' }, { label: '5G', q: '5G phone' }],
-  laptop:     [{ label: 'Gaming', q: 'gaming laptop' }, { label: 'Student', q: 'student laptop' }, { label: 'Business', q: 'business laptop' }, { label: 'Thin & light', q: 'thin light laptop' }],
-  headphones: [{ label: 'Wireless', q: 'wireless headphones' }, { label: 'Noise cancelling', q: 'noise cancelling headphones' }, { label: 'Earbuds', q: 'wireless earbuds' }, { label: 'Gaming', q: 'gaming headset' }],
-  tablets:    [{ label: 'Kids', q: 'kids tablet' }, { label: 'Drawing', q: 'drawing tablet' }, { label: 'Work', q: 'work tablet' }],
-  smartwatch: [{ label: 'Fitness', q: 'fitness smartwatch' }, { label: 'GPS', q: 'GPS smartwatch' }, { label: 'AMOLED', q: 'AMOLED smartwatch' }],
-  camera:     [{ label: 'DSLR', q: 'DSLR camera' }, { label: 'Mirrorless', q: 'mirrorless camera' }, { label: 'Action', q: 'action camera' }],
-  appliances: [{ label: 'Washing machine', q: 'washing machine' }, { label: 'Air fryer', q: 'air fryer' }, { label: 'Refrigerator', q: 'refrigerator' }, { label: 'Air conditioner', q: 'air conditioner' }],
+  mobile:     [{ label: 'Gaming', q: 'gaming phone', cat: 'smartphones' }, { label: 'Best camera', q: 'best camera phone', cat: 'smartphones' }, { label: 'Long battery', q: 'long battery phone', cat: 'smartphones' }, { label: '5G', q: '5G phone', cat: 'smartphones' }],
+  laptop:     [{ label: 'Gaming', q: 'gaming laptop', cat: 'laptops' }, { label: 'Student', q: 'student laptop', cat: 'laptops' }, { label: 'Business', q: 'business laptop', cat: 'laptops' }, { label: 'Thin & light', q: 'thin light laptop', cat: 'laptops' }],
+  headphones: [{ label: 'Wireless', q: 'wireless headphones', cat: 'headphones' }, { label: 'Noise cancelling', q: 'noise cancelling headphones', cat: 'headphones' }, { label: 'Earbuds', q: 'wireless earbuds', cat: 'headphones' }, { label: 'Gaming', q: 'gaming headset', cat: 'headphones' }],
+  tablets:    [{ label: 'Kids', q: 'kids tablet', cat: 'tablets' }, { label: 'Drawing', q: 'drawing tablet', cat: 'tablets' }, { label: 'Work', q: 'work tablet', cat: 'tablets' }],
+  smartwatch: [{ label: 'Fitness', q: 'fitness smartwatch', cat: 'smartwatch' }, { label: 'GPS', q: 'GPS smartwatch', cat: 'smartwatch' }, { label: 'AMOLED', q: 'AMOLED smartwatch', cat: 'smartwatch' }],
+  camera:     [{ label: 'DSLR', q: 'DSLR camera', cat: 'camera' }, { label: 'Mirrorless', q: 'mirrorless camera', cat: 'camera' }, { label: 'Action', q: 'action camera', cat: 'camera' }],
+  appliances: [{ label: 'Washing machine', q: 'washing machine', cat: 'appliances' }, { label: 'Air fryer', q: 'air fryer', cat: 'appliances' }, { label: 'Refrigerator', q: 'refrigerator', cat: 'appliances' }, { label: 'Air conditioner', q: 'air conditioner', cat: 'appliances' }],
+}
+
+// ── Variant chips for PRODUCT_SPECIFIC searches ───────────────────
+// These APPEND to the current query, not replace it.
+// e.g. "icall wireless" + "over ear" → "icall wireless over ear headphones"
+const CAT_VARIANTS = {
+  headphones: {
+    label: 'What type are you looking for?',
+    groups: [
+      {
+        label: 'Type',
+        chips: [
+          { label: 'Over-Ear', append: 'over ear headphones' },
+          { label: 'TWS Earbuds', append: 'true wireless earbuds' },
+          { label: 'Neckband', append: 'neckband earphones' },
+          { label: 'In-Ear', append: 'in ear earphones' },
+          { label: 'Gaming Headset', append: 'gaming headset' },
+          { label: 'Wired', append: 'wired headphones' },
+        ],
+      },
+      {
+        label: 'Feature',
+        chips: [
+          { label: 'With Mic', append: 'with microphone' },
+          { label: 'Noise Cancelling', append: 'noise cancelling' },
+          { label: 'Bass Boost', append: 'bass boost' },
+          { label: 'Long Battery', append: '40 hours battery' },
+        ],
+      },
+    ],
+  },
+  mobile: {
+    label: 'Which variant are you looking for?',
+    groups: [
+      {
+        label: 'Feature',
+        chips: [
+          { label: '5G', append: '5G' },
+          { label: 'Gaming', append: 'gaming' },
+          { label: 'Best Camera', append: '108MP camera' },
+          { label: 'Big Battery', append: '6000mAh battery' },
+          { label: 'Slim Design', append: 'slim design' },
+        ],
+      },
+      {
+        label: 'Storage',
+        chips: [
+          { label: '128GB', append: '128GB' },
+          { label: '256GB', append: '256GB' },
+          { label: '512GB', append: '512GB' },
+        ],
+      },
+    ],
+  },
+  laptop: {
+    label: 'What will you use it for?',
+    groups: [
+      {
+        label: 'Use',
+        chips: [
+          { label: 'Gaming', append: 'gaming laptop' },
+          { label: 'Student', append: 'student thin light' },
+          { label: 'Video Editing', append: 'video editing' },
+          { label: 'Office Work', append: 'office business' },
+        ],
+      },
+      {
+        label: 'Spec',
+        chips: [
+          { label: 'Core i5', append: 'i5 processor' },
+          { label: 'Core i7', append: 'i7 processor' },
+          { label: 'Ryzen 5', append: 'ryzen 5' },
+          { label: 'M2 chip', append: 'M2 chip' },
+        ],
+      },
+    ],
+  },
+  camera: {
+    label: 'Which type of camera?',
+    groups: [
+      {
+        label: 'Type',
+        chips: [
+          { label: 'DSLR', append: 'DSLR' },
+          { label: 'Mirrorless', append: 'mirrorless' },
+          { label: 'Action Cam', append: 'action camera' },
+          { label: 'Vlog Camera', append: 'vlog camera' },
+        ],
+      },
+    ],
+  },
+  smartwatch: {
+    label: 'What features matter most?',
+    groups: [
+      {
+        label: 'Feature',
+        chips: [
+          { label: 'AMOLED Display', append: 'AMOLED' },
+          { label: 'GPS', append: 'GPS' },
+          { label: 'SpO2 & HR', append: 'SpO2 heart rate' },
+          { label: 'Long Battery', append: '7 day battery' },
+          { label: 'Calling', append: 'calling smartwatch' },
+        ],
+      },
+    ],
+  },
 }
 
 // ── Series per brand+category ─────────────────────────────────────
@@ -89,18 +196,69 @@ function detectBrandFromQuery(query) {
   return ALL_BRANDS.find(b => q.includes(b)) || null
 }
 
+// ── Category detection fallback (when backend category not available) ─
+const CAT_KEYWORDS = {
+  mobile:      ['mobile', 'phone', 'smartphone', 'iphone', 'galaxy', 'android'],
+  laptop:      ['laptop', 'notebook', 'macbook', 'chromebook'],
+  headphones:  ['headphone', 'earphone', 'earbuds', 'headset', 'airpods'],
+  tablets:     ['tablet', 'ipad'],
+  smartwatch:  ['smartwatch', 'watch', 'band'],
+  camera:      ['camera', 'dslr', 'mirrorless'],
+  gaming:      ['gaming', 'console', 'playstation', 'xbox', 'nintendo'],
+  appliances:  ['washing', 'refrigerator', 'fridge', 'ac ', 'microwave', 'vacuum', 'fryer'],
+  footwear:    ['shoes', 'sneakers', 'footwear', 'sandals', 'boots'],
+  skincare:    ['skincare', 'moisturizer', 'serum', 'sunscreen', 'cleanser'],
+}
+
+function detectCategoryFromQuery(query) {
+  const q = query.toLowerCase()
+  for (const [cat, kws] of Object.entries(CAT_KEYWORDS)) {
+    if (kws.some(kw => q.includes(kw))) return cat
+  }
+  return null
+}
+
 // ── Generate hints based on intent + query + category ────────────
-function buildHints(intent, query, category) {
-  const cat   = category?.toLowerCase() || null
+// Returns { message, groups, appendMode }
+// appendMode=true → chips append to current query (e.g. for PRODUCT_SPECIFIC)
+// appendMode=false → chips replace query (e.g. for CATEGORY/GENERIC)
+function buildHints(intent, query, category, showVariants) {
+  const cat   = category?.toLowerCase() || detectCategoryFromQuery(query)
   const brand = detectBrandFromQuery(query)
 
-  // No hints for PRODUCT_SPECIFIC (user already knows what they want)
-  if (intent === 'PRODUCT_SPECIFIC' || intent === 'LOW_CONFIDENCE' || intent === 'FALLBACK') return null
+  if (intent === 'LOW_CONFIDENCE' || intent === 'FALLBACK') return null
   if (!cat && !brand) return null
 
-  // BRAND_CATEGORY: has brand + category → suggest series & budget
+  // ── PRODUCT_SPECIFIC: user typed a product but we want to help narrow down ──
+  // Show when: lazy-loading (exact product not in DB) OR variants flag set
+  // Chips APPEND to the existing query so context is preserved
+  if (intent === 'PRODUCT_SPECIFIC' && showVariants && cat) {
+    const varDef = CAT_VARIANTS[cat]
+    if (varDef) {
+      return {
+        message: varDef.label,
+        groups:  varDef.groups,
+        appendMode: true,  // chips will be `query + " " + chip.append`
+      }
+    }
+    // No variant map for this category — fall through to generic brand series
+    const series = brand ? BRAND_SERIES[brand]?.[cat] : null
+    if (series) {
+      const brandLabel = brand.charAt(0).toUpperCase() + brand.slice(1)
+      return {
+        message: `Looking for a specific ${brandLabel} model?`,
+        groups: [{ label: 'Series', chips: series }],
+        appendMode: false,
+      }
+    }
+    return null
+  }
+
+  if (intent === 'PRODUCT_SPECIFIC') return null  // exact search — no hints needed
+
+  // ── BRAND_CATEGORY: has brand + category → suggest series & budget ──
   if ((intent === 'BRAND_CATEGORY' || brand) && cat) {
-    const series = BRAND_SERIES[brand]?.[cat]
+    const series  = BRAND_SERIES[brand]?.[cat]
     const budgets = CAT_BUDGETS[cat] || []
     if (series || budgets.length > 0) {
       const groups = []
@@ -110,23 +268,30 @@ function buildHints(intent, query, category) {
       return {
         message: `Which ${brandLabel} ${cat} are you looking for?`,
         groups,
+        appendMode: false,
       }
     }
   }
 
-  // CATEGORY / GENERIC: has category but no specific brand → suggest brands + use-cases + budget
+  // ── CATEGORY / GENERIC → suggest brands + use-cases + budget ──
   if (cat) {
-    const brands    = CAT_BRANDS[cat] || []
-    const useCases  = CAT_USE_CASES[cat] || []
-    const budgets   = CAT_BUDGETS[cat] || []
-    const groups = []
-    if (brands.length)    groups.push({ label: 'Brand', chips: brands.map(b => ({ label: b, q: `${b} ${cat}` })) })
+    const brands   = CAT_BRANDS[cat] || []
+    const useCases = CAT_USE_CASES[cat] || []
+    const budgets  = CAT_BUDGETS[cat] || []
+    const groups   = []
+    if (brands.length)    groups.push({ label: 'Brand',    chips: brands.map(b => ({ label: b, q: `${b} ${cat}` })) })
     if (useCases.length)  groups.push({ label: 'Use Case', chips: useCases })
-    if (budgets.length)   groups.push({ label: 'Budget', chips: budgets })
+    if (budgets.length)   groups.push({ label: 'Budget',   chips: budgets })
     if (groups.length === 0) return null
+    // Add cat field to brand chips so onSearch gets the correct category param
+    const brandGroup = groups.find(g => g.label === 'Brand')
+    if (brandGroup) {
+      brandGroup.chips = brandGroup.chips.map(chip => ({ ...chip, cat: cat || '' }))
+    }
     return {
       message: 'Narrow down for better results:',
       groups,
+      appendMode: false,
     }
   }
 
@@ -134,10 +299,15 @@ function buildHints(intent, query, category) {
 }
 
 // ── Main component ────────────────────────────────────────────────
-export default function RefineSearchBanner({ intent, query, category, onSearch }) {
+// showVariants: pass true for PRODUCT_SPECIFIC when suggestions exist (inexact match)
+export default function RefineSearchBanner({ intent, query, category, onSearch, showVariants = false }) {
   const [dismissed, setDismissed] = useState(false)
+  const [prevQuery, setPrevQuery] = useState(query)
 
-  const hints = buildHints(intent, query, category)
+  // Reset dismiss when query changes
+  if (query !== prevQuery) { setDismissed(false); setPrevQuery(query) }
+
+  const hints = buildHints(intent, query, category, showVariants)
   if (!hints || dismissed) return null
 
   return (
@@ -175,6 +345,8 @@ export default function RefineSearchBanner({ intent, query, category, onSearch }
           <ChipGroup
             key={group.label}
             group={group}
+            appendMode={hints.appendMode}
+            baseQuery={query}
             onSearch={onSearch}
           />
         ))}
@@ -183,11 +355,22 @@ export default function RefineSearchBanner({ intent, query, category, onSearch }
   )
 }
 
-function ChipGroup({ group, onSearch }) {
+function ChipGroup({ group, appendMode, baseQuery, onSearch }) {
   const MAX_VISIBLE = 6
   const [expanded, setExpanded] = useState(false)
   const visible = expanded ? group.chips : group.chips.slice(0, MAX_VISIBLE)
   const hasMore = group.chips.length > MAX_VISIBLE
+
+  function handleChip(chip) {
+    if (appendMode && chip.append) {
+      // Append to current query: "icall wireless" + "over ear headphones"
+      onSearch?.(`${baseQuery} ${chip.append}`)
+    } else {
+      // Pass chip.cat as the category arg (second param) so backend can filter correctly.
+      // e.g. budget chip for headphones: onSearch('headphones under 5000', 'headphones')
+      onSearch?.(chip.q || chip.label, chip.cat || '')
+    }
+  }
 
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
@@ -202,7 +385,7 @@ function ChipGroup({ group, onSearch }) {
         {visible.map((chip) => (
           <button
             key={chip.label}
-            onClick={() => onSearch?.(chip.q || chip.label)}
+            onClick={() => handleChip(chip)}
             style={{
               padding: '4px 11px',
               borderRadius: 20,

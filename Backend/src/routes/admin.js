@@ -171,6 +171,64 @@ router.delete('/cache', verifyAdmin, async (req, res) => {
   }
 })
 
+// ── GET /api/admin/product-debug?q=... ────────────────────────────
+// Returns raw Amazon API data + field-level annotation of what's real vs fallback.
+// Used in the admin "Data Debug" tab to understand data quality.
+router.get('/product-debug', verifyAdmin, async (req, res) => {
+  const q = (req.query.q || '').trim()
+  const cat = (req.query.cat || '').trim()
+  if (!q) return res.status(400).json({ error: 'q is required' })
+
+  try {
+    const amazonService = require('../services/amazonService')
+    const { ProductAnalysis } = require('../models')
+
+    const start = Date.now()
+    const raw = await amazonService.searchProducts(q, cat)
+
+    // For each product, check if we have AI analysis in MongoDB
+    const results = await Promise.all(raw.slice(0, 8).map(async (p) => {
+      const asin = p.asin || p.platformId || null
+      let analysis = null
+      if (asin) {
+        try {
+          analysis = await ProductAnalysis.findOne({ asin }).lean()
+        } catch { /* skip */ }
+      }
+
+      // Annotate each field: 'real', 'computed', 'fallback', 'missing'
+      const fields = {
+        asin:         { value: asin,                    status: asin ? 'real' : 'missing' },
+        name:         { value: p.name || p.title,       status: p.name || p.title ? 'real' : 'missing' },
+        brand:        { value: p.brand,                 status: p.brand ? 'real' : 'missing' },
+        price:        { value: p.price,                 status: p.price ? 'real' : 'missing' },
+        mrp:          { value: p.mrp,                   status: p.mrp ? 'real' : 'fallback' },
+        discountPct:  { value: p.discountPct,           status: p.discountPct ? 'real' : 'missing' },
+        imageUrl:     { value: p.imageUrl ? '✓ present' : null, status: p.imageUrl ? 'real' : 'missing' },
+        url:          { value: p.url ? '✓ present' : null, status: p.url ? 'real' : 'missing' },
+        rating:       { value: p.rating,                status: p.rating ? 'real' : 'missing' },
+        reviewCount:  { value: p.reviewCount,           status: p.reviewCount ? 'real' : 'missing' },
+        inStock:      { value: p.inStock,               status: p.inStock !== undefined ? 'real' : 'missing' },
+        features:     { value: p.features?.length ? `${p.features.length} features` : null, status: p.features?.length ? 'real' : 'missing' },
+        // Analysis fields (from GPT + review scraping)
+        aiScore:      { value: analysis?.aiScore,       status: analysis?.aiScore ? 'real' : 'missing' },
+        positivePct:  { value: analysis?.overallSentiment?.positive, status: analysis?.overallSentiment ? 'real' : 'missing' },
+        reviewsAnalyzed: { value: analysis?.reviewsAnalyzed, status: analysis?.reviewsAnalyzed ? 'real' : 'missing' },
+        whatPeopleLove:  { value: analysis?.whatPeopleLove?.length ? `${analysis.whatPeopleLove.length} points` : null, status: analysis?.whatPeopleLove?.length ? 'real' : 'missing' },
+        commonComplaints:{ value: analysis?.commonComplaints?.length ? `${analysis.commonComplaints.length} points` : null, status: analysis?.commonComplaints?.length ? 'real' : 'missing' },
+        authenticityBadge: { value: analysis?.authenticityBadge, status: analysis?.authenticityBadge ? 'real' : 'missing' },
+      }
+
+      return { asin, name: p.name || p.title, brand: p.brand, fields, hasAnalysis: !!analysis }
+    }))
+
+    res.json({ ok: true, query: q, elapsed_ms: Date.now() - start, count: results.length, results })
+  } catch (err) {
+    console.error('[Admin] product-debug error:', err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ── POST /api/admin/preload-categories ────────────────────────────
 router.post('/preload-categories', verifyAdmin, async (req, res) => {
   try {

@@ -115,11 +115,123 @@ function AITooltip({ reason, children }) {
   )
 }
 
+// ── SEARCH LOADING STATE ────────────────────────────────────────────
+const SEARCH_STEPS = [
+  { icon: '🔍', label: 'Searching Amazon, Flipkart & Myntra' },
+  { icon: '📦', label: 'Fetching prices and product specs' },
+  { icon: '🤖', label: 'Reading thousands of reviews' },
+  { icon: '📊', label: 'Scoring by value, sentiment & reliability' },
+  { icon: '✨', label: 'Almost done — building your personalised results' },
+]
+
+function SearchLoadingState({ status, query }) {
+  const [stepIndex, setStepIndex] = useState(0)
+  const [dots,      setDots]      = useState('.')
+  const [isCold,    setIsCold]    = useState(false)
+
+  // Advance one step every 2.5s until the last step
+  useEffect(() => {
+    const t = setInterval(() =>
+      setStepIndex(i => Math.min(i + 1, SEARCH_STEPS.length - 1)), 2500)
+    return () => clearInterval(t)
+  }, [])
+
+  // Animate ellipsis on current step
+  useEffect(() => {
+    const t = setInterval(() =>
+      setDots(d => d.length >= 3 ? '' : d + '.'), 400)
+    return () => clearInterval(t)
+  }, [])
+
+  // After 4s with no result → this is a cold / first-time search
+  useEffect(() => {
+    const t = setTimeout(() => setIsCold(true), 4000)
+    return () => clearTimeout(t)
+  }, [])
+
+  const progress = Math.round(((stepIndex + 1) / SEARCH_STEPS.length) * 100)
+
+  return (
+    <div style={{
+      background: 'var(--paper)', border: '1px solid var(--line)',
+      borderRadius: 'var(--r3)', padding: '20px 22px 18px', marginBottom: 16,
+    }}>
+      {/* Header line */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <div className="loading-spinner" style={{ width: 16, height: 16, borderWidth: 2, flexShrink: 0 }} />
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.4 }}>
+          {isCold
+            ? `🌟 First time "${query}" was searched — takes a little longer`
+            : status === 'partial' ? 'Analysing results…' : 'Running AI search…'}
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height: 3, background: 'var(--line)', borderRadius: 2, marginBottom: 18, overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', background: 'var(--accent)',
+          width: `${progress}%`, transition: 'width 2.4s ease', borderRadius: 2,
+        }} />
+      </div>
+
+      {/* Step list */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {SEARCH_STEPS.map((step, i) => {
+          const done    = i < stepIndex
+          const current = i === stepIndex
+          const pending = i > stepIndex
+          return (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '6px 8px', borderRadius: 6,
+              background: current ? 'var(--accent-bg)' : 'transparent',
+              opacity: pending ? 0.3 : 1,
+              transition: 'opacity 0.4s ease, background 0.3s ease',
+            }}>
+              <span style={{ fontSize: 15, width: 22, textAlign: 'center', flexShrink: 0 }}>
+                {done ? '✅' : step.icon}
+              </span>
+              <span style={{
+                fontSize: 13, flex: 1,
+                fontWeight: current ? 600 : 400,
+                color: done ? 'var(--ink4)' : current ? 'var(--ink)' : 'var(--ink3)',
+                textDecoration: done ? 'line-through' : 'none',
+              }}>
+                {step.label}{current ? dots : ''}
+              </span>
+              {current && (
+                <span style={{
+                  fontSize: 10, color: 'var(--accent)', fontWeight: 700,
+                  letterSpacing: '.5px', textTransform: 'uppercase', flexShrink: 0,
+                }}>
+                  in progress
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {isCold && (
+        <div style={{
+          marginTop: 14, padding: '8px 12px',
+          background: '#FFF8EC', border: '1px solid #F5C87A',
+          borderRadius: 6, fontSize: 12, color: '#92600A', lineHeight: 1.5,
+        }}>
+          💡 Bestpickr is fetching &amp; analysing this product for the first time.
+          Results will be cached for everyone after this — the next search will be instant.
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ResultsPage({ query, category, onViewProduct, onSearch }) {
   const {
     results, loading, error, meta, search,
     intent, confidence, primaryProduct, suggestions, status,
-    matchType, wasSpellingCorrected, correctedQuery,
+    matchType, wasSpellingCorrected, correctedQuery, detectedCategory,
+    noResults, noResultsMessage,
   } = useSearch()
   const [sort,    setSort]    = useState('best')
   const [filters, setFilters] = useState({ platforms: [], minScore: 0, maxPrice: 0 })
@@ -267,14 +379,7 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
           {/* Loading / polling state — not shown during lazy_pending (suggestions already visible) */}
           {(loading || status === 'fetching' || status === 'partial') && !primaryProduct && status !== 'lazy_pending' && (
             <div>
-              <div className="loading-wrap" style={{ padding:'16px 0 20px', flexDirection:'row', justifyContent:'flex-start' }}>
-                <div className="loading-spinner"/>
-                <span>
-                  {status === 'fetching' ? 'Fetching live data…' :
-                   status === 'partial'  ? 'Analysing results…' :
-                   'Searching Amazon, Flipkart & Myntra simultaneously…'}
-                </span>
-              </div>
+              <SearchLoadingState key={query} status={status} query={query} />
               <ResultSkeleton />
             </div>
           )}
@@ -292,6 +397,25 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
             </div>
           )}
 
+          {/* No results state — graceful, no crash */}
+          {!loading && !error && noResults && (
+            <div style={{ textAlign:'center', padding:'60px 20px', color:'var(--ink3)' }}>
+              <div style={{ fontSize:40, marginBottom:16 }}>🔍</div>
+              <div style={{ fontSize:18, fontWeight:700, color:'var(--ink)', marginBottom:8 }}>
+                No products found for &ldquo;{query}&rdquo;
+              </div>
+              <div style={{ fontSize:14, color:'var(--ink3)', marginBottom:24 }}>
+                {noResultsMessage || 'Try a different search term or browse our categories.'}
+              </div>
+              <button
+                onClick={() => onSearch && onSearch('')}
+                style={{ padding:'10px 24px', background:'var(--accent)', color:'#fff', border:'none', borderRadius:'var(--r2)', fontWeight:700, cursor:'pointer', fontSize:14 }}
+              >
+                Browse categories
+              </button>
+            </div>
+          )}
+
           {/* PATH A — PRODUCT_SPECIFIC: primary card + alternatives grid */}
           {/* Also renders during lazy_pending: skeleton primary + instant suggestions */}
           {!loading && !error && (intent === 'PRODUCT_SPECIFIC' || status === 'lazy_pending') && (
@@ -305,6 +429,19 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
                 }}>
                   Showing results for <strong>{correctedQuery}</strong>
                 </div>
+              )}
+              {/* Smart variant chips — shown when we have suggestions (inexact match)
+                  or during lazy-load (exact product not in DB yet).
+                  Always use PRODUCT_SPECIFIC intent here regardless of backend intent,
+                  so we show variant chips (Over-Ear, TWS etc.) not budget/series chips. */}
+              {(status === 'lazy_pending' || (suggestions && suggestions.length > 0)) && (
+                <RefineSearchBanner
+                  intent="PRODUCT_SPECIFIC"
+                  query={query}
+                  category={detectedCategory || category}
+                  onSearch={onSearch}
+                  showVariants
+                />
               )}
               <PrimaryProductCard
                 product={primaryProduct}
@@ -338,6 +475,13 @@ export default function ResultsPage({ query, category, onViewProduct, onSearch }
                   Showing results for <strong>{correctedQuery}</strong>
                 </div>
               )}
+              {/* Smart refinement chips — helps users narrow vague searches */}
+              <RefineSearchBanner
+                intent={intent}
+                query={query}
+                category={detectedCategory || category}
+                onSearch={onSearch}
+              />
               {/* AI Summary bar for category results */}
               {(suggestions || results).length > 0 && top && (
                 <div className="ai-summary">
