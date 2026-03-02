@@ -81,7 +81,10 @@ const logger = require("../utils/logger");
 const { classifyIntent, INTENT } = require("../services/searchIntentService");
 const { SUBTYPE_FILTER_KEYWORDS } = require("../utils/categoryKeyMap");
 const { queueAnalysis } = require("../services/backgroundAnalysis");
-const { weightedSearch, CONFIDENCE } = require("../services/productMatchService");
+const {
+  weightedSearch,
+  CONFIDENCE,
+} = require("../services/productMatchService");
 
 // ── Config
 const CACHE_TTL_MS = (parseInt(process.env.CACHE_TTL_SECONDS) || 21600) * 1000; // 6h in ms
@@ -94,14 +97,106 @@ const ANALYSIS_TIMEOUT_MS = 25000; // 25s per product (scrape + GPT)
 // Prevents: stale cache returning wrong category, Amazon SearchIndex mismatch,
 // mock fallback returning off-topic products.
 const CATEGORY_FILTER_MAP = {
-  headphones:  ['headphone', 'earphone', 'earbuds', 'earbud', 'headset', 'neckband', 'airpods', 'tws', 'audio', 'speaker', 'bluetooth headset'],
-  smartphones: ['phone', 'mobile', 'smartphone', 'iphone', 'android', 'redmi', 'realme', 'samsung', 'oneplus', 'vivo', 'oppo', 'pixel'],
-  laptops:     ['laptop', 'notebook', 'macbook', 'chromebook', 'ultrabook'],
-  gaming:      ['gaming', 'controller', 'gamepad', 'console', 'playstation', 'xbox', 'ps5', 'nintendo', 'game'],
-  footwear:    ['footwear', 'shoe', 'shoes', 'sneaker', 'sandal', 'slipper', 'boot', 'trainer', 'nike', 'adidas', 'puma', 'reebok', 'skechers', 'crocs', 'running'],
-  skincare:    ['skincare', 'serum', 'sunscreen', 'moisturizer', 'cleanser', 'face wash', 'face', 'spf', 'toner', 'cream', 'lotion', 'skin'],
-  fashion:     ['shirt', 't-shirt', 'tshirt', 'jeans', 'kurta', 'dress', 'jacket', 'hoodie', 'trouser', 'saree', 'fashion', 'clothing', 'apparel'],
-  appliances:  ['mixer', 'grinder', 'microwave', 'oven', 'washing', 'refrigerator', 'fridge', 'vacuum', 'purifier', 'cooker', 'appliance', 'induction', 'juicer'],
+  headphones: [
+    "headphone",
+    "earphone",
+    "earbuds",
+    "earbud",
+    "headset",
+    "neckband",
+    "airpods",
+    "tws",
+    "audio",
+    "speaker",
+    "bluetooth headset",
+  ],
+  smartphones: [
+    "phone",
+    "mobile",
+    "smartphone",
+    "iphone",
+    "android",
+    "redmi",
+    "realme",
+    "samsung",
+    "oneplus",
+    "vivo",
+    "oppo",
+    "pixel",
+  ],
+  laptops: ["laptop", "notebook", "macbook", "chromebook", "ultrabook"],
+  gaming: [
+    "gaming",
+    "controller",
+    "gamepad",
+    "console",
+    "playstation",
+    "xbox",
+    "ps5",
+    "nintendo",
+    "game",
+  ],
+  footwear: [
+    "footwear",
+    "shoe",
+    "shoes",
+    "sneaker",
+    "sandal",
+    "slipper",
+    "boot",
+    "trainer",
+    "nike",
+    "adidas",
+    "puma",
+    "reebok",
+    "skechers",
+    "crocs",
+    "running",
+  ],
+  skincare: [
+    "skincare",
+    "serum",
+    "sunscreen",
+    "moisturizer",
+    "cleanser",
+    "face wash",
+    "face",
+    "spf",
+    "toner",
+    "cream",
+    "lotion",
+    "skin",
+  ],
+  fashion: [
+    "shirt",
+    "t-shirt",
+    "tshirt",
+    "jeans",
+    "kurta",
+    "dress",
+    "jacket",
+    "hoodie",
+    "trouser",
+    "saree",
+    "fashion",
+    "clothing",
+    "apparel",
+  ],
+  appliances: [
+    "mixer",
+    "grinder",
+    "microwave",
+    "oven",
+    "washing",
+    "refrigerator",
+    "fridge",
+    "vacuum",
+    "purifier",
+    "cooker",
+    "appliance",
+    "induction",
+    "juicer",
+  ],
 };
 
 /**
@@ -116,42 +211,78 @@ function filterByCategory(results, category) {
     // Direct category slug match (always set for mock products)
     if (p.category && p.category.toLowerCase() === category) return true;
     // Keyword match against product name and brand
-    const text = `${p.name || ''} ${p.brand || ''}`.toLowerCase();
+    const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
     return keywords.some((kw) => text.includes(kw));
   });
 }
 
 // ── Query relevance stop words (broader than cache normalizer stop words)
 const QUERY_STOP_WORDS = new Set([
-  'best', 'top', 'good', 'great', 'cheap', 'cheapest', 'affordable', 'premium',
-  'latest', 'new', 'popular', 'trending', 'rated', 'recommended', 'buy', 'online',
-  'india', 'price', 'deal', 'offer', 'discount', 'budget', 'value', 'review', 'reviews',
-  'under', 'below', 'above', 'the', 'a', 'an', 'for', 'in', 'and', 'or', 'vs',
-  'compare', 'comparison', '2024', '2025', '2026',
+  "best",
+  "top",
+  "good",
+  "great",
+  "cheap",
+  "cheapest",
+  "affordable",
+  "premium",
+  "latest",
+  "new",
+  "popular",
+  "trending",
+  "rated",
+  "recommended",
+  "buy",
+  "online",
+  "india",
+  "price",
+  "deal",
+  "offer",
+  "discount",
+  "budget",
+  "value",
+  "review",
+  "reviews",
+  "under",
+  "below",
+  "above",
+  "the",
+  "a",
+  "an",
+  "for",
+  "in",
+  "and",
+  "or",
+  "vs",
+  "compare",
+  "comparison",
+  "2024",
+  "2025",
+  "2026",
 ]);
 
 // Synonym expansions — ensures "machine" matches "washer", "washing", etc.
 const PRODUCT_SYNONYM_MAP = {
-  'machine':      ['machine', 'washer', 'washing machine'],
-  'machines':     ['machine', 'washer', 'washing machine'],
-  'washer':       ['washer', 'washing'],
-  'washing':      ['washing', 'washer'],
-  'purifier':     ['purifier', 'purification', ' ro '],
-  'refrigerator': ['refrigerator', 'fridge'],
-  'fridge':       ['fridge', 'refrigerator'],
-  'iron':         ['steam iron', 'garment', 'ironing', 'steam generator'],
-  'ironing':      ['iron', 'ironing', 'steam'],
-  'vacuum':       ['vacuum', 'robovac', 'robot cleaner'],
-  'microwave':    ['microwave'],
-  'television':   ['television', 'tv', 'smart tv', 'qled', 'oled'],
-  'tv':           ['tv', 'television', 'smart tv', 'qled', 'oled'],
-  'fryer':        ['fryer', 'air fryer'],
-  'airfryer':     ['airfryer', 'air fryer'],
-  'cooker':       ['cooker', 'pressure cooker', 'rice cooker'],
-  'trimmer':      ['trimmer', 'shaver'],
-  'shaver':       ['shaver', 'trimmer', 'razor'],
-  'juicer':       ['juicer', 'mixer', 'blender'],
-  'blender':      ['blender', 'mixer', 'juicer'],
+  machine: ["machine", "washer", "washing machine"],
+  machines: ["machine", "washer", "washing machine"],
+  washer: ["washer", "washing"],
+  washing: ["washing", "washer"],
+  purifier: ["purifier", "purification", " ro "],
+  refrigerator: ["refrigerator", "fridge"],
+  fridge: ["fridge", "refrigerator"],
+  iron: ["steam iron", "garment", "ironing", "steam generator"],
+  ironing: ["iron", "ironing", "steam"],
+  vacuum: ["vacuum", "robovac", "robot cleaner"],
+  microwave: ["microwave"],
+  television: ["television", "tv", "smart tv", "qled", "oled"],
+  tv: ["tv", "television", "smart tv", "qled", "oled"],
+  fryer: ["fryer", "air fryer"],
+  airfryer: ["airfryer", "air fryer"],
+  cooker: ["cooker", "pressure cooker", "rice cooker"],
+  trimmer: ["trimmer", "shaver"],
+  shaver: ["shaver", "trimmer", "razor"],
+  juicer: ["juicer", "mixer", "blender"],
+  blender: ["blender", "mixer", "juicer"],
 };
 
 /**
@@ -170,28 +301,34 @@ const PRODUCT_SYNONYM_MAP = {
 function rankByQueryScore(results, query) {
   if (!query || results.length <= 1) return results;
 
-  const words = query.toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
+  const words = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((w) => w.length >= 2 && !QUERY_STOP_WORDS.has(w));
 
   if (words.length < 2) return results; // single-word query: keep original order
 
-  return [...results].map((p, idx) => {
-    const text = `${p.name || ''} ${p.brand || ''}`.toLowerCase();
-    const score = words.filter((w) => text.includes(w)).length;
-    return { ...p, _qScore: score, _origIdx: idx };
-  }).sort((a, b) =>
-    (b._qScore - a._qScore) ||              // higher word-overlap first
-    (a._origIdx - b._origIdx),              // stable: preserve original order on ties
-  ).map(({ _qScore: _qs, _origIdx: _oi, ...p }) => p); // strip scratch fields
+  return [...results]
+    .map((p, idx) => {
+      const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
+      const score = words.filter((w) => text.includes(w)).length;
+      return { ...p, _qScore: score, _origIdx: idx };
+    })
+    .sort(
+      (a, b) =>
+        b._qScore - a._qScore || // higher word-overlap first
+        a._origIdx - b._origIdx, // stable: preserve original order on ties
+    )
+    .map(({ _qScore: _qs, _origIdx: _oi, ...p }) => p); // strip scratch fields
 }
 
 function filterByQueryRelevance(results, query) {
   if (!query || results.length === 0) return results;
 
-  const words = query.toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
+  const words = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((w) => w.length >= 3 && !QUERY_STOP_WORDS.has(w));
 
@@ -207,7 +344,7 @@ function filterByQueryRelevance(results, query) {
   const termArray = Array.from(matchTerms);
 
   const filtered = results.filter((p) => {
-    const text = `${p.name || ''} ${p.brand || ''}`.toLowerCase();
+    const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
     return termArray.some((term) => text.includes(term));
   });
 
@@ -243,8 +380,8 @@ function filterByQueryRelevance(results, query) {
 // Cache hits (Redis/DB) are cheap but we still count them — the thundering-
 // herd lock (acquireSearchLock) already prevents duplicate Amazon calls.
 const searchRateLimiter = rateLimit({
-  windowMs: 60 * 1000,     // 1-minute window per query
-  max: 15,                  // 15 requests of the SAME query per IP per minute
+  windowMs: 60 * 1000, // 1-minute window per query
+  max: 15, // 15 requests of the SAME query per IP per minute
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => {
@@ -253,17 +390,23 @@ const searchRateLimiter = rateLimit({
       req.headers["x-real-ip"] ||
       req.ip;
     // Normalise the query so "JBL Speakers" and "jbl speakers" share the same bucket
-    const raw = (req.query.q || req.query.query || req.body?.query || '').trim();
-    const normQ = normalize(raw).slice(0, 60);   // cap key length
+    const raw = (
+      req.query.q ||
+      req.query.query ||
+      req.body?.query ||
+      ""
+    ).trim();
+    const normQ = normalize(raw).slice(0, 60); // cap key length
     return `${ip}:${normQ}`;
   },
   handler: (req, res) => {
     const ip = req.headers["x-forwarded-for"]?.split(",")[0] || req.ip;
-    const q  = req.query.q || req.body?.query || '';
+    const q = req.query.q || req.body?.query || "";
     logger.warn(`🔍 Search: rate limit hit — IP=${ip} query="${q}"`);
     res.status(429).json({
       success: false,
-      error: "You've searched for this too many times in the last minute. Please wait a moment.",
+      error:
+        "You've searched for this too many times in the last minute. Please wait a moment.",
       retryAfter: 60,
     });
   },
@@ -296,7 +439,7 @@ function requestLogger(req, res, next) {
 
   // Log request immediately (before processing)
   logger.info(
-    `🔍 Search IN: ip=${ip} q="${req.query.q}" category="${req.query.category || ""}" ` +
+    `🔍 Search IN: ip=${ip} q="${req.body?.query ?? req.query.q}" category="${req.body?.category || req.query.category || ""}" ` +
       `ua="${req.headers["user-agent"]?.slice(0, 60) || ""}"`,
   );
 
@@ -527,9 +670,7 @@ async function upsertProductListing(
       amazonReviewCount: amazonProduct.reviewCount || 0,
 
       flipkartPrice:
-        cuelinksData?.flipkart?.price ||
-        amazonProduct._flipkartPrice ||
-        null,
+        cuelinksData?.flipkart?.price || amazonProduct._flipkartPrice || null,
       flipkartUrl:
         cuelinksData?.flipkart?.affiliateUrl ||
         amazonProduct._flipkartUrl ||
@@ -554,7 +695,13 @@ async function upsertProductListing(
 // ── Save mock analysis to MongoDB ProductAnalysis ───────────────
 // For mock products, the analysis pipeline is skipped (no review scraping).
 // We still want the analysis data in MongoDB so cache rebuilds include it.
-async function saveToMongoAnalysis(asin, productName, category, brand, analysis) {
+async function saveToMongoAnalysis(
+  asin,
+  productName,
+  category,
+  brand,
+  analysis,
+) {
   try {
     if (mongoose.connection.readyState !== 1) return;
 
@@ -1001,26 +1148,27 @@ async function enrichProductsBatched(products, category) {
 // REDIS-FIRST SEARCH: TOP50 → BRAND INDEX → AMAZON FALLBACK
 // ═════════════════════════════════════════════════════════════════
 
-const TOP50_MAX = 50  // Hard cap on pool size
+const TOP50_MAX = 50; // Hard cap on pool size
 
 /**
  * Convert a ranked (enriched) product to the top50 Redis snapshot shape.
  */
 function enrichedToTop50Shape(p, category) {
   return {
-    id:           p.asin,
-    name:         p.name,
-    brand:        p.brand,
-    category:     p.category || category,
-    imageUrl:     p.imageUrl,
-    price:        p.lowestPrice || p.platforms?.[0]?.price || null,
-    rating:       p.avgRating   || p.platforms?.[0]?.rating || null,
-    reviewCount:  p.totalReviews || p.platforms?.[0]?.reviewCount || 0,
-    aiScore:      p.aiScore,
-    affiliateLink:p.platforms?.[0]?.affiliateUrl || p.platforms?.[0]?.url || null,
-    platform:     p.platforms?.[0]?.name || 'Amazon',
-    analysedAt:   p.analysisDate || new Date().toISOString(),
-  }
+    id: p.asin,
+    name: p.name,
+    brand: p.brand,
+    category: p.category || category,
+    imageUrl: p.imageUrl,
+    price: p.lowestPrice || p.platforms?.[0]?.price || null,
+    rating: p.avgRating || p.platforms?.[0]?.rating || null,
+    reviewCount: p.totalReviews || p.platforms?.[0]?.reviewCount || 0,
+    aiScore: p.aiScore,
+    affiliateLink:
+      p.platforms?.[0]?.affiliateUrl || p.platforms?.[0]?.url || null,
+    platform: p.platforms?.[0]?.name || "Amazon",
+    analysedAt: p.analysisDate || new Date().toISOString(),
+  };
 }
 
 /**
@@ -1029,19 +1177,19 @@ function enrichedToTop50Shape(p, category) {
  */
 function postgresProductToTop50Shape(p) {
   return {
-    id:           p.id,
-    name:         p.name,
-    brand:        p.brand,
-    category:     p.category,
-    imageUrl:     p.imageUrl,
-    price:        p.currentPrice,
-    rating:       p.platformRating,
-    reviewCount:  p.reviewCount,
-    aiScore:      p.aiScore,
-    affiliateLink:p.affiliateUrl || p.platformUrl,
-    platform:     p.platform || 'Amazon',
-    analysedAt:   p.lastScored,
-  }
+    id: p.id,
+    name: p.name,
+    brand: p.brand,
+    category: p.category,
+    imageUrl: p.imageUrl,
+    price: p.currentPrice,
+    rating: p.platformRating,
+    reviewCount: p.reviewCount,
+    aiScore: p.aiScore,
+    affiliateLink: p.affiliateUrl || p.platformUrl,
+    platform: p.platform || "Amazon",
+    analysedAt: p.lastScored,
+  };
 }
 
 /**
@@ -1049,16 +1197,16 @@ function postgresProductToTop50Shape(p) {
  * Deduplicates by id, preserves existing entries, appends new ones, caps at TOP50_MAX.
  */
 function mergeIntoTop50(existing, incoming) {
-  const pool = existing || []
-  const seen = new Set(pool.map((p) => p.id))
+  const pool = existing || [];
+  const seen = new Set(pool.map((p) => p.id));
   for (const p of incoming) {
     if (p.id && !seen.has(p.id)) {
-      pool.push(p)
-      seen.add(p.id)
-      if (pool.length >= TOP50_MAX) break
+      pool.push(p);
+      seen.add(p.id);
+      if (pool.length >= TOP50_MAX) break;
     }
   }
-  return pool
+  return pool;
 }
 
 /**
@@ -1116,7 +1264,9 @@ function formatTop50AsResult(p, rank) {
     avgRating: rating,
     positivePct,
     breakdown,
-    bestDeal: price ? { platform: platformName, price, url: affiliateUrl } : null,
+    bestDeal: price
+      ? { platform: platformName, price, url: affiliateUrl }
+      : null,
     priceHistory: {
       allTimeLow: price,
       allTimeHigh: price,
@@ -1152,7 +1302,7 @@ function formatTop50AsResult(p, rank) {
  * Amazon calls: 0. GPT calls: 0.
  */
 async function serveFromTop50(intent, query) {
-  const cat     = intent.category;
+  const cat = intent.category;
   const subType = intent.subType;
   if (!cat) return null;
 
@@ -1161,7 +1311,9 @@ async function serveFromTop50(intent, query) {
   if (subType) {
     pool = await getSubTypeProducts(cat, subType);
     if (pool && pool.length > 0) {
-      logger.info(`🔍 Top50: sub-type HIT "${cat}:${subType}" → ${pool.length} products`);
+      logger.info(
+        `🔍 Top50: sub-type HIT "${cat}:${subType}" → ${pool.length} products`,
+      );
     }
   }
 
@@ -1185,7 +1337,9 @@ async function serveFromTop50(intent, query) {
         // Only apply filter if it leaves meaningful results
         if (filtered.length >= 3) {
           pool = filtered;
-          logger.info(`🔍 Top50: sub-type filter "${subType}" → ${pool.length} products`);
+          logger.info(
+            `🔍 Top50: sub-type filter "${subType}" → ${pool.length} products`,
+          );
         }
       }
     }
@@ -1193,24 +1347,34 @@ async function serveFromTop50(intent, query) {
 
   // ── Step 3: Brand blending ────────────────────────────────────
   if (intent.brand) {
-    const brandLower   = intent.brand.toLowerCase();
-    const brandItems   = pool.filter((p) => p.brand && p.brand.toLowerCase().includes(brandLower));
-    const otherItems   = pool.filter((p) => !p.brand || !p.brand.toLowerCase().includes(brandLower));
+    const brandLower = intent.brand.toLowerCase();
+    const brandItems = pool.filter(
+      (p) => p.brand && p.brand.toLowerCase().includes(brandLower),
+    );
+    const otherItems = pool.filter(
+      (p) => !p.brand || !p.brand.toLowerCase().includes(brandLower),
+    );
 
     if (brandItems.length > 0) {
       // Pin up to 3 brand items at top, fill rest with best of sub-type/category
-      const pinCount  = Math.min(brandItems.length, 3);
+      const pinCount = Math.min(brandItems.length, 3);
       const fillCount = MAX_RESPONSE_RESULTS - pinCount;
       pool = [
-        ...brandItems.sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0)).slice(0, pinCount),
-        ...otherItems.sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0)).slice(0, fillCount),
+        ...brandItems
+          .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
+          .slice(0, pinCount),
+        ...otherItems
+          .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
+          .slice(0, fillCount),
       ];
       logger.info(
         `🔍 Top50: brand blend — ${pinCount} ${intent.brand} + ${fillCount} best ${subType || cat}`,
       );
     } else {
       // Brand not found in our pool — signal caller to do a targeted Amazon fetch
-      logger.info(`🔍 Top50: brand "${intent.brand}" not in "${subType || cat}" pool — need Amazon fetch`);
+      logger.info(
+        `🔍 Top50: brand "${intent.brand}" not in "${subType || cat}" pool — need Amazon fetch`,
+      );
       return null;
     }
   }
@@ -1269,20 +1433,31 @@ async function serveFromTop50(intent, query) {
  * Cost: 1 Amazon call + 0 GPT calls (analysis queued in background).
  * Subsequent same-brand searches: Redis cache HIT → ₹0.
  */
-async function serveBrandBlend(intent, query, category, req, res, requestStart, rawQuery, normalizedQuery) {
-  const cat     = category || intent.category;
+async function serveBrandBlend(
+  intent,
+  query,
+  category,
+  req,
+  res,
+  requestStart,
+  rawQuery,
+  normalizedQuery,
+) {
+  const cat = category || intent.category;
   const subType = intent.subType;
 
   // 1. Fetch brand-specific from Amazon (targeted, 1 call)
   let brandProducts = [];
   try {
     brandProducts = await amazonService.searchProducts(query, cat);
-    logger.info(`🔍 BrandBlend: Amazon returned ${brandProducts.length} for "${query}"`);
+    logger.info(
+      `🔍 BrandBlend: Amazon returned ${brandProducts.length} for "${query}"`,
+    );
   } catch (err) {
     logger.error(`🔍 BrandBlend: Amazon failed — ${err.message}`);
   }
 
-  if (brandProducts.length === 0) return null;  // fall through to full pipeline
+  if (brandProducts.length === 0) return null; // fall through to full pipeline
 
   // 2. Process top 3 brand products — fast path (affiliate links only, GPT queued in bg)
   const toProcess = brandProducts.slice(0, 3);
@@ -1297,15 +1472,17 @@ async function serveBrandBlend(intent, query, category, req, res, requestStart, 
       let affiliateData = { flipkart: null, myntra: null };
       try {
         affiliateData = await getAffiliateLinks(asin, p.name, p.brand, cat);
-      } catch { /* non-fatal */ }
+      } catch {
+        /* non-fatal */
+      }
 
       const result = formatProductResult(
         {
           ...p,
           flipkartPrice: affiliateData?.flipkart?.price || null,
-          flipkartUrl:   affiliateData?.flipkart?.affiliateUrl || null,
-          myntraPrice:   affiliateData?.myntra?.price || null,
-          myntraUrl:     affiliateData?.myntra?.affiliateUrl || null,
+          flipkartUrl: affiliateData?.flipkart?.affiliateUrl || null,
+          myntraPrice: affiliateData?.myntra?.price || null,
+          myntraUrl: affiliateData?.myntra?.affiliateUrl || null,
         },
         null,
         1,
@@ -1330,8 +1507,8 @@ async function serveBrandBlend(intent, query, category, req, res, requestStart, 
   if (subType) fillPool = (await getSubTypeProducts(cat, subType)) || [];
   if (!fillPool.length && cat) fillPool = (await getTop50Products(cat)) || [];
 
-  const brandAsins    = new Set(brandResults.map((r) => r.asin));
-  const fillResults   = fillPool
+  const brandAsins = new Set(brandResults.map((r) => r.asin));
+  const fillResults = fillPool
     .filter((p) => !brandAsins.has(p.id))
     .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
     .slice(0, MAX_RESPONSE_RESULTS - brandResults.length)
@@ -1346,31 +1523,37 @@ async function serveBrandBlend(intent, query, category, req, res, requestStart, 
   if (cat && subType && brandResults.length > 0) {
     const incoming = brandResults.map((p) => enrichedToTop50Shape(p, cat));
     const existing = (await getSubTypeProducts(cat, subType)) || [];
-    const merged   = mergeIntoTop50(existing, incoming);
+    const merged = mergeIntoTop50(existing, incoming);
     if (merged.length !== existing.length) {
       setSubTypeProducts(cat, subType, merged).catch(() => {});
     }
   }
 
   cacheResults(query, cat, allResults).catch(() => {});
-  saveToMongoCache(query, normalizedQuery, cat, allResults.map((r) => r.asin).filter(Boolean)).catch(() => {});
+  saveToMongoCache(
+    query,
+    normalizedQuery,
+    cat,
+    allResults.map((r) => r.asin).filter(Boolean),
+  ).catch(() => {});
 
-  req._searchLog.outcome    = "amazon_brand_blend";
+  req._searchLog.outcome = "amazon_brand_blend";
   req._searchLog.resultCount = allResults.length;
 
   return res.json({
-    success:       true,
-    query:         rawQuery,
-    normalized:    normalizedQuery,
-    category:      cat || null,
-    intent:        "BRAND_CATEGORY",
-    totalResults:  allResults.length,
-    cached:        false,
-    source:        "amazon_brand_blend",
-    lastUpdated:   new Date().toISOString(),
-    elapsed_ms:    Date.now() - requestStart,
-    results:       allResults,
-    suggestions:   fillResults,
+    success: true,
+    query: rawQuery,
+    normalized: normalizedQuery,
+    category: cat || null,
+    intent: "BRAND_CATEGORY",
+    totalResults: allResults.length,
+    cached: false,
+    source: "amazon_brand_blend",
+    lastUpdated: new Date().toISOString(),
+    elapsed_ms: Date.now() - requestStart,
+    results: allResults,
+    // fillResults may be [] when no pre-cached brand products exist; fall back to allResults
+    suggestions: fillResults.length > 0 ? fillResults : allResults,
   });
 }
 
@@ -1381,7 +1564,7 @@ async function serveBrandBlend(intent, query, category, req, res, requestStart, 
  * Amazon calls: 0. GPT calls: 0.
  */
 async function serveGeneric(intent, query) {
-  const cat     = intent.category;
+  const cat = intent.category;
   const subType = intent.subType;
   if (!cat) return null;
 
@@ -1390,7 +1573,9 @@ async function serveGeneric(intent, query) {
   if (subType) {
     pool = await getSubTypeProducts(cat, subType);
     if (pool && pool.length > 0) {
-      logger.info(`🔍 Generic: sub-type HIT "${cat}:${subType}" → ${pool.length} products`);
+      logger.info(
+        `🔍 Generic: sub-type HIT "${cat}:${subType}" → ${pool.length} products`,
+      );
     }
   }
 
@@ -1474,29 +1659,52 @@ async function searchAcrossAllCategories(query, optionalIntent = null) {
   // 2. A specific model is searched (e.g. "Oppo A6 Pro") but no Redis match contains
   //    those model tokens → product is in Postgres but not in the top50 snapshot
   const MODEL_GENERIC_TERMS_CROSS = new Set([
-    '5g','4g','3g','2g','lte','wifi','pro','plus','ultra','max','mini','lite','air','se','fe','go',
+    "5g",
+    "4g",
+    "3g",
+    "2g",
+    "lte",
+    "wifi",
+    "pro",
+    "plus",
+    "ultra",
+    "max",
+    "mini",
+    "lite",
+    "air",
+    "se",
+    "fe",
+    "go",
   ]);
   const modelTokens = optionalIntent?.model
-    ? optionalIntent.model.toLowerCase().split(/\s+/)
+    ? optionalIntent.model
+        .toLowerCase()
+        .split(/\s+/)
         .filter((w) => w.length >= 2 && !MODEL_GENERIC_TERMS_CROSS.has(w))
     : [];
 
-  const modelFoundInRedis = modelTokens.length === 0 || allMatches.some((m) => {
-    const nameText = (m.name || '').toLowerCase();
-    return modelTokens.some((w) => nameText.includes(w));
-  });
+  const modelFoundInRedis =
+    modelTokens.length === 0 ||
+    allMatches.some((m) => {
+      const nameText = (m.name || "").toLowerCase();
+      return modelTokens.some((w) => nameText.includes(w));
+    });
 
   if (allMatches.length === 0 || !modelFoundInRedis) {
     try {
       const pseudoIntent = {
-        brand:      optionalIntent?.brand || null,
-        model:      null, category: null,
-        capacity:   null, features: null,
-        cleanQuery: qWords.join(' '),
+        brand: optionalIntent?.brand || null,
+        model: null,
+        category: null,
+        capacity: null,
+        features: null,
+        cleanQuery: qWords.join(" "),
       };
       const dbResult = await weightedSearch(pseudoIntent, MAX_RESPONSE_RESULTS);
       // Lower threshold for brand searches — brand column match is already meaningful
-      const minConf = optionalIntent?.brand ? CONFIDENCE.LOW : CONFIDENCE.MEDIUM;
+      const minConf = optionalIntent?.brand
+        ? CONFIDENCE.LOW
+        : CONFIDENCE.MEDIUM;
       if (dbResult.confidence >= minConf && dbResult.products.length > 0) {
         const dbMapped = dbResult.products
           .map(postgresProductToTop50Shape)
@@ -1513,16 +1721,22 @@ async function searchAcrossAllCategories(query, optionalIntent = null) {
         // then append Redis matches (which matched on brand/generic words)
         logger.info(
           `🔍 CrossCategory: Postgres model supplement — "${dbResult.products[0]?.name?.slice(0, 40)}" ` +
-          `merged above ${allMatches.length} Redis matches for "${query}"`,
+            `merged above ${allMatches.length} Redis matches for "${query}"`,
         );
         const redisRanked = allMatches
-          .sort((a, b) => b._matchScore - a._matchScore || (b.aiScore || 0) - (a.aiScore || 0))
+          .sort(
+            (a, b) =>
+              b._matchScore - a._matchScore ||
+              (b.aiScore || 0) - (a.aiScore || 0),
+          )
           .slice(0, MAX_RESPONSE_RESULTS - 1)
           .map((p, i) => formatTop50AsResult(p, i + 2));
         return [...dbMapped.slice(0, 1), ...redisRanked];
       }
     } catch (dbErr) {
-      logger.warn(`🔍 CrossCategory: Postgres fallback failed — ${dbErr.message}`);
+      logger.warn(
+        `🔍 CrossCategory: Postgres fallback failed — ${dbErr.message}`,
+      );
     }
     if (allMatches.length === 0) return null;
   }
@@ -1530,8 +1744,7 @@ async function searchAcrossAllCategories(query, optionalIntent = null) {
   const ranked = allMatches
     .sort(
       (a, b) =>
-        b._matchScore - a._matchScore ||
-        (b.aiScore || 0) - (a.aiScore || 0),
+        b._matchScore - a._matchScore || (b.aiScore || 0) - (a.aiScore || 0),
     )
     .slice(0, MAX_RESPONSE_RESULTS);
 
@@ -1551,7 +1764,7 @@ function findBestNameMatch(pool, query, brand) {
 
   const qWords = query
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((w) => w.length >= 3 && !QUERY_STOP_WORDS.has(w));
 
@@ -1561,7 +1774,7 @@ function findBestNameMatch(pool, query, brand) {
   let bestProduct = null;
 
   for (const p of pool) {
-    const pText = `${p.name || ''} ${p.brand || ''}`.toLowerCase();
+    const pText = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
     let score = 0;
 
     for (const word of qWords) {
@@ -1569,7 +1782,11 @@ function findBestNameMatch(pool, query, brand) {
     }
 
     // Brand match is worth 2 extra points — ensures brand-specific searches rank correctly
-    if (brand && p.brand && p.brand.toLowerCase().includes(brand.toLowerCase())) {
+    if (
+      brand &&
+      p.brand &&
+      p.brand.toLowerCase().includes(brand.toLowerCase())
+    ) {
       score += 2;
     }
 
@@ -1591,22 +1808,37 @@ function findBestNameMatch(pool, query, brand) {
  * 2. Fetch from Amazon (1 call) + top50 suggestions
  * 3. Amazon fails but top50 exists → return top50 for category (no mock fallback)
  */
-async function serveProductSpecific(intent, query, category, req, res, requestStart, rawQuery, normalizedQuery) {
-  const cat     = category || intent.category;
+async function serveProductSpecific(
+  intent,
+  query,
+  category,
+  req,
+  res,
+  requestStart,
+  rawQuery,
+  normalizedQuery,
+) {
+  const cat = category || intent.category;
   const subType = intent.subType;
 
   console.log(`\n━━━ [SEARCH] "${rawQuery}" ━━━`);
-  console.log(`[STEP 1] Intent: ${intent.intent} | brand="${intent.brand||'-'}" | model="${intent.model||'-'}" | category="${cat||'-'}" | subType="${subType||'-'}"`);
+  console.log(
+    `[STEP 1] Intent: ${intent.intent} | brand="${intent.brand || "-"}" | model="${intent.model || "-"}" | category="${cat || "-"}" | subType="${subType || "-"}"`,
+  );
 
   // Load the most specific pool available — sub-type pool preferred, falls back to category
   let top50Pool = null;
   if (cat && subType) {
     top50Pool = await getSubTypeProducts(cat, subType);
-    console.log(`[STEP 2] SubType pool top50:${cat}:${subType} → ${top50Pool?.length||0} products`);
+    console.log(
+      `[STEP 2] SubType pool top50:${cat}:${subType} → ${top50Pool?.length || 0} products`,
+    );
   }
   if ((!top50Pool || top50Pool.length === 0) && cat) {
     top50Pool = await getTop50Products(cat);
-    console.log(`[STEP 2] Category pool top50:${cat} → ${top50Pool?.length||0} products`);
+    console.log(
+      `[STEP 2] Category pool top50:${cat} → ${top50Pool?.length || 0} products`,
+    );
     // Filter by sub-type if available to get relevant suggestions
     if (top50Pool && subType) {
       const keywords = SUBTYPE_FILTER_KEYWORDS[subType] || [];
@@ -1617,12 +1849,17 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
         });
         if (filtered.length >= 3) {
           top50Pool = filtered;
-          console.log(`[STEP 2] After subType filter → ${top50Pool.length} products`);
+          console.log(
+            `[STEP 2] After subType filter → ${top50Pool.length} products`,
+          );
         }
       }
     }
   }
-  if (!cat) console.log(`[STEP 2] No category detected — will scan all pools (cross-category)`);
+  if (!cat)
+    console.log(
+      `[STEP 2] No category detected — will scan all pools (cross-category)`,
+    );
 
   // ── PRE-STEP: No category in query? Scan ALL top50 pools ────────────────
   // Handles product-name-only searches e.g. "Blaupunkt BH71 Moksha" or "pTron Bassbuds"
@@ -1634,7 +1871,7 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
       const crossResults = await searchAcrossAllCategories(query, intent);
       if (crossResults && crossResults.length > 0) {
         const primaryItem = crossResults[0];
-        const primaryCat  = primaryItem.category || intent.category || null;
+        const primaryCat = primaryItem.category || intent.category || null;
 
         // ── Model-mismatch guard ──────────────────────────────────────────
         // If the user searched for a specific model (e.g. "Oppo K14 5G") but
@@ -1642,15 +1879,32 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
         // show K13x as primary — lazy-load from Amazon instead.
         // Tokens that are brand/category/generic are excluded from the check.
         const MODEL_GENERIC_TERMS = new Set([
-          '5g','4g','3g','2g','lte','wifi','pro','plus','ultra','max','mini','lite','air','se','fe','go',
+          "5g",
+          "4g",
+          "3g",
+          "2g",
+          "lte",
+          "wifi",
+          "pro",
+          "plus",
+          "ultra",
+          "max",
+          "mini",
+          "lite",
+          "air",
+          "se",
+          "fe",
+          "go",
         ]);
         const modelCheckTokens = intent.model
-          ? intent.model.toLowerCase().split(/\s+/).filter(
-              (w) => w.length >= 2 && !MODEL_GENERIC_TERMS.has(w),
-            )
+          ? intent.model
+              .toLowerCase()
+              .split(/\s+/)
+              .filter((w) => w.length >= 2 && !MODEL_GENERIC_TERMS.has(w))
           : [];
-        const primaryNameText  = (primaryItem.name || '').toLowerCase();
-        const modelMismatch    = modelCheckTokens.length > 0 &&
+        const primaryNameText = (primaryItem.name || "").toLowerCase();
+        const modelMismatch =
+          modelCheckTokens.length > 0 &&
           !modelCheckTokens.some((w) => primaryNameText.includes(w));
 
         if (modelMismatch) {
@@ -1658,50 +1912,59 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
           // Show all cross-results (K13x etc.) + brand-filled suggestions as "other options".
           logger.info(
             `🔍 ProductSpecific: model mismatch — searched "${intent.model}" but found ` +
-            `"${primaryItem.name?.slice(0, 40)}" — lazy loading from Amazon`,
+              `"${primaryItem.name?.slice(0, 40)}" — lazy loading from Amazon`,
           );
 
           // Fill suggestions with same-brand products from Redis/Postgres
-          const existingIds = new Set(crossResults.map((p) => p.id || p.asin).filter(Boolean));
+          const existingIds = new Set(
+            crossResults.map((p) => p.id || p.asin).filter(Boolean),
+          );
           let lazySuggestions = [...crossResults]; // all cross-results go into suggestions
 
           if (primaryCat) {
-            const catPool = await getTop50Products(primaryCat).catch(() => null) || [];
+            const catPool =
+              (await getTop50Products(primaryCat).catch(() => null)) || [];
             const brandFilter = intent.brand || null;
             const fill = catPool
               .filter((p) => !existingIds.has(p.id))
               .sort((a, b) => {
                 // Same-brand products first, then by aiScore
                 if (brandFilter) {
-                  const aB = (a.brand || '').toLowerCase().includes(brandFilter);
-                  const bB = (b.brand || '').toLowerCase().includes(brandFilter);
+                  const aB = (a.brand || "")
+                    .toLowerCase()
+                    .includes(brandFilter);
+                  const bB = (b.brand || "")
+                    .toLowerCase()
+                    .includes(brandFilter);
                   if (aB !== bB) return bB ? 1 : -1;
                 }
                 return (b.aiScore || 0) - (a.aiScore || 0);
               })
               .slice(0, MAX_RESPONSE_RESULTS - lazySuggestions.length)
-              .map((p, i) => formatTop50AsResult(p, lazySuggestions.length + i + 1));
+              .map((p, i) =>
+                formatTop50AsResult(p, lazySuggestions.length + i + 1),
+              );
             lazySuggestions = [...lazySuggestions, ...fill];
           }
 
           const liveUrl = `/api/search/live?q=${encodeURIComponent(query)}`;
-          req._searchLog.outcome = 'lazy_model_mismatch';
+          req._searchLog.outcome = "lazy_model_mismatch";
           return res.json({
-            success:        true,
-            query:          rawQuery,
-            normalized:     normalizedQuery,
-            category:       primaryCat || null,
-            intent:         'PRODUCT_SPECIFIC',
+            success: true,
+            query: rawQuery,
+            normalized: normalizedQuery,
+            category: primaryCat || null,
+            intent: "PRODUCT_SPECIFIC",
             primaryProduct: null,
             primaryPending: true,
-            liveFetchUrl:   liveUrl,
-            totalResults:   lazySuggestions.length,
-            cached:         false,
-            source:         'lazy_model_mismatch',
-            lastUpdated:    new Date().toISOString(),
-            elapsed_ms:     Date.now() - requestStart,
-            results:        lazySuggestions,
-            suggestions:    lazySuggestions.slice(0, MAX_RESPONSE_RESULTS - 1),
+            liveFetchUrl: liveUrl,
+            totalResults: lazySuggestions.length,
+            cached: false,
+            source: "lazy_model_mismatch",
+            lastUpdated: new Date().toISOString(),
+            elapsed_ms: Date.now() - requestStart,
+            results: lazySuggestions,
+            suggestions: lazySuggestions.slice(0, MAX_RESPONSE_RESULTS - 1),
           });
         }
 
@@ -1715,17 +1978,20 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
         let suggestions = crossResults.slice(1);
 
         if (primaryCat && suggestions.length < 5) {
-          const existingIds = new Set(crossResults.map((p) => p.id || p.asin).filter(Boolean));
+          const existingIds = new Set(
+            crossResults.map((p) => p.id || p.asin).filter(Boolean),
+          );
           const brandFilter = intent.brand || null;
 
           // Redis category pool — brand-prioritised sort
-          const catPool = await getTop50Products(primaryCat).catch(() => null) || [];
+          const catPool =
+            (await getTop50Products(primaryCat).catch(() => null)) || [];
           const redisFill = catPool
             .filter((p) => !existingIds.has(p.id))
             .sort((a, b) => {
               if (brandFilter) {
-                const aB = (a.brand || '').toLowerCase().includes(brandFilter);
-                const bB = (b.brand || '').toLowerCase().includes(brandFilter);
+                const aB = (a.brand || "").toLowerCase().includes(brandFilter);
+                const bB = (b.brand || "").toLowerCase().includes(brandFilter);
                 if (aB !== bB) return bB ? 1 : -1;
               }
               return (b.aiScore || 0) - (a.aiScore || 0);
@@ -1737,65 +2003,94 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
           // Postgres fill if still sparse
           if (suggestions.length < 3) {
             const catIntent = {
-              brand: brandFilter, model: null, category: primaryCat,
-              cleanQuery: primaryCat, capacity: null, features: [],
+              brand: brandFilter,
+              model: null,
+              category: primaryCat,
+              cleanQuery: primaryCat,
+              capacity: null,
+              features: [],
             };
-            const dbFill = await weightedSearch(catIntent, MAX_RESPONSE_RESULTS - 1).catch(() => ({ products: [] }));
-            const existingIds2 = new Set([...crossResults, ...suggestions].map((p) => p.id || p.asin).filter(Boolean));
+            const dbFill = await weightedSearch(
+              catIntent,
+              MAX_RESPONSE_RESULTS - 1,
+            ).catch(() => ({ products: [] }));
+            const existingIds2 = new Set(
+              [...crossResults, ...suggestions]
+                .map((p) => p.id || p.asin)
+                .filter(Boolean),
+            );
             const dbFormatted = dbFill.products
-              .filter((p) => !existingIds2.has(p.id) && !existingIds2.has(p.platformId))
+              .filter(
+                (p) =>
+                  !existingIds2.has(p.id) && !existingIds2.has(p.platformId),
+              )
               .map(postgresProductToTop50Shape)
-              .map((p, i) => formatTop50AsResult(p, suggestions.length + i + 2));
+              .map((p, i) =>
+                formatTop50AsResult(p, suggestions.length + i + 2),
+              );
             suggestions = [...suggestions, ...dbFormatted];
           }
         }
 
         const allResults = [primaryItem, ...suggestions];
         cacheResults(query, primaryCat, allResults).catch(() => {});
-        saveToMongoCache(query, normalizedQuery, primaryCat, allResults.map((r) => r.asin).filter(Boolean)).catch(() => {});
-        req._searchLog.outcome     = 'redis_top50_product';
+        saveToMongoCache(
+          query,
+          normalizedQuery,
+          primaryCat,
+          allResults.map((r) => r.asin).filter(Boolean),
+        ).catch(() => {});
+        req._searchLog.outcome = "redis_top50_product";
         req._searchLog.resultCount = allResults.length;
         return res.json({
-          success:        true,
-          query:          rawQuery,
-          normalized:     normalizedQuery,
-          category:       primaryCat || null,
-          intent:         'PRODUCT_SPECIFIC',
+          success: true,
+          query: rawQuery,
+          normalized: normalizedQuery,
+          category: primaryCat || null,
+          intent: "PRODUCT_SPECIFIC",
           primaryProduct: primaryItem,
-          totalResults:   allResults.length,
-          cached:         false,
-          source:         'redis_top50',
-          lastUpdated:    new Date().toISOString(),
-          elapsed_ms:     Date.now() - requestStart,
-          results:        allResults,
-          suggestions:    suggestions.slice(0, MAX_RESPONSE_RESULTS - 1),
+          totalResults: allResults.length,
+          cached: false,
+          source: "redis_top50",
+          lastUpdated: new Date().toISOString(),
+          elapsed_ms: Date.now() - requestStart,
+          results: allResults,
+          suggestions: suggestions.slice(0, MAX_RESPONSE_RESULTS - 1),
         });
       }
     } catch (crossErr) {
-      logger.warn(`🔍 ProductSpecific: cross-category scan failed — ${crossErr.message}`);
+      logger.warn(
+        `🔍 ProductSpecific: cross-category scan failed — ${crossErr.message}`,
+      );
     }
     // cross-category missed — PATH A.5 (Postgres) will still run below
   }
 
   // ── PATH A: Name match in top50 (product was in a prior category search) ──
-  console.log(`[PATH A] Checking top50 name-match in pool (${top50Pool?.length||0} products)...`);
+  console.log(
+    `[PATH A] Checking top50 name-match in pool (${top50Pool?.length || 0} products)...`,
+  );
   if (top50Pool && top50Pool.length > 0) {
     const matched = findBestNameMatch(top50Pool, query, intent.brand);
-    console.log(`[PATH A] findBestNameMatch → ${matched ? `FOUND "${matched.name?.slice(0,50)}"` : 'no match (score too low)'}`);
+    console.log(
+      `[PATH A] findBestNameMatch → ${matched ? `FOUND "${matched.name?.slice(0, 50)}"` : "no match (score too low)"}`,
+    );
     if (matched) {
-      logger.info(`🔍 ProductSpecific: top50 name match — "${matched.name}" for "${query}" (0 API calls)`);
+      logger.info(
+        `🔍 ProductSpecific: top50 name match — "${matched.name}" for "${query}" (0 API calls)`,
+      );
 
       const primaryProduct = formatTop50AsResult(matched, 1);
-      const matchedId      = matched.id || matched.asin;
-      const brandFilter    = intent.brand || null;
+      const matchedId = matched.id || matched.asin;
+      const brandFilter = intent.brand || null;
 
       // Start with pool items (excluding primary), brand-first sort
       let suggestions = top50Pool
         .filter((p) => (p.id || p.asin) !== matchedId)
         .sort((a, b) => {
           if (brandFilter) {
-            const aB = (a.brand || '').toLowerCase().includes(brandFilter);
-            const bB = (b.brand || '').toLowerCase().includes(brandFilter);
+            const aB = (a.brand || "").toLowerCase().includes(brandFilter);
+            const bB = (b.brand || "").toLowerCase().includes(brandFilter);
             if (aB !== bB) return bB ? 1 : -1;
           }
           return (b.aiScore || 0) - (a.aiScore || 0);
@@ -1805,14 +2100,18 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
 
       // If the pool was a filtered subtype pool, also pull from the full category pool
       if (suggestions.length < 5 && cat) {
-        const fullPool = await getTop50Products(cat).catch(() => null) || [];
-        const existingIds = new Set([matchedId, ...suggestions.map((p) => p.id || p.asin)].filter(Boolean));
+        const fullPool = (await getTop50Products(cat).catch(() => null)) || [];
+        const existingIds = new Set(
+          [matchedId, ...suggestions.map((p) => p.id || p.asin)].filter(
+            Boolean,
+          ),
+        );
         const extraFill = fullPool
           .filter((p) => !existingIds.has(p.id) && !existingIds.has(p.asin))
           .sort((a, b) => {
             if (brandFilter) {
-              const aB = (a.brand || '').toLowerCase().includes(brandFilter);
-              const bB = (b.brand || '').toLowerCase().includes(brandFilter);
+              const aB = (a.brand || "").toLowerCase().includes(brandFilter);
+              const bB = (b.brand || "").toLowerCase().includes(brandFilter);
               if (aB !== bB) return bB ? 1 : -1;
             }
             return (b.aiScore || 0) - (a.aiScore || 0);
@@ -1825,24 +2124,44 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
       // Postgres fill when Redis pool is sparse — ensures consistent recommendations
       if (suggestions.length < 3 && cat) {
         const catIntent = {
-          brand: brandFilter, model: null, category: cat,
-          cleanQuery: cat, capacity: null, features: [],
+          brand: brandFilter,
+          model: null,
+          category: cat,
+          cleanQuery: cat,
+          capacity: null,
+          features: [],
         };
-        const dbFill = await weightedSearch(catIntent, MAX_RESPONSE_RESULTS - 1).catch(() => ({ products: [] }));
-        const existingIds2 = new Set([matchedId, ...suggestions.map((p) => p.id || p.asin)].filter(Boolean));
+        const dbFill = await weightedSearch(
+          catIntent,
+          MAX_RESPONSE_RESULTS - 1,
+        ).catch(() => ({ products: [] }));
+        const existingIds2 = new Set(
+          [matchedId, ...suggestions.map((p) => p.id || p.asin)].filter(
+            Boolean,
+          ),
+        );
         const dbFormatted = dbFill.products
-          .filter((p) => !existingIds2.has(p.id) && !existingIds2.has(p.platformId))
+          .filter(
+            (p) => !existingIds2.has(p.id) && !existingIds2.has(p.platformId),
+          )
           .map(postgresProductToTop50Shape)
           .map((p, i) => formatTop50AsResult(p, suggestions.length + i + 2));
         suggestions = [...suggestions, ...dbFormatted];
         if (dbFormatted.length > 0) {
-          logger.info(`🔍 ProductSpecific PATH A: Postgres filled ${dbFormatted.length} suggestions for "${query}"`);
+          logger.info(
+            `🔍 ProductSpecific PATH A: Postgres filled ${dbFormatted.length} suggestions for "${query}"`,
+          );
         }
       }
 
       const allResults = [primaryProduct, ...suggestions];
       cacheResults(query, category, allResults).catch(() => {});
-      saveToMongoCache(query, normalizedQuery, category, allResults.map((r) => r.asin).filter(Boolean)).catch(() => {});
+      saveToMongoCache(
+        query,
+        normalizedQuery,
+        category,
+        allResults.map((r) => r.asin).filter(Boolean),
+      ).catch(() => {});
 
       req._searchLog.outcome = "redis_top50_product";
       req._searchLog.resultCount = allResults.length;
@@ -1872,28 +2191,42 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   console.log(`[PATH A.5] Checking Postgres DB (weightedSearch)...`);
   try {
     const dbResult = await weightedSearch(intent, 5);
-    console.log(`[PATH A.5] Postgres → ${dbResult.products.length} products, confidence=${dbResult.confidence} (threshold=${CONFIDENCE.MEDIUM})`);
-    if (dbResult.products.length > 0) console.log(`[PATH A.5] Top result: "${dbResult.products[0].name?.slice(0,50)}"`);
-    if (dbResult.confidence >= CONFIDENCE.MEDIUM && dbResult.products.length > 0) {
-      console.log(`[PATH A.5] ✅ POSTGRES HIT → serving from DB, no Amazon call`);
+    console.log(
+      `[PATH A.5] Postgres → ${dbResult.products.length} products, confidence=${dbResult.confidence} (threshold=${CONFIDENCE.MEDIUM})`,
+    );
+    if (dbResult.products.length > 0)
+      console.log(
+        `[PATH A.5] Top result: "${dbResult.products[0].name?.slice(0, 50)}"`,
+      );
+    if (
+      dbResult.confidence >= CONFIDENCE.MEDIUM &&
+      dbResult.products.length > 0
+    ) {
+      console.log(
+        `[PATH A.5] ✅ POSTGRES HIT → serving from DB, no Amazon call`,
+      );
       logger.info(
         `🔍 ProductSpecific: Postgres DB hit — "${dbResult.products[0].name?.slice(0, 50)}" ` +
-        `conf=${dbResult.confidence} (0 API calls)`,
+          `conf=${dbResult.confidence} (0 API calls)`,
       );
 
-      const dbProducts    = dbResult.products.map(postgresProductToTop50Shape);
-      const primaryFmt    = formatTop50AsResult(dbProducts[0], 1);
-      const brandFilter   = intent.brand || null;
-      let suggestions     = dbProducts.slice(1).map((p, i) => formatTop50AsResult(p, i + 2));
+      const dbProducts = dbResult.products.map(postgresProductToTop50Shape);
+      const primaryFmt = formatTop50AsResult(dbProducts[0], 1);
+      const brandFilter = intent.brand || null;
+      let suggestions = dbProducts
+        .slice(1)
+        .map((p, i) => formatTop50AsResult(p, i + 2));
 
       // Fill remaining slots from the Redis pool (brand-first sort)
-      const dbIds = new Set(dbProducts.map((p) => p.id || p.asin).filter(Boolean));
+      const dbIds = new Set(
+        dbProducts.map((p) => p.id || p.asin).filter(Boolean),
+      );
       const poolFill = (top50Pool || [])
         .filter((p) => !dbIds.has(p.id) && !dbIds.has(p.asin))
         .sort((a, b) => {
           if (brandFilter) {
-            const aB = (a.brand || '').toLowerCase().includes(brandFilter);
-            const bB = (b.brand || '').toLowerCase().includes(brandFilter);
+            const aB = (a.brand || "").toLowerCase().includes(brandFilter);
+            const bB = (b.brand || "").toLowerCase().includes(brandFilter);
             if (aB !== bB) return bB ? 1 : -1;
           }
           return (b.aiScore || 0) - (a.aiScore || 0);
@@ -1905,47 +2238,72 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
       // Postgres category fill — ensures recommendations even when Redis pool is sparse
       if (suggestions.length < 3 && cat) {
         const catIntent = {
-          brand: brandFilter, model: null, category: cat,
-          cleanQuery: cat, capacity: null, features: [],
+          brand: brandFilter,
+          model: null,
+          category: cat,
+          cleanQuery: cat,
+          capacity: null,
+          features: [],
         };
-        const catFill = await weightedSearch(catIntent, MAX_RESPONSE_RESULTS - 1).catch(() => ({ products: [] }));
-        const existingIds = new Set([...dbProducts, ...suggestions].map((p) => p.id || p.asin).filter(Boolean));
+        const catFill = await weightedSearch(
+          catIntent,
+          MAX_RESPONSE_RESULTS - 1,
+        ).catch(() => ({ products: [] }));
+        const existingIds = new Set(
+          [...dbProducts, ...suggestions]
+            .map((p) => p.id || p.asin)
+            .filter(Boolean),
+        );
         const catFormatted = catFill.products
-          .filter((p) => !existingIds.has(p.id) && !existingIds.has(p.platformId))
+          .filter(
+            (p) => !existingIds.has(p.id) && !existingIds.has(p.platformId),
+          )
           .map(postgresProductToTop50Shape)
           .map((p, i) => formatTop50AsResult(p, suggestions.length + i + 2));
         suggestions = [...suggestions, ...catFormatted];
         if (catFormatted.length > 0) {
-          logger.info(`🔍 ProductSpecific PATH A.5: Postgres category filled ${catFormatted.length} suggestions`);
+          logger.info(
+            `🔍 ProductSpecific PATH A.5: Postgres category filled ${catFormatted.length} suggestions`,
+          );
         }
       }
 
-      const allResults = [primaryFmt, ...suggestions].slice(0, MAX_RESPONSE_RESULTS);
+      const allResults = [primaryFmt, ...suggestions].slice(
+        0,
+        MAX_RESPONSE_RESULTS,
+      );
 
       cacheResults(query, cat, allResults).catch(() => {});
-      saveToMongoCache(query, normalizedQuery, cat, allResults.map((r) => r.asin).filter(Boolean)).catch(() => {});
+      saveToMongoCache(
+        query,
+        normalizedQuery,
+        cat,
+        allResults.map((r) => r.asin).filter(Boolean),
+      ).catch(() => {});
 
-      req._searchLog.outcome    = 'db_product_match';
+      req._searchLog.outcome = "db_product_match";
       req._searchLog.resultCount = allResults.length;
 
       return res.json({
-        success:        true,
-        query:          rawQuery,
-        normalized:     normalizedQuery,
-        category:       cat || null,
-        intent:         'PRODUCT_SPECIFIC',
+        success: true,
+        query: rawQuery,
+        normalized: normalizedQuery,
+        category: cat || null,
+        intent: "PRODUCT_SPECIFIC",
         primaryProduct: primaryFmt,
-        totalResults:   allResults.length,
-        cached:         false,
-        source:         'postgres_db',
-        lastUpdated:    new Date().toISOString(),
-        elapsed_ms:     Date.now() - requestStart,
-        results:        allResults,
-        suggestions:    suggestions.slice(0, MAX_RESPONSE_RESULTS - 1),
+        totalResults: allResults.length,
+        cached: false,
+        source: "postgres_db",
+        lastUpdated: new Date().toISOString(),
+        elapsed_ms: Date.now() - requestStart,
+        results: allResults,
+        suggestions: suggestions.slice(0, MAX_RESPONSE_RESULTS - 1),
       });
     }
   } catch (dbErr) {
-    logger.warn(`🔍 ProductSpecific: Postgres lookup failed — ${dbErr.message}`);
+    logger.warn(
+      `🔍 ProductSpecific: Postgres lookup failed — ${dbErr.message}`,
+    );
   }
 
   // ── PATH B: Try DB/Redis fill pool first (0 Amazon calls) ─────────
@@ -1954,19 +2312,24 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   //   2. If ≥3 related products found → return lazy instantly, client fetches
   //      primary from /api/search/live in background (saves 1 Amazon call)
   //   3. If <3 related products → call Amazon now for primary product
-  console.log(`[PATH B] Building fill pool from Redis+Postgres (0 Amazon calls)...`);
+  console.log(
+    `[PATH B] Building fill pool from Redis+Postgres (0 Amazon calls)...`,
+  );
 
   const inferredCat = cat || null;
 
   // ── Build fill pool (Redis → Postgres, 0 Amazon calls) ──────────────────
-  let fillPool = (top50Pool || []);
+  let fillPool = top50Pool || [];
   console.log(`[PATH B] top50Pool has ${fillPool.length} products`);
 
   if (fillPool.length < MAX_RESPONSE_RESULTS - 1 && inferredCat) {
-    const catPool = (await getTop50Products(inferredCat).catch(() => null)) || [];
+    const catPool =
+      (await getTop50Products(inferredCat).catch(() => null)) || [];
     const existingIds = new Set(fillPool.map((p) => p.id));
     fillPool = [...fillPool, ...catPool.filter((p) => !existingIds.has(p.id))];
-    console.log(`[PATH B] After category pool merge → ${fillPool.length} products`);
+    console.log(
+      `[PATH B] After category pool merge → ${fillPool.length} products`,
+    );
   }
 
   if (fillPool.length < MAX_RESPONSE_RESULTS - 1) {
@@ -1975,12 +2338,12 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
       // Using query words like "studio" or "pro" causes OR matches against
       // unrelated products (e.g. washing machines with "Studio Pro" in name).
       const fillIntent = {
-        brand:      intent.brand  || null,
-        model:      null,                    // want alternatives, not same model
-        category:   inferredCat  || null,
-        cleanQuery: inferredCat  || intent.brand || '',  // category name only
-        capacity:   null,
-        features:   [],
+        brand: intent.brand || null,
+        model: null, // want alternatives, not same model
+        category: inferredCat || null,
+        cleanQuery: inferredCat || intent.brand || "", // category name only
+        capacity: null,
+        features: [],
       };
       const dbFill = await weightedSearch(fillIntent, MAX_RESPONSE_RESULTS - 1);
       if (dbFill.products.length > 0) {
@@ -2000,7 +2363,9 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
           })
           .map(postgresProductToTop50Shape);
         fillPool = [...fillPool, ...dbShapes];
-        console.log(`[PATH B] After Postgres fill → ${fillPool.length} products`);
+        console.log(
+          `[PATH B] After Postgres fill → ${fillPool.length} products`,
+        );
       }
     } catch (dbErr) {
       logger.warn(`🔍 ProductSpecific: DB fill failed — ${dbErr.message}`);
@@ -2015,43 +2380,52 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   // ── Brand guard: if user searched for a specific brand and no brand product
   // is in the fill pool, we MUST call Amazon to show at least one matching product.
   // Without this, e.g. "Sony WH-1000XM5" shows only Boat/JBL suggestions — confusing.
-  const brandFilter = (intent.brand || '').toLowerCase();
-  const hasBrandInFill = !brandFilter || fillResults.some(
-    (p) => (p.brand || '').toLowerCase().includes(brandFilter),
-  );
+  const brandFilter = (intent.brand || "").toLowerCase();
+  const hasBrandInFill =
+    !brandFilter ||
+    fillResults.some((p) =>
+      (p.brand || "").toLowerCase().includes(brandFilter),
+    );
 
-  console.log(`[PATH B] Fill pool final: ${fillResults.length} products → brand="${brandFilter||'-'}" hasBrandInFill=${hasBrandInFill}`);
-  console.log(`[PATH B] Decision: ${fillResults.length >= 3 && hasBrandInFill ? '✅ lazy-load' : '❌ calling Amazon'}`);
-  if (fillResults.length > 0) console.log(`[PATH B] Fill products: ${fillResults.map(p=>p.name?.slice(0,30)).join(' | ')}`);
+  console.log(
+    `[PATH B] Fill pool final: ${fillResults.length} products → brand="${brandFilter || "-"}" hasBrandInFill=${hasBrandInFill}`,
+  );
+  console.log(
+    `[PATH B] Decision: ${fillResults.length >= 3 && hasBrandInFill ? "✅ lazy-load" : "❌ calling Amazon"}`,
+  );
+  if (fillResults.length > 0)
+    console.log(
+      `[PATH B] Fill products: ${fillResults.map((p) => p.name?.slice(0, 30)).join(" | ")}`,
+    );
 
   // ── Lazy-load path: ≥3 DB results AND at least 1 brand match → respond instantly ──
   if (fillResults.length >= 3 && hasBrandInFill) {
     logger.info(
       `🔍 ProductSpecific: lazy-load — returning ${fillResults.length} related products instantly, ` +
-      `primary will be fetched from /api/search/live`,
+        `primary will be fetched from /api/search/live`,
     );
 
-    const liveUrl = `/api/search/live?q=${encodeURIComponent(query)}${inferredCat ? `&cat=${encodeURIComponent(inferredCat)}` : ''}`;
+    const liveUrl = `/api/search/live?q=${encodeURIComponent(query)}${inferredCat ? `&cat=${encodeURIComponent(inferredCat)}` : ""}`;
 
-    req._searchLog.outcome     = 'lazy_pending';
+    req._searchLog.outcome = "lazy_pending";
     req._searchLog.resultCount = fillResults.length;
 
     return res.json({
-      success:        true,
-      query:          rawQuery,
-      normalized:     normalizedQuery,
-      category:       inferredCat || null,
-      intent:         'PRODUCT_SPECIFIC',
+      success: true,
+      query: rawQuery,
+      normalized: normalizedQuery,
+      category: inferredCat || null,
+      intent: "PRODUCT_SPECIFIC",
       primaryProduct: null,
       primaryPending: true,
-      liveFetchUrl:   liveUrl,
-      totalResults:   fillResults.length,
-      cached:         false,
-      source:         'lazy_db',
-      lastUpdated:    new Date().toISOString(),
-      elapsed_ms:     Date.now() - requestStart,
-      results:        fillResults,
-      suggestions:    fillResults,
+      liveFetchUrl: liveUrl,
+      totalResults: fillResults.length,
+      cached: false,
+      source: "lazy_db",
+      lastUpdated: new Date().toISOString(),
+      elapsed_ms: Date.now() - requestStart,
+      results: fillResults,
+      suggestions: fillResults,
     });
   }
 
@@ -2061,29 +2435,46 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   {
     const gotLock = await acquireSearchLock(query, category).catch(() => true);
     if (!gotLock) {
-      logger.info(`🔍 ProductSpecific: lock active for "${query}" — waiting for concurrent fetch…`);
-      const coalesced = await waitForSearchCache(query, category).catch(() => null);
+      logger.info(
+        `🔍 ProductSpecific: lock active for "${query}" — waiting for concurrent fetch…`,
+      );
+      const coalesced = await waitForSearchCache(query, category).catch(
+        () => null,
+      );
       if (coalesced && coalesced.length > 0) {
-        req._searchLog.outcome = 'coalesced';
+        req._searchLog.outcome = "coalesced";
         return res.json({
-          success: true, query: rawQuery, normalized: normalizedQuery,
-          category: inferredCat || null, intent: 'PRODUCT_SPECIFIC',
+          success: true,
+          query: rawQuery,
+          normalized: normalizedQuery,
+          category: inferredCat || null,
+          intent: "PRODUCT_SPECIFIC",
           primaryProduct: coalesced[0] || null,
-          totalResults: coalesced.length, cached: true, source: 'coalesced',
-          lastUpdated: new Date().toISOString(), elapsed_ms: Date.now() - requestStart,
-          results: coalesced, suggestions: coalesced.slice(1),
+          totalResults: coalesced.length,
+          cached: true,
+          source: "coalesced",
+          lastUpdated: new Date().toISOString(),
+          elapsed_ms: Date.now() - requestStart,
+          results: coalesced,
+          suggestions: coalesced.slice(1),
         });
       }
-      logger.warn(`🔍 ProductSpecific: coalesce wait expired — proceeding with independent Amazon fetch`);
+      logger.warn(
+        `🔍 ProductSpecific: coalesce wait expired — proceeding with independent Amazon fetch`,
+      );
     }
   }
 
-  logger.info(`🔍 ProductSpecific: Amazon search for "${query}" (model="${intent.model || "-"}")`);
+  logger.info(
+    `🔍 ProductSpecific: Amazon search for "${query}" (model="${intent.model || "-"}")`,
+  );
 
   let amazonProducts = [];
   try {
     amazonProducts = await amazonService.searchProducts(query, category);
-    logger.info(`🔍 ProductSpecific: Amazon returned ${amazonProducts.length} products`);
+    logger.info(
+      `🔍 ProductSpecific: Amazon returned ${amazonProducts.length} products`,
+    );
   } catch (err) {
     logger.error(`🔍 ProductSpecific: Amazon failed — ${err.message}`);
   }
@@ -2091,7 +2482,9 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   // ── PATH C: Amazon returned 0 but we have top50 → return category products ──
   if (amazonProducts.length === 0) {
     if (top50Pool && top50Pool.length > 0) {
-      logger.warn(`🔍 ProductSpecific: Amazon empty — falling back to top50 for category "${cat}"`);
+      logger.warn(
+        `🔍 ProductSpecific: Amazon empty — falling back to top50 for category "${cat}"`,
+      );
       const fallback = top50Pool
         .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
         .slice(0, MAX_RESPONSE_RESULTS)
@@ -2120,11 +2513,19 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
     return null; // no top50 either — fall through to mock
   }
 
-  console.log(`[PATH B] ⚠️  CALLING AMAZON for "${rawQuery}" (${amazonProducts.length} results)`);
-  if (amazonProducts.length > 0) console.log(`[PATH B] Amazon top results: ${amazonProducts.slice(0,3).map(p=>p.name?.slice(0,40)).join(' | ')}`);
+  console.log(
+    `[PATH B] ⚠️  CALLING AMAZON for "${rawQuery}" (${amazonProducts.length} results)`,
+  );
+  if (amazonProducts.length > 0)
+    console.log(
+      `[PATH B] Amazon top results: ${amazonProducts
+        .slice(0, 3)
+        .map((p) => p.name?.slice(0, 40))
+        .join(" | ")}`,
+    );
 
   const topProduct = amazonProducts[0];
-  const topAsin    = topProduct.asin || topProduct.platformId;
+  const topAsin = topProduct.asin || topProduct.platformId;
   if (!topAsin) return null;
 
   // Check product cache before doing any work
@@ -2132,16 +2533,29 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   if (!primaryResult) {
     let affiliateData = { flipkart: null, myntra: null };
     try {
-      affiliateData = await getAffiliateLinks(topAsin, topProduct.name, topProduct.brand, inferredCat || topProduct.category);
-    } catch { /* non-fatal */ }
+      affiliateData = await getAffiliateLinks(
+        topAsin,
+        topProduct.name,
+        topProduct.brand,
+        inferredCat || topProduct.category,
+      );
+    } catch {
+      /* non-fatal */
+    }
 
     primaryResult = formatProductResult(
       {
         ...topProduct,
         flipkartPrice: affiliateData?.flipkart?.price || null,
-        flipkartUrl:   affiliateData?.flipkart?.affiliateUrl || affiliateData?.flipkart?.url || null,
-        myntraPrice:   affiliateData?.myntra?.price || null,
-        myntraUrl:     affiliateData?.myntra?.affiliateUrl || affiliateData?.myntra?.url || null,
+        flipkartUrl:
+          affiliateData?.flipkart?.affiliateUrl ||
+          affiliateData?.flipkart?.url ||
+          null,
+        myntraPrice: affiliateData?.myntra?.price || null,
+        myntraUrl:
+          affiliateData?.myntra?.affiliateUrl ||
+          affiliateData?.myntra?.url ||
+          null,
       },
       null,
       1,
@@ -2149,7 +2563,12 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
     if (!primaryResult) return null;
 
     setProductCache(topAsin, primaryResult).catch(() => {});
-    queueAnalysis(topAsin, topProduct.name, inferredCat, topProduct.brand).catch(() => {});
+    queueAnalysis(
+      topAsin,
+      topProduct.name,
+      inferredCat,
+      topProduct.brand,
+    ).catch(() => {});
   }
   primaryResult = { ...primaryResult, rank: 1 };
 
@@ -2167,22 +2586,40 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   // e.g. "icall wireless" fetches 5 products → all 5 available for "icall Wireless Bluetooth Over-Ear" search
   const resolvedCat = inferredCat || topProduct.category || null;
   if (resolvedCat) {
-    const basePool = top50Pool || (await getTop50Products(resolvedCat).catch(() => null) || []);
+    const basePool =
+      top50Pool ||
+      (await getTop50Products(resolvedCat).catch(() => null)) ||
+      [];
     // Build incoming list: primary + all other Amazon results that have an ASIN
-    const allAmazonFormatted = [primaryResult, ...amazonProducts.slice(1)
-      .map(p => {
-        try { return formatProductResult(p, null, 1); } catch { return null; }
-      })
-      .filter(Boolean),
+    const allAmazonFormatted = [
+      primaryResult,
+      ...amazonProducts
+        .slice(1)
+        .map((p) => {
+          try {
+            return formatProductResult(p, null, 1);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean),
     ];
-    const incoming = allAmazonFormatted.map(p => enrichedToTop50Shape(p, resolvedCat));
-    const merged   = mergeIntoTop50(basePool, incoming);
+    const incoming = allAmazonFormatted.map((p) =>
+      enrichedToTop50Shape(p, resolvedCat),
+    );
+    const merged = mergeIntoTop50(basePool, incoming);
     if (merged.length !== basePool.length) {
       setTop50Products(resolvedCat, merged).catch(() => {});
-      console.log(`[PATH B] ✅ top50:${resolvedCat} grew ${basePool.length} → ${merged.length} products (merged ${incoming.length} Amazon results)`);
-      logger.info(`🔍 ProductSpecific: top50:${resolvedCat} grew to ${merged.length} products`);
+      console.log(
+        `[PATH B] ✅ top50:${resolvedCat} grew ${basePool.length} → ${merged.length} products (merged ${incoming.length} Amazon results)`,
+      );
+      logger.info(
+        `🔍 ProductSpecific: top50:${resolvedCat} grew to ${merged.length} products`,
+      );
     } else {
-      console.log(`[PATH B] top50:${resolvedCat} unchanged at ${basePool.length} (all products already present)`);
+      console.log(
+        `[PATH B] top50:${resolvedCat} unchanged at ${basePool.length} (all products already present)`,
+      );
     }
   }
 
@@ -2190,25 +2627,30 @@ async function serveProductSpecific(intent, query, category, req, res, requestSt
   cacheResults(query, cat, allResults)
     .then(() => releaseSearchLock(query, category).catch(() => {}))
     .catch(() => releaseSearchLock(query, category).catch(() => {}));
-  saveToMongoCache(query, normalizedQuery, cat, allResults.map((p) => p.asin).filter(Boolean)).catch(() => {});
+  saveToMongoCache(
+    query,
+    normalizedQuery,
+    cat,
+    allResults.map((p) => p.asin).filter(Boolean),
+  ).catch(() => {});
 
-  req._searchLog.outcome     = 'amazon_live_product';
+  req._searchLog.outcome = "amazon_live_product";
   req._searchLog.resultCount = allResults.length;
 
   return res.json({
-    success:        true,
-    query:          rawQuery,
-    normalized:     normalizedQuery,
-    category:       resolvedCat || null,
-    intent:         'PRODUCT_SPECIFIC',
+    success: true,
+    query: rawQuery,
+    normalized: normalizedQuery,
+    category: resolvedCat || null,
+    intent: "PRODUCT_SPECIFIC",
     primaryProduct: primaryResult,
-    totalResults:   allResults.length,
-    cached:         false,
-    source:         'amazon_live',
-    lastUpdated:    new Date().toISOString(),
-    elapsed_ms:     Date.now() - requestStart,
-    results:        allResults,
-    suggestions:    deduped,
+    totalResults: allResults.length,
+    cached: false,
+    source: "amazon_live",
+    lastUpdated: new Date().toISOString(),
+    elapsed_ms: Date.now() - requestStart,
+    results: allResults,
+    suggestions: deduped,
   });
 }
 
@@ -2247,42 +2689,71 @@ async function handleSearch(req, res) {
   // ── TRENDING: track every valid search (fire-and-forget) ─────
   trackTrending(query);
 
+  // ── earlyCat: category for cache filtering ─────────────────────
+  // When no explicit category param is passed (product-name queries like
+  // "HP 15 13th Gen i3-1315U"), detect category from the query itself so
+  // filterByCategory can still reject wrong-category cached results.
+  const earlyCat = (() => {
+    if (category) return category; // explicit param always wins
+    try {
+      const ei = classifyIntent(query, null);
+      return ei.category || null;
+    } catch {
+      return null;
+    }
+  })();
+
   // ── STEP 2: Redis Cache Check ─────────────────────────────────
   // getCachedResults() in redis.js uses buildSearchKey() internally
   // and handles all the HIT/MISS logging + hit count update.
   console.log(`\n━━━ [SEARCH] "${rawQuery}" ━━━`);
-  console.log(`[CACHE] Checking Redis cache for "${query}" category="${category||'-'}"...`);
+  console.log(
+    `[CACHE] Checking Redis cache for "${query}" category="${category || "-"}"...`,
+  );
   try {
     const redisResults = await checkRedisCache(query, category);
-    console.log(`[CACHE] Redis → ${redisResults?.length||0} results`);
+    console.log(`[CACHE] Redis → ${redisResults?.length || 0} results`);
 
     if (redisResults && redisResults.length > 0) {
-      // Apply strict category filter — prevents returning wrong-category cached data
-      const redisFiltered = filterByCategory(redisResults, category);
-      if (redisFiltered.length === 0 && category) {
-        console.log(`[CACHE] Redis has results but none match category="${category}" → cache miss`);
+      // Apply strict category filter — use earlyCat (detected from intent) so
+      // product-name queries without an explicit category param still get filtered
+      const redisFiltered = filterByCategory(redisResults, earlyCat);
+      if (redisFiltered.length === 0 && earlyCat) {
+        console.log(
+          `[CACHE] Redis has results but none match category="${category}" → cache miss`,
+        );
         logger.warn(
           `🔍 Category filter: Redis has ${redisResults.length} results but NONE match category="${category}" — cache miss, refetching`,
         );
         // Fall through to MongoDB / live fetch
       } else {
-        const catMatched = redisFiltered.length > 0 ? redisFiltered : redisResults;
+        const catMatched =
+          redisFiltered.length > 0 ? redisFiltered : redisResults;
         // Apply query relevance — prevents e.g. all appliances when searching "washing machines"
         // Then re-rank so most-keyword-matched product is always first (fixes stale cache order)
-        const finalRedis = rankByQueryScore(filterByQueryRelevance(catMatched, query), query);
-        console.log(`[CACHE] ✅ REDIS HIT → returning ${finalRedis.length} results. Top: "${finalRedis[0]?.name?.slice(0,50)}"`);
+        const finalRedis = rankByQueryScore(
+          filterByQueryRelevance(catMatched, query),
+          query,
+        );
+        console.log(
+          `[CACHE] ✅ REDIS HIT → returning ${finalRedis.length} results. Top: "${finalRedis[0]?.name?.slice(0, 50)}"`,
+        );
         req._searchLog.outcome = "redis_hit";
+        const redisIntent = classifyIntent(query, category);
         return res.json({
           success: true,
           query: rawQuery,
           normalized: normalizedQuery,
           category: category || null,
+          intent: redisIntent.intent || "GENERIC",
           totalResults: Math.min(finalRedis.length, MAX_RESPONSE_RESULTS),
           cached: true,
           cacheSource: "redis",
+          fromCache: true,
           lastUpdated: new Date().toISOString(),
           elapsed_ms: Date.now() - requestStart,
           results: addRanks(finalRedis.slice(0, MAX_RESPONSE_RESULTS)),
+          suggestions: addRanks(finalRedis.slice(0, MAX_RESPONSE_RESULTS)),
         });
       }
     }
@@ -2298,17 +2769,21 @@ async function handleSearch(req, res) {
     const mongoResults = await checkMongoCache(normalizedQuery, category);
 
     if (mongoResults && mongoResults.length > 0) {
-      // Apply strict category filter — prevents returning wrong-category cached data
-      const mongoFiltered = filterByCategory(mongoResults, category);
-      if (mongoFiltered.length === 0 && category) {
+      // Apply strict category filter — use earlyCat same as Redis path
+      const mongoFiltered = filterByCategory(mongoResults, earlyCat);
+      if (mongoFiltered.length === 0 && earlyCat) {
         logger.warn(
           `🔍 Category filter: MongoDB has ${mongoResults.length} results but NONE match category="${category}" — cache miss, refetching`,
         );
         // Fall through to live fetch
       } else {
-        const catMatchedMongo = mongoFiltered.length > 0 ? mongoFiltered : mongoResults;
+        const catMatchedMongo =
+          mongoFiltered.length > 0 ? mongoFiltered : mongoResults;
         // Apply query relevance, then re-rank by keyword match score (fixes stale cache order)
-        const finalMongo = rankByQueryScore(filterByQueryRelevance(catMatchedMongo, query), query);
+        const finalMongo = rankByQueryScore(
+          filterByQueryRelevance(catMatchedMongo, query),
+          query,
+        );
         req._searchLog.outcome = "mongo_hit";
 
         // Repopulate Redis while we respond (non-blocking)
@@ -2316,17 +2791,21 @@ async function handleSearch(req, res) {
           logger.warn(`🔍 Search: Redis repopulate failed — ${err.message}`),
         );
 
+        const mongoIntent = classifyIntent(query, category);
         return res.json({
           success: true,
           query: rawQuery,
           normalized: normalizedQuery,
           category: category || null,
+          intent: mongoIntent.intent || "GENERIC",
           totalResults: Math.min(finalMongo.length, MAX_RESPONSE_RESULTS),
           cached: true,
           cacheSource: "mongodb",
+          fromCache: true,
           lastUpdated: new Date().toISOString(),
           elapsed_ms: Date.now() - requestStart,
           results: addRanks(finalMongo.slice(0, MAX_RESPONSE_RESULTS)),
+          suggestions: addRanks(finalMongo.slice(0, MAX_RESPONSE_RESULTS)),
         });
       }
     }
@@ -2343,7 +2822,9 @@ async function handleSearch(req, res) {
     const intent = classifyIntent(query, category);
     detectedIntent = intent;
     effectiveCategory = category || intent.category || null;
-    console.log(`[INTENT] ${intent.intent} | brand="${intent.brand||'-'}" | model="${intent.model||'-'}" | cat="${effectiveCategory||'-'}"`);
+    console.log(
+      `[INTENT] ${intent.intent} | brand="${intent.brand || "-"}" | model="${intent.model || "-"}" | cat="${effectiveCategory || "-"}"`,
+    );
     logger.info(
       `🔍 Intent: ${intent.intent} confidence=${intent.confidence} ` +
         `cat=${intent.category || "-"} brand=${intent.brand || "-"} ` +
@@ -2357,22 +2838,29 @@ async function handleSearch(req, res) {
     ) {
       // ── Name-match check: long queries may be a specific product name typed out
       // e.g. "Bosch 7kg Front Load Washing Machine" → match in sub-type pool → 0 API calls
-      const subTypePool = effectiveCategory && intent.subType
-        ? await getSubTypeProducts(effectiveCategory, intent.subType)
-        : null;
-      const rawPool = subTypePool && subTypePool.length > 0
-        ? subTypePool
-        : (effectiveCategory ? await getTop50Products(effectiveCategory) : null);
+      const subTypePool =
+        effectiveCategory && intent.subType
+          ? await getSubTypeProducts(effectiveCategory, intent.subType)
+          : null;
+      const rawPool =
+        subTypePool && subTypePool.length > 0
+          ? subTypePool
+          : effectiveCategory
+            ? await getTop50Products(effectiveCategory)
+            : null;
 
-      const meaningfulWords = query.toLowerCase()
-        .replace(/[^a-z0-9\s]/g, ' ')
+      const meaningfulWords = query
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
         .split(/\s+/)
         .filter((w) => w.length >= 3 && !QUERY_STOP_WORDS.has(w));
 
       if (meaningfulWords.length >= 4 && rawPool && rawPool.length > 0) {
         const nameMatch = findBestNameMatch(rawPool, query, intent.brand);
         if (nameMatch) {
-          logger.info(`🔍 Category→ProductSpecific: name match "${nameMatch.name?.slice(0, 50)}" (0 API calls)`);
+          logger.info(
+            `🔍 Category→ProductSpecific: name match "${nameMatch.name?.slice(0, 50)}" (0 API calls)`,
+          );
           const primaryProduct = formatTop50AsResult(nameMatch, 1);
           const suggestions = rawPool
             .filter((p) => p.id !== nameMatch.id)
@@ -2381,14 +2869,22 @@ async function handleSearch(req, res) {
             .map((p, i) => formatTop50AsResult(p, i + 1));
           const results = [primaryProduct, ...suggestions.slice(0, 4)];
           cacheResults(query, effectiveCategory, results).catch(() => {});
-          req._searchLog.outcome     = "redis_top50_product";
+          req._searchLog.outcome = "redis_top50_product";
           req._searchLog.resultCount = results.length;
           return res.json({
-            success: true, query: rawQuery, normalized: normalizedQuery,
-            category: effectiveCategory || null, intent: "PRODUCT_SPECIFIC",
-            primaryProduct, totalResults: results.length, cached: false,
-            source: "redis_top50", lastUpdated: new Date().toISOString(),
-            elapsed_ms: Date.now() - requestStart, results, suggestions,
+            success: true,
+            query: rawQuery,
+            normalized: normalizedQuery,
+            category: effectiveCategory || null,
+            intent: "PRODUCT_SPECIFIC",
+            primaryProduct,
+            totalResults: results.length,
+            cached: false,
+            source: "redis_top50",
+            lastUpdated: new Date().toISOString(),
+            elapsed_ms: Date.now() - requestStart,
+            results,
+            suggestions,
           });
         }
       }
@@ -2397,29 +2893,45 @@ async function handleSearch(req, res) {
       const top50Results = await serveFromTop50(intent, query);
       if (top50Results && top50Results.length > 0) {
         const filtered = filterByQueryRelevance(top50Results, query);
-        const final    = filtered.length >= 3 ? filtered : top50Results;
+        const final = filtered.length >= 3 ? filtered : top50Results;
         cacheResults(query, effectiveCategory, final).catch(() => {});
-        req._searchLog.outcome     = "redis_top50";
+        req._searchLog.outcome = "redis_top50";
         req._searchLog.resultCount = final.length;
         return res.json({
-          success: true, query: rawQuery, normalized: normalizedQuery,
-          category: effectiveCategory || null, intent: intent.intent,
-          totalResults: final.length, cached: false, source: "redis_top50",
-          lastUpdated: new Date().toISOString(), elapsed_ms: Date.now() - requestStart,
-          results: addRanks(final), suggestions: addRanks(final),
+          success: true,
+          query: rawQuery,
+          normalized: normalizedQuery,
+          category: effectiveCategory || null,
+          intent: intent.intent,
+          totalResults: final.length,
+          cached: false,
+          source: "redis_top50",
+          lastUpdated: new Date().toISOString(),
+          elapsed_ms: Date.now() - requestStart,
+          results: addRanks(final),
+          suggestions: addRanks(final),
         });
       }
 
       // ── Brand not in pool → targeted Amazon fetch + sub-type blend (1 call) ──
       if (intent.intent === INTENT.BRAND_CATEGORY && intent.brand) {
         const brandResponse = await serveBrandBlend(
-          intent, query, effectiveCategory, req, res, requestStart, rawQuery, normalizedQuery,
+          intent,
+          query,
+          effectiveCategory,
+          req,
+          res,
+          requestStart,
+          rawQuery,
+          normalizedQuery,
         );
         if (brandResponse) return brandResponse;
       }
 
       // ── Sub-type pool completely empty → try cross-category ──
-      logger.info(`🔍 Intent: pool miss for "${effectiveCategory}:${intent.subType || "-"}" — trying cross-category`);
+      logger.info(
+        `🔍 Intent: pool miss for "${effectiveCategory}:${intent.subType || "-"}" — trying cross-category`,
+      );
       const crossFallback = await searchAcrossAllCategories(query, intent);
       if (crossFallback && crossFallback.length > 0) {
         cacheResults(query, effectiveCategory, crossFallback).catch(() => {});
@@ -2448,43 +2960,57 @@ async function handleSearch(req, res) {
       // Cost: 0 Amazon calls, 0 GPT calls — pure DB read.
       if (effectiveCategory) {
         try {
-          const dbCatResult = await weightedSearch(intent, MAX_RESPONSE_RESULTS);
+          const dbCatResult = await weightedSearch(
+            intent,
+            MAX_RESPONSE_RESULTS,
+          );
           if (dbCatResult.products.length > 0) {
             logger.info(
               `🔍 Intent: Postgres category fallback — ${dbCatResult.products.length} "${effectiveCategory}" products ` +
-              `(conf=${dbCatResult.confidence})`,
+                `(conf=${dbCatResult.confidence})`,
             );
             const dbProducts = dbCatResult.products
               .map(postgresProductToTop50Shape)
               .map((p, i) => formatTop50AsResult(p, i + 1));
             cacheResults(query, effectiveCategory, dbProducts).catch(() => {});
-            req._searchLog.outcome     = 'postgres_category';
+            req._searchLog.outcome = "postgres_category";
             req._searchLog.resultCount = dbProducts.length;
             return res.json({
-              success:      true,
-              query:        rawQuery,
-              normalized:   normalizedQuery,
-              category:     effectiveCategory,
-              intent:       intent.intent,
+              success: true,
+              query: rawQuery,
+              normalized: normalizedQuery,
+              category: effectiveCategory,
+              intent: intent.intent,
               totalResults: dbProducts.length,
-              cached:       false,
-              source:       'postgres_db',
-              lastUpdated:  new Date().toISOString(),
-              elapsed_ms:   Date.now() - requestStart,
-              results:      dbProducts,
-              suggestions:  dbProducts,
+              cached: false,
+              source: "postgres_db",
+              lastUpdated: new Date().toISOString(),
+              elapsed_ms: Date.now() - requestStart,
+              results: dbProducts,
+              suggestions: dbProducts,
             });
           }
         } catch (dbCatErr) {
-          logger.warn(`🔍 Intent: Postgres category fallback failed — ${dbCatErr.message}`);
+          logger.warn(
+            `🔍 Intent: Postgres category fallback failed — ${dbCatErr.message}`,
+          );
         }
       }
 
-      logger.info(`🔍 Intent: cross-category also empty — falling through to Amazon`);
+      logger.info(
+        `🔍 Intent: cross-category also empty — falling through to Amazon`,
+      );
     } else if (intent.intent === INTENT.PRODUCT_SPECIFIC) {
       // Search Amazon for specific product + queue background analysis
       const productResponse = await serveProductSpecific(
-        intent, query, effectiveCategory, req, res, requestStart, rawQuery, normalizedQuery,
+        intent,
+        query,
+        effectiveCategory,
+        req,
+        res,
+        requestStart,
+        rawQuery,
+        normalizedQuery,
       );
       if (productResponse) return productResponse; // response already sent
       // Amazon failed — fall through to mock/error handling below
@@ -2522,24 +3048,24 @@ async function handleSearch(req, res) {
         // show DB products immediately so user sees Samsung/Sony/etc. right away.
         if (intent.brand) {
           const liveUrl = `/api/search/live?q=${encodeURIComponent(query)}`;
-          req._searchLog.outcome     = 'lazy_brand_db';
+          req._searchLog.outcome = "lazy_brand_db";
           req._searchLog.resultCount = crossResults.length;
           return res.json({
-            success:        true,
-            query:          rawQuery,
-            normalized:     normalizedQuery,
-            category:       effectiveCategory || null,
-            intent:         'PRODUCT_SPECIFIC',   // tells frontend to show lazy layout
+            success: true,
+            query: rawQuery,
+            normalized: normalizedQuery,
+            category: effectiveCategory || null,
+            intent: "PRODUCT_SPECIFIC", // tells frontend to show lazy layout
             primaryProduct: null,
             primaryPending: true,
-            liveFetchUrl:   liveUrl,
-            totalResults:   crossResults.length,
-            cached:         false,
-            source:         'lazy_brand_db',
-            lastUpdated:    new Date().toISOString(),
-            elapsed_ms:     Date.now() - requestStart,
-            results:        crossResults,
-            suggestions:    crossResults,
+            liveFetchUrl: liveUrl,
+            totalResults: crossResults.length,
+            cached: false,
+            source: "lazy_brand_db",
+            lastUpdated: new Date().toISOString(),
+            elapsed_ms: Date.now() - requestStart,
+            results: crossResults,
+            suggestions: crossResults,
           });
         }
 
@@ -2565,9 +3091,14 @@ async function handleSearch(req, res) {
       // Catches generic queries like "noise cancelling headphones", "gaming laptop".
       if (intent.cleanQuery && intent.cleanQuery.length > 2) {
         try {
-          const dbGenResult = await weightedSearch(intent, MAX_RESPONSE_RESULTS);
+          const dbGenResult = await weightedSearch(
+            intent,
+            MAX_RESPONSE_RESULTS,
+          );
           if (dbGenResult.products.length > 0) {
-            logger.info(`🔍 Intent: Postgres generic fallback — ${dbGenResult.products.length} results for "${intent.cleanQuery}"`);
+            logger.info(
+              `🔍 Intent: Postgres generic fallback — ${dbGenResult.products.length} results for "${intent.cleanQuery}"`,
+            );
             const dbGenProducts = dbGenResult.products
               .map(postgresProductToTop50Shape)
               .map((p, i) => formatTop50AsResult(p, i + 1));
@@ -2576,53 +3107,57 @@ async function handleSearch(req, res) {
             // Brand match from DB → lazy-load primary from Amazon
             if (intent.brand) {
               const liveUrl = `/api/search/live?q=${encodeURIComponent(query)}`;
-              req._searchLog.outcome     = 'lazy_brand_postgres';
+              req._searchLog.outcome = "lazy_brand_postgres";
               req._searchLog.resultCount = dbGenProducts.length;
               return res.json({
-                success:        true,
-                query:          rawQuery,
-                normalized:     normalizedQuery,
-                category:       intent.category || null,
-                intent:         'PRODUCT_SPECIFIC',
+                success: true,
+                query: rawQuery,
+                normalized: normalizedQuery,
+                category: intent.category || null,
+                intent: "PRODUCT_SPECIFIC",
                 primaryProduct: null,
                 primaryPending: true,
-                liveFetchUrl:   liveUrl,
-                totalResults:   dbGenProducts.length,
-                cached:         false,
-                source:         'lazy_brand_postgres',
-                lastUpdated:    new Date().toISOString(),
-                elapsed_ms:     Date.now() - requestStart,
-                results:        dbGenProducts,
-                suggestions:    dbGenProducts,
+                liveFetchUrl: liveUrl,
+                totalResults: dbGenProducts.length,
+                cached: false,
+                source: "lazy_brand_postgres",
+                lastUpdated: new Date().toISOString(),
+                elapsed_ms: Date.now() - requestStart,
+                results: dbGenProducts,
+                suggestions: dbGenProducts,
               });
             }
 
-            req._searchLog.outcome     = 'postgres_generic';
+            req._searchLog.outcome = "postgres_generic";
             req._searchLog.resultCount = dbGenProducts.length;
             return res.json({
-              success:      true,
-              query:        rawQuery,
-              normalized:   normalizedQuery,
-              category:     intent.category || null,
-              intent:       intent.intent,
+              success: true,
+              query: rawQuery,
+              normalized: normalizedQuery,
+              category: intent.category || null,
+              intent: intent.intent,
               totalResults: dbGenProducts.length,
-              cached:       false,
-              source:       'postgres_db',
-              lastUpdated:  new Date().toISOString(),
-              elapsed_ms:   Date.now() - requestStart,
-              results:      dbGenProducts,
-              suggestions:  dbGenProducts,
+              cached: false,
+              source: "postgres_db",
+              lastUpdated: new Date().toISOString(),
+              elapsed_ms: Date.now() - requestStart,
+              results: dbGenProducts,
+              suggestions: dbGenProducts,
             });
           }
         } catch (dbGenErr) {
-          logger.warn(`🔍 Intent: Postgres generic fallback failed — ${dbGenErr.message}`);
+          logger.warn(
+            `🔍 Intent: Postgres generic fallback failed — ${dbGenErr.message}`,
+          );
         }
       }
 
       // Still nothing — fall through to Amazon
     }
   } catch (intentErr) {
-    logger.warn(`🔍 Intent routing error — ${intentErr.message} — falling through to Amazon`);
+    logger.warn(
+      `🔍 Intent routing error — ${intentErr.message} — falling through to Amazon`,
+    );
   }
 
   // ── STEP 4: Cache MISS — Fetch from Amazon PA-API (or mock fallback) ──
@@ -2630,24 +3165,36 @@ async function handleSearch(req, res) {
   // Industry pattern (Cloudflare, Netflix, etc.): only ONE request fetches live data.
   // All other concurrent requests wait and get the cached result once ready.
   {
-    const gotLock = await acquireSearchLock(query, effectiveCategory).catch(() => true);
+    const gotLock = await acquireSearchLock(query, effectiveCategory).catch(
+      () => true,
+    );
     if (!gotLock) {
-      logger.info(`🔍 Search: lock active for "${query}" — waiting for concurrent fetch…`);
-      const coalesced = await waitForSearchCache(query, effectiveCategory).catch(() => null);
+      logger.info(
+        `🔍 Search: lock active for "${query}" — waiting for concurrent fetch…`,
+      );
+      const coalesced = await waitForSearchCache(
+        query,
+        effectiveCategory,
+      ).catch(() => null);
       if (coalesced && coalesced.length > 0) {
-        req._searchLog.outcome = 'coalesced';
+        req._searchLog.outcome = "coalesced";
         return res.json({
-          success: true, query: rawQuery, normalized: normalizedQuery,
+          success: true,
+          query: rawQuery,
+          normalized: normalizedQuery,
           category: effectiveCategory || null,
           totalResults: Math.min(coalesced.length, MAX_RESPONSE_RESULTS),
-          cached: true, cacheSource: 'coalesced',
+          cached: true,
+          cacheSource: "coalesced",
           lastUpdated: new Date().toISOString(),
           elapsed_ms: Date.now() - requestStart,
           results: addRanks(coalesced.slice(0, MAX_RESPONSE_RESULTS)),
         });
       }
       // Lock expired without a result — proceed with our own fetch
-      logger.warn(`🔍 Search: coalesce wait expired — proceeding with independent Amazon fetch`);
+      logger.warn(
+        `🔍 Search: coalesce wait expired — proceeding with independent Amazon fetch`,
+      );
     }
     // Lock holder falls through to fetch. Lock auto-expires in 60s via TTL.
   }
@@ -2660,7 +3207,10 @@ async function handleSearch(req, res) {
   let usingMockData = false;
 
   try {
-    amazonProducts = await amazonService.searchProducts(query, effectiveCategory);
+    amazonProducts = await amazonService.searchProducts(
+      query,
+      effectiveCategory,
+    );
     logger.info(`🔍 Search: Amazon returned ${amazonProducts.length} products`);
   } catch (amazonErr) {
     logger.error(`🔍 Search: Amazon PA-API failed — ${amazonErr.message}`);
@@ -2695,7 +3245,7 @@ async function handleSearch(req, res) {
       totalResults: 0,
       results: [],
       suggestions: [],
-      message: 'No products found. Try a different search term.',
+      message: "No products found. Try a different search term.",
       elapsed_ms: Date.now() - requestStart,
     });
   }
@@ -2728,7 +3278,8 @@ async function handleSearch(req, res) {
       totalResults: 0,
       results: [],
       suggestions: [],
-      message: 'Could not analyse products right now. Please try again shortly.',
+      message:
+        "Could not analyse products right now. Please try again shortly.",
       elapsed_ms: Date.now() - requestStart,
     });
   }
@@ -2765,11 +3316,11 @@ async function handleSearch(req, res) {
   // as a second chance before showing unrelated mock products.
   if (detectedIntent?.brand) {
     const brandLow = detectedIntent.brand.toLowerCase();
-    const brandMatched = enrichedProducts.filter(
-      (p) => (p.brand || p.name || '').toLowerCase().includes(brandLow),
+    const brandMatched = enrichedProducts.filter((p) =>
+      (p.brand || p.name || "").toLowerCase().includes(brandLow),
     );
     const nonBrand = enrichedProducts.filter(
-      (p) => !(p.brand || p.name || '').toLowerCase().includes(brandLow),
+      (p) => !(p.brand || p.name || "").toLowerCase().includes(brandLow),
     );
 
     if (brandMatched.length > 0) {
@@ -2784,12 +3335,19 @@ async function handleSearch(req, res) {
         `🔍 Brand guard: no "${detectedIntent.brand}" products in results — fetching brand-specific`,
       );
       try {
-        const brandQuery = `${detectedIntent.brand} ${effectiveCategory || ''}`.trim();
-        const brandProducts = await amazonService.searchProducts(brandQuery, effectiveCategory);
+        const brandQuery =
+          `${detectedIntent.brand} ${effectiveCategory || ""}`.trim();
+        const brandProducts = await amazonService.searchProducts(
+          brandQuery,
+          effectiveCategory,
+        );
         if (brandProducts.length > 0) {
-          const brandEnriched = await enrichProductsBatched(brandProducts.slice(0, 3), effectiveCategory);
-          const brandFiltered = brandEnriched.filter(
-            (p) => (p.brand || p.name || '').toLowerCase().includes(brandLow),
+          const brandEnriched = await enrichProductsBatched(
+            brandProducts.slice(0, 3),
+            effectiveCategory,
+          );
+          const brandFiltered = brandEnriched.filter((p) =>
+            (p.brand || p.name || "").toLowerCase().includes(brandLow),
           );
           if (brandFiltered.length > 0) {
             // If we were on mock data, replace entirely with real brand results
@@ -2800,12 +3358,14 @@ async function handleSearch(req, res) {
               enrichedProducts = [...brandFiltered, ...enrichedProducts];
             }
             logger.info(
-              `🔍 Brand guard: supplemental fetch added ${brandFiltered.length} "${detectedIntent.brand}" products${usingMockData ? ' (replaced mock)' : ''}`,
+              `🔍 Brand guard: supplemental fetch added ${brandFiltered.length} "${detectedIntent.brand}" products${usingMockData ? " (replaced mock)" : ""}`,
             );
           }
         }
       } catch (brandErr) {
-        logger.warn(`🔍 Brand guard: supplemental fetch failed — ${brandErr.message}`);
+        logger.warn(
+          `🔍 Brand guard: supplemental fetch failed — ${brandErr.message}`,
+        );
       }
     }
   }
@@ -2813,14 +3373,20 @@ async function handleSearch(req, res) {
   // ── STEP 6: Sort by AI Score, Take Top 10 ────────────────────
   // When brand is detected, brand-matching products are pinned above non-brand
   // regardless of aiScore — so "jbl speakers" never shows Truke at top.
-  const sortBrand = detectedIntent?.brand ? detectedIntent.brand.toLowerCase() : null;
+  const sortBrand = detectedIntent?.brand
+    ? detectedIntent.brand.toLowerCase()
+    : null;
   const ranked = enrichedProducts
     .filter((p) => p !== null)
     .sort((a, b) => {
       // Brand pin: if searching a specific brand, brand-matched products always rank above non-brand
       if (sortBrand) {
-        const aIsBrand = (a.brand || a.name || '').toLowerCase().includes(sortBrand);
-        const bIsBrand = (b.brand || b.name || '').toLowerCase().includes(sortBrand);
+        const aIsBrand = (a.brand || a.name || "")
+          .toLowerCase()
+          .includes(sortBrand);
+        const bIsBrand = (b.brand || b.name || "")
+          .toLowerCase()
+          .includes(sortBrand);
         if (aIsBrand && !bIsBrand) return -1;
         if (!aIsBrand && bIsBrand) return 1;
       }
@@ -2851,38 +3417,53 @@ async function handleSearch(req, res) {
     });
 
   // MongoDB SearchCache — ASINs only, TTL index handles expiry
-  saveToMongoCache(query, normalizedQuery, effectiveCategory, asinList).catch((err) =>
-    logger.warn(`🔍 Search: MongoDB cache save failed — ${err.message}`),
+  saveToMongoCache(query, normalizedQuery, effectiveCategory, asinList).catch(
+    (err) =>
+      logger.warn(`🔍 Search: MongoDB cache save failed — ${err.message}`),
   );
 
   // Merge Amazon results into top50 pools — grows organically as users search.
   // Deduplicates by id. Skip if mock data or no detected category.
   if (effectiveCategory && ranked.length > 0 && !usingMockData) {
-    const incoming = ranked.map((p) => enrichedToTop50Shape(p, effectiveCategory));
+    const incoming = ranked.map((p) =>
+      enrichedToTop50Shape(p, effectiveCategory),
+    );
 
     // Grow broad category pool
-    getTop50Products(effectiveCategory).then((existing) => {
-      if (!existing || existing.length < TOP50_MAX) {
-        const merged = mergeIntoTop50(existing, incoming);
-        if (merged.length !== (existing || []).length) {
-          setTop50Products(effectiveCategory, merged).catch(() => {});
-          logger.info(`🔍 Search: top50:${effectiveCategory} grew → ${merged.length} products`);
+    getTop50Products(effectiveCategory)
+      .then((existing) => {
+        if (!existing || existing.length < TOP50_MAX) {
+          const merged = mergeIntoTop50(existing, incoming);
+          if (merged.length !== (existing || []).length) {
+            setTop50Products(effectiveCategory, merged).catch(() => {});
+            logger.info(
+              `🔍 Search: top50:${effectiveCategory} grew → ${merged.length} products`,
+            );
+          }
         }
-      }
-    }).catch(() => {});
+      })
+      .catch(() => {});
 
     // Also grow sub-type pool if detected — ensures next search of same sub-type is free
     const detectedSubType = detectedIntent && detectedIntent.subType;
     if (detectedSubType) {
-      getSubTypeProducts(effectiveCategory, detectedSubType).then((existing) => {
-        if (!existing || existing.length < TOP50_MAX) {
-          const merged = mergeIntoTop50(existing, incoming);
-          if (merged.length !== (existing || []).length) {
-            setSubTypeProducts(effectiveCategory, detectedSubType, merged).catch(() => {});
-            logger.info(`🔍 Search: top50:${effectiveCategory}:${detectedSubType} grew → ${merged.length} products`);
+      getSubTypeProducts(effectiveCategory, detectedSubType)
+        .then((existing) => {
+          if (!existing || existing.length < TOP50_MAX) {
+            const merged = mergeIntoTop50(existing, incoming);
+            if (merged.length !== (existing || []).length) {
+              setSubTypeProducts(
+                effectiveCategory,
+                detectedSubType,
+                merged,
+              ).catch(() => {});
+              logger.info(
+                `🔍 Search: top50:${effectiveCategory}:${detectedSubType} grew → ${merged.length} products`,
+              );
+            }
           }
-        }
-      }).catch(() => {});
+        })
+        .catch(() => {});
     }
   }
 
@@ -2920,7 +3501,7 @@ async function handleSearch(req, res) {
 function trackMiss(query) {
   const redis = getRedis();
   if (!redis || redis.status !== "ready") return;
-  const key  = "bestpickr:search_misses";
+  const key = "bestpickr:search_misses";
   const term = query.toLowerCase().slice(0, 80);
   redis.zincrby(key, 1, term).catch(() => {});
   // Trim to top 500 so the set stays bounded
@@ -2936,7 +3517,12 @@ async function handleMisses(req, res) {
   }
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);
   try {
-    const raw    = await redis.zrevrange("bestpickr:search_misses", 0, limit - 1, "WITHSCORES");
+    const raw = await redis.zrevrange(
+      "bestpickr:search_misses",
+      0,
+      limit - 1,
+      "WITHSCORES",
+    );
     const misses = [];
     for (let i = 0; i < raw.length; i += 2) {
       misses.push({ query: raw[i], count: parseInt(raw[i + 1], 10) });
@@ -3092,45 +3678,60 @@ function computePriceTrend(priceHistory, currentPrice) {
 
 async function handleLiveSearch(req, res) {
   const requestStart = Date.now();
-  const rawQuery  = (req.query.q || '').trim();
-  const rawCat    = (req.query.cat || '').trim();
+  const rawQuery = (req.query.q || "").trim();
+  const rawCat = (req.query.cat || "").trim();
 
   if (!rawQuery || rawQuery.length < 2) {
-    return res.status(400).json({ success: false, error: 'Query required' });
+    return res.status(400).json({ success: false, error: "Query required" });
   }
 
   const query = rawQuery.slice(0, 200);
-  const cat   = rawCat || null;
+  const cat = rawCat || null;
 
   // ── Check Redis product-name cache (keyed by query, 6h TTL) ─────────────
-  const liveKey = `live:${query.toLowerCase()}`
-  const redis   = getRedis();
+  const liveKey = `live:${query.toLowerCase()}`;
+  const redis = getRedis();
   try {
-    const cached = redis && await redis.get(liveKey);
+    const cached = redis && (await redis.get(liveKey));
     if (cached) {
       logger.info(`🔍 LiveSearch: cache hit for "${query}"`);
-      return res.json({ success: true, primaryProduct: JSON.parse(cached), cached: true, elapsed_ms: Date.now() - requestStart });
+      return res.json({
+        success: true,
+        primaryProduct: JSON.parse(cached),
+        cached: true,
+        elapsed_ms: Date.now() - requestStart,
+      });
     }
-  } catch { /* non-fatal */ }
+  } catch {
+    /* non-fatal */
+  }
 
   // ── Fetch top 1 from Amazon ──────────────────────────────────────────────
   let amazonProducts = [];
   try {
     amazonProducts = await amazonService.searchProducts(query, cat);
-    logger.info(`🔍 LiveSearch: Amazon returned ${amazonProducts.length} products for "${query}"`);
+    logger.info(
+      `🔍 LiveSearch: Amazon returned ${amazonProducts.length} products for "${query}"`,
+    );
   } catch (err) {
     logger.error(`🔍 LiveSearch: Amazon failed — ${err.message}`);
-    return res.status(502).json({ success: false, error: 'Live fetch failed. Please try again.' });
+    return res
+      .status(502)
+      .json({ success: false, error: "Live fetch failed. Please try again." });
   }
 
   if (amazonProducts.length === 0) {
-    return res.status(404).json({ success: false, error: 'No live result found.' });
+    return res
+      .status(404)
+      .json({ success: false, error: "No live result found." });
   }
 
   const topProduct = amazonProducts[0];
-  const topAsin    = topProduct.asin || topProduct.platformId;
+  const topAsin = topProduct.asin || topProduct.platformId;
   if (!topAsin) {
-    return res.status(404).json({ success: false, error: 'No live result found.' });
+    return res
+      .status(404)
+      .json({ success: false, error: "No live result found." });
   }
 
   // ── Check ASIN-level product cache ──────────────────────────────────────
@@ -3139,57 +3740,86 @@ async function handleLiveSearch(req, res) {
   if (!primaryResult) {
     let affiliateData = { flipkart: null, myntra: null };
     try {
-      affiliateData = await getAffiliateLinks(topAsin, topProduct.name, topProduct.brand, cat || topProduct.category);
-    } catch { /* non-fatal */ }
+      affiliateData = await getAffiliateLinks(
+        topAsin,
+        topProduct.name,
+        topProduct.brand,
+        cat || topProduct.category,
+      );
+    } catch {
+      /* non-fatal */
+    }
 
     primaryResult = formatProductResult(
       {
         ...topProduct,
         flipkartPrice: affiliateData?.flipkart?.price || null,
-        flipkartUrl:   affiliateData?.flipkart?.affiliateUrl || affiliateData?.flipkart?.url || null,
-        myntraPrice:   affiliateData?.myntra?.price || null,
-        myntraUrl:     affiliateData?.myntra?.affiliateUrl || affiliateData?.myntra?.url || null,
+        flipkartUrl:
+          affiliateData?.flipkart?.affiliateUrl ||
+          affiliateData?.flipkart?.url ||
+          null,
+        myntraPrice: affiliateData?.myntra?.price || null,
+        myntraUrl:
+          affiliateData?.myntra?.affiliateUrl ||
+          affiliateData?.myntra?.url ||
+          null,
       },
       null,
       1,
     );
 
     if (!primaryResult) {
-      return res.status(404).json({ success: false, error: 'Could not format live result.' });
+      return res
+        .status(404)
+        .json({ success: false, error: "Could not format live result." });
     }
 
     setProductCache(topAsin, primaryResult).catch(() => {});
-    queueAnalysis(topAsin, topProduct.name, cat, topProduct.brand).catch(() => {});
+    queueAnalysis(topAsin, topProduct.name, cat, topProduct.brand).catch(
+      () => {},
+    );
   }
 
   primaryResult = { ...primaryResult, rank: 1 };
 
   // ── Cache by query key (6h) so repeat lazy calls are instant ────────────
   try {
-    if (redis) await redis.set(liveKey, JSON.stringify(primaryResult), { EX: 6 * 60 * 60 });
-  } catch { /* non-fatal */ }
+    if (redis)
+      await redis.set(liveKey, JSON.stringify(primaryResult), {
+        EX: 6 * 60 * 60,
+      });
+  } catch {
+    /* non-fatal */
+  }
 
   // ── Grow top50 pool so next search for this product = 0 API cost ────────
   const resolvedCat = cat || topProduct.category || null;
   if (resolvedCat) {
     try {
       const incoming = [enrichedToTop50Shape(primaryResult, resolvedCat)];
-      const basePool  = (await getTop50Products(resolvedCat).catch(() => null)) || [];
-      const merged    = mergeIntoTop50(basePool, incoming);
+      const basePool =
+        (await getTop50Products(resolvedCat).catch(() => null)) || [];
+      const merged = mergeIntoTop50(basePool, incoming);
       if (merged.length !== basePool.length) {
         setTop50Products(resolvedCat, merged).catch(() => {});
-        logger.info(`🔍 LiveSearch: top50:${resolvedCat} grew to ${merged.length} products`);
+        logger.info(
+          `🔍 LiveSearch: top50:${resolvedCat} grew to ${merged.length} products`,
+        );
       }
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }
 
-  logger.info(`🔍 LiveSearch: done — "${primaryResult.name?.slice(0, 50)}" in ${Date.now() - requestStart}ms`);
+  logger.info(
+    `🔍 LiveSearch: done — "${primaryResult.name?.slice(0, 50)}" in ${Date.now() - requestStart}ms`,
+  );
 
   return res.json({
-    success:        true,
+    success: true,
     primaryProduct: primaryResult,
-    cached:         false,
-    elapsed_ms:     Date.now() - requestStart,
+    cached: false,
+    elapsed_ms: Date.now() - requestStart,
   });
 }
 

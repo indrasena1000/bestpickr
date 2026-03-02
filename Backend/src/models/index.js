@@ -514,6 +514,13 @@ const searchCacheSchema = new Schema(
       lowercase: true,
       index: true,
     },
+    // Category context — laptops, headphones, etc. (may be empty string)
+    category: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: null,
+    },
     // Array of ASIN strings referencing ProductListing documents
     results: {
       type: [String],
@@ -681,38 +688,59 @@ priceAlertSchema.statics.findTriggerable = function () {
 
 const blogPostSchema = new Schema(
   {
-    slug:            { type: String, required: [true, 'Slug is required'], unique: true, trim: true, lowercase: true },
-    title:           { type: String, required: [true, 'Title is required'], trim: true },
-    excerpt:         { type: String, required: [true, 'Excerpt is required'], trim: true },
-    content:         { type: String, required: [true, 'Content is required'] },
-    coverImage:      { type: String, trim: true, default: null },
-    coverImageAlt:   { type: String, trim: true, default: null },
+    slug: {
+      type: String,
+      required: [true, "Slug is required"],
+      unique: true,
+      trim: true,
+      lowercase: true,
+    },
+    title: { type: String, required: [true, "Title is required"], trim: true },
+    excerpt: {
+      type: String,
+      required: [true, "Excerpt is required"],
+      trim: true,
+    },
+    content: { type: String, required: [true, "Content is required"] },
+    coverImage: { type: String, trim: true, default: null },
+    coverImageAlt: { type: String, trim: true, default: null },
     category: {
       type: String,
       enum: {
-        values: ['Smartphones', 'Laptops', 'Deals', 'Industry News', 'Audio', 'Wearables', 'Televisions'],
+        values: [
+          "Smartphones",
+          "Laptops",
+          "Deals",
+          "Industry News",
+          "Audio",
+          "Wearables",
+          "Televisions",
+        ],
         message: '"{VALUE}" is not a valid blog category',
       },
       default: null,
     },
-    tags:            { type: [String], default: [] },
+    tags: { type: [String], default: [] },
     status: {
       type: String,
-      enum: { values: ['draft', 'published'], message: '"{VALUE}" is not a valid status' },
-      default: 'draft',
+      enum: {
+        values: ["draft", "published"],
+        message: '"{VALUE}" is not a valid status',
+      },
+      default: "draft",
     },
-    aiGenerated:     { type: Boolean, default: true },
-    publishedAt:     { type: Date, default: null },
+    aiGenerated: { type: Boolean, default: true },
+    publishedAt: { type: Date, default: null },
     readTimeMinutes: { type: Number, min: 1, default: 3 },
-    createdAt:       { type: Date, default: Date.now },
-    updatedAt:       { type: Date, default: Date.now },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
   },
   {
     timestamps: false,
-    collection: 'blog_posts',
-    toJSON:   { versionKey: false },
+    collection: "blog_posts",
+    toJSON: { versionKey: false },
     toObject: { versionKey: false },
-  }
+  },
 );
 
 // ── Indexes ─────────────────────────────────────────────────────
@@ -721,7 +749,7 @@ blogPostSchema.index({ status: 1, publishedAt: -1 });
 blogPostSchema.index({ category: 1, status: 1 });
 
 // ── Pre-save Hook: Auto-update updatedAt ────────────────────────
-blogPostSchema.pre('save', async function () {
+blogPostSchema.pre("save", async function () {
   this.updatedAt = new Date();
 });
 
