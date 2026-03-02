@@ -9,7 +9,7 @@
 //   Cost: 1 Amazon call per sub-type (~40 sub-types × 10 results = seeded once/day)
 //   Principle: analyze once → serve free all day
 //   Schedule: 01:00 IST daily
-//   Re-analysis rule: only if product is new OR analysis is >30 days stale
+//   Re-analysis rule: only if product is new OR analysis is >7 days stale
 //   On success: writes top50:{category}:{subType} with 24h TTL
 'use strict'
 
@@ -175,10 +175,10 @@ async function runSnapshot() {
 // JOB 2 — 1 AM SUB-TYPE SEED CRON
 // Fetches fresh products from Amazon for each sub-type once per day.
 // Principle: pay the Amazon API cost once at 1 AM, serve all day free.
-// Re-analysis: only for new products or those with stale analysis (>30 days).
+// Re-analysis: only for new products or those with stale analysis (>7 days).
 // ═════════════════════════════════════════════════════════════════
 
-const ANALYSIS_STALE_DAYS = 30   // Re-analyze if older than this
+const ANALYSIS_STALE_DAYS = 7    // Re-analyze if older than this (aligned with 7-day weekly cycle)
 
 // Lazy-load to avoid circular deps and startup cost on unused services
 let _amazonService = null

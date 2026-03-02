@@ -10,6 +10,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { getCategories, searchProducts, getTopIndiaProducts } from "../services/api.js";
+import { useSuggestions } from "../hooks/useSearch.js";
+import SearchDropdown from "../components/SearchDropdown.jsx";
 import { HomeTableSkeleton } from "../components/Skeleton.jsx";
 import BlogCarousel from "../components/BlogCarousel.jsx";
 
@@ -65,15 +67,19 @@ function AITooltip({ reason, children }) {
 
 export default function HomePage({ onSearch, onViewProduct, onNav }) {
   const [q, setQ] = useState("");
+  const sugg = useSuggestions();
   const [categories, setCats] = useState([]);
   const [activeCat, setActive] = useState("headphones");
   const [products, setProds] = useState([]);
   const [loadingProds, setLoad] = useState(false);
   const [topIndia, setTopIndia] = useState([]);
-  const [loadingTopIndia, setLoadingTopIndia] = useState(true);
+  const [loadingTopIndia, setLoadingTopIndia] = useState(false);
+  const [topIndiaVisible, setTopIndiaVisible] = useState(false);
   // BUG #19 FIX: scroll to top visibility
   const [showScroll, setShowScroll] = useState(false);
   const inputRef = useRef(null);
+  const topIndiaSentinelRef = useRef(null);
+
 
   useEffect(() => {
     getCategories()
@@ -81,11 +87,28 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
       .catch(() => setCats(FALLBACK_CATS));
   }, []);
 
+  // Lazy-load top-india when the section scrolls into view.
+  // Uses sessionStorage so navigating away and back never re-fetches.
   useEffect(() => {
-    getTopIndiaProducts()
-      .then((d) => setTopIndia(d.products || []))
-      .catch(() => setTopIndia([]))
-      .finally(() => setLoadingTopIndia(false));
+    const sentinel = topIndiaSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        observer.disconnect();
+        setTopIndiaVisible(true);
+
+        setLoadingTopIndia(true);
+        getTopIndiaProducts()
+          .then((d) => setTopIndia(d.products || []))
+          .catch(() => setTopIndia([]))
+          .finally(() => setLoadingTopIndia(false));
+      },
+      { rootMargin: '200px' }  // start loading 200px before it enters viewport
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -105,9 +128,13 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  function pickSuggestion(s) {
+    setQ(s); sugg.saveRecent(s); sugg.clear(); onSearch(s, "");
+  }
+
   function handleSearch(e) {
     e?.preventDefault();
-    if (q.trim()) onSearch(q.trim(), "");
+    if (q.trim()) { sugg.saveRecent(q.trim()); sugg.clear(); onSearch(q.trim(), ""); }
   }
 
   const cat = categories.find((c) => c.slug === activeCat);
@@ -128,26 +155,34 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
               bestpickr compares ratings, reviews &amp; prices across Amazon,
               Flipkart &amp; Myntra — then ranks them so you always pick the right one.
             </p>
-            <form onSubmit={handleSearch}>
-              <div className="big-search">
-                <input
-                  ref={inputRef}
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder='Try "Sony headphones" or "running shoes under ₹3000"…'
-                  autoFocus
-                />
-                {/* BUG #3 FIX: Button disabled when search bar empty */}
-                <button
-                  type="submit"
-                  className="big-search-go"
-                  disabled={!q.trim()}
-                  style={{ opacity: q.trim() ? 1 : 0.45, cursor: q.trim() ? 'pointer' : 'not-allowed' }}
-                >
-                  Find Best →
-                </button>
-              </div>
-            </form>
+            <div style={{ position: 'relative' }}>
+              <form onSubmit={handleSearch}>
+                <div className="big-search">
+                  <input
+                    ref={inputRef}
+                    value={q}
+                    onChange={(e) => { setQ(e.target.value); sugg.fetch(e.target.value) }}
+                    onFocus={() => sugg.onFocus(q)}
+                    onBlur={sugg.onBlur}
+                    onKeyDown={e => sugg.handleKeyDown(e, pickSuggestion)}
+                    placeholder='Try "Sony headphones" or "running shoes under ₹3000"…'
+                    autoFocus
+                  />
+                  {/* BUG #3 FIX: Button disabled when search bar empty */}
+                  <button
+                    type="submit"
+                    className="big-search-go"
+                    disabled={!q.trim()}
+                    style={{ opacity: q.trim() ? 1 : 0.45, cursor: q.trim() ? 'pointer' : 'not-allowed' }}
+                  >
+                    Find Best →
+                  </button>
+                </div>
+              </form>
+              {sugg.showDropdown && (
+                <SearchDropdown items={sugg.items} selIndex={sugg.selIndex} onPick={pickSuggestion} />
+              )}
+            </div>
             <div className="hero-suggests">
               <span>Popular:</span>
               {SUGGESTS.map((s) => (
@@ -328,8 +363,11 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
         </div>
       </div>
 
+      {/* Sentinel — IntersectionObserver watches this to trigger lazy load */}
+      <div ref={topIndiaSentinelRef} style={{ height: 1 }} />
+
       {/* ── TOP PRODUCTS IN INDIA ─────────────── */}
-      {(loadingTopIndia || topIndia.length > 0) && (
+      {(topIndiaVisible || loadingTopIndia || topIndia.length > 0) && (
         <div style={{ background:'var(--paper2)', borderTop:'1px solid var(--line)', padding:'40px 0' }}>
           <div className="wrap">
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:20, flexWrap:'wrap', gap:12 }}>

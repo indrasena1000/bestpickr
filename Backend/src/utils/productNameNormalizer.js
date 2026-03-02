@@ -47,6 +47,11 @@ const BRAND_ALIAS_MAP = {
   vguard:    ['v-guard', 'vguard'],
   morphy:    ['morphy', 'morphy richards'],
   zebronics: ['zebronics', 'zebster'],
+  logitech:  ['logitech', 'logi'],
+  razer:     ['razer'],
+  corsair:   ['corsair'],
+  hyperx:    ['hyperx', 'hyper x'],
+  steelseries:['steelseries', 'steel series'],
 }
 
 // Build reverse map: variant → canonical

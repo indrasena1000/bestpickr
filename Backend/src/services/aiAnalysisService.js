@@ -975,11 +975,177 @@ function buildLowConfidenceResult(
 }
 
 // ═════════════════════════════════════════════════════════════════
+// SPEC-BASED ANALYSIS (no reviews available)
+// ═════════════════════════════════════════════════════════════════
+// When Amazon review scraping returns 0 results (new products, blocked),
+// use the product's official feature bullet points + platform rating
+// to produce GPT-4o-mini insights.
+//
+// Output shape is identical to analyzeProduct() so the pipeline is unchanged.
+// Confidence is always "low-medium" — flagged as spec-based in badge.
+// aiScore is capped at 7.5 (can't fully trust without real reviews).
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Analyze a product using its specs/features instead of reviews.
+ * Used when review scraping returns 0 results.
+ *
+ * @param {string}   productName     - Full product name
+ * @param {string}   category        - Category slug (e.g. "laptops")
+ * @param {string[]} features        - Amazon feature bullet points array
+ * @param {Object}   opts
+ * @param {number}   opts.platformRating  - Amazon star rating (1-5)
+ * @param {number}   opts.reviewCount     - Amazon total review count (for context)
+ * @param {string}   opts.brand           - Brand name
+ * @param {number}   opts.price           - Current price in INR
+ * @returns {Object|null}
+ */
+async function analyzeProductFromSpecs(
+  productName,
+  category,
+  features = [],
+  opts = {},
+) {
+  const {
+    platformRating = null,
+    reviewCount = 0,
+    brand = null,
+    price = null,
+  } = opts;
+  const startTime = Date.now();
+
+  logger.info(
+    `🤖 SpecsAnalysis: starting for "${productName}" [${category}] — ${features.length} features`,
+  );
+
+  if (!features || features.length === 0) {
+    logger.warn(
+      `🤖 SpecsAnalysis: no features provided for "${productName}" — cannot analyse`,
+    );
+    return null;
+  }
+
+  const catConfig = getCategoryConfig(category);
+  const aspects = getAspects(category).slice(0, 8); // max 8 aspects for spec-based
+  const categoryName = catConfig ? catConfig.name : category;
+
+  const priceStr = price
+    ? `₹${Math.round(price).toLocaleString("en-IN")}`
+    : "unknown";
+  const ratingStr = platformRating
+    ? `${platformRating}/5 (${reviewCount} ratings on Amazon)`
+    : "not available";
+  const brandStr = brand || "unknown brand";
+
+  const systemPrompt = `You are a senior product analyst for bestpickr.in, an AI-powered product ranking platform for Indian shoppers. You are analyzing a product based ONLY on its official manufacturer specs and Amazon India listing information — NO customer reviews are available yet.
+
+RULES FOR SPEC-BASED ANALYSIS:
+1. Be factual about specs — mention actual numbers, chipset names, RAM, storage etc if present in the features.
+2. For "whatPeopleLove", list genuine strengths visible in the specs (e.g. "Large 16GB RAM ideal for multitasking").
+3. For "commonComplaints", list realistic spec-based trade-offs (e.g. "60Hz display at this price point is below average for 2025").
+4. Do NOT make up reviews or pretend customers said things.
+5. "buyRecommendation" should be a clear 1-2 sentence verdict based purely on specs vs price.
+6. "avoidIf" should describe user profiles who would NOT benefit from this product based on specs.
+7. confidenceLevel must always be "low" since this is spec-based only.
+8. Aspect scores: base on specs only. If a spec is exceptional (e.g. i9 CPU), score 8-9. Mid-range spec = 5-7. Missing/poor spec = 2-4.
+
+You must respond with ONLY a valid JSON object. No markdown, no explanation.`;
+
+  const userPrompt = `Analyze this ${categoryName} based on its official Amazon India listing:
+
+PRODUCT: ${productName}
+BRAND: ${brandStr}
+PRICE: ${priceStr}
+AMAZON RATING: ${ratingStr}
+
+OFFICIAL FEATURES / SPECS:
+${features.map((f, i) => `${i + 1}. ${f}`).join("\n")}
+
+ASPECTS TO SCORE (0-10 based on specs, skip any not inferable from specs):
+${aspects.map((a, i) => `${i + 1}. ${a}`).join("\n")}
+
+Respond with this EXACT JSON:
+{
+  "aspectScores": { ${aspects.map((a) => `"${a}": <0-10>`).join(", ")} },
+  "overallSentiment": { "positive": <0-100>, "neutral": <0-100>, "negative": <0-100> },
+  "whatPeopleLove": ["<spec-based strength 1>", "<spec-based strength 2>", "<spec-based strength 3>"],
+  "commonComplaints": ["<spec-based trade-off 1>", "<spec-based trade-off 2>"],
+  "redFlags": [],
+  "buyRecommendation": "<1-2 sentence verdict based on specs vs price for Indian buyers>",
+  "avoidIf": "<type of user who should not buy this based on specs>",
+  "confidenceLevel": "low",
+  "reviewQualitySummary": "Analysis based on official product specifications only — customer reviews not yet available on Amazon India."
+}`;
+
+  try {
+    const aiOutput = await callGPT(systemPrompt, userPrompt);
+
+    if (!aiOutput) {
+      logger.error(`🤖 SpecsAnalysis: GPT returned null for "${productName}"`);
+      return null;
+    }
+
+    // Cap spec-based score at 7.5 — needs real reviews to earn higher
+    const rawScore =
+      Object.values(aiOutput.aspectScores || {}).reduce((s, v) => s + v, 0) /
+      Math.max(1, Object.keys(aiOutput.aspectScores || {}).length);
+
+    // Blend with platform rating if available
+    let aiScore;
+    if (platformRating) {
+      const ratingNorm = (platformRating / 5) * 10; // 0-10
+      const specScore = Math.min(7.5, rawScore); // cap at 7.5
+      aiScore = Math.round((specScore * 0.6 + ratingNorm * 0.4) * 10) / 10;
+    } else {
+      aiScore = Math.round(Math.min(7.5, rawScore) * 10) / 10;
+    }
+
+    const elapsed = Date.now() - startTime;
+    logger.info(
+      `🤖 SpecsAnalysis: COMPLETE for "${productName}" — aiScore=${aiScore} in ${elapsed}ms`,
+    );
+
+    return {
+      aspectScores: aiOutput.aspectScores || {},
+      overallSentiment: aiOutput.overallSentiment || {
+        positive: 60,
+        neutral: 30,
+        negative: 10,
+      },
+      whatPeopleLove: aiOutput.whatPeopleLove || [],
+      commonComplaints: aiOutput.commonComplaints || [],
+      redFlags: [], // never populate red flags from specs alone
+      buyRecommendation: aiOutput.buyRecommendation || null,
+      avoidIf: aiOutput.avoidIf || null,
+      confidenceLevel: "low",
+      reviewQualitySummary:
+        aiOutput.reviewQualitySummary ||
+        "Analysis based on official product specifications — customer reviews not yet available.",
+      aiScore,
+      authenticityBadge: "spec-based", // new badge type — UI renders a different label
+      authenticityFlags: [
+        "Analysis based on product specs, not customer reviews",
+      ],
+      reviewsAnalyzed: 0,
+      specsAnalyzed: features.length,
+      analysisDate: new Date(),
+      _pipelineMeta: { source: "spec-analysis", fresh: true, elapsed },
+    };
+  } catch (err) {
+    logger.error(
+      `🤖 SpecsAnalysis: FAILED for "${productName}" — ${err.message}`,
+    );
+    return null;
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════
 // EXPORTS
 // ═════════════════════════════════════════════════════════════════
 
 module.exports = {
   analyzeProduct,
+  analyzeProductFromSpecs,
   // Exported for testing individual steps
   buildPrompt,
   calculateFinalScore,

@@ -396,6 +396,78 @@ async function markAnalysisQueued(asin) {
   } catch { /* non-fatal */ }
 }
 
+// ── SEARCH LOCK (thundering herd / request coalescing) ───────────
+// Prevents duplicate Amazon PA-API + GPT calls when multiple users search
+// the same query simultaneously. Standard pattern used by Cloudflare, Netflix etc.
+//
+// Flow:
+//   1. Cache miss → acquireSearchLock()
+//   2. If locked (returns false) → waitForSearchCache() — poll until result ready
+//   3. If lock acquired (returns true) → fetch Amazon + GPT → cacheResults()
+//      → releaseSearchLock() is called automatically via TTL expiry or explicit release
+//
+// Lock key: bestpickr:search:lock:{normalizedQuery}:{category}
+// TTL:      60s (ceiling — if the request dies, lock auto-expires so others aren't stuck)
+
+const LOCK_TTL_S  = 60   // max seconds Amazon+GPT should take
+const LOCK_POLL_MS = 600  // how often waiters check for the result
+const LOCK_WAIT_MAX_MS = 55_000  // max time a waiter will poll before giving up
+
+function lockKey(query, category) {
+  return `bestpickr:search:lock:${buildSearchKey(query, category)}`
+}
+
+/**
+ * Try to acquire exclusive search lock for this query+category.
+ * Uses Redis SET NX PX (atomic, native — never races).
+ * Returns true if this caller owns the lock, false if another owns it.
+ */
+async function acquireSearchLock(query, category) {
+  if (!redis || redis.status !== 'ready') return true  // no Redis → proceed without lock
+  try {
+    const key    = lockKey(query, category)
+    const result = await redis.set(key, '1', 'EX', LOCK_TTL_S, 'NX')
+    return result === 'OK'  // NX only sets if key absent — 'OK' = we got it
+  } catch {
+    return true  // on error → proceed (don't block search)
+  }
+}
+
+/**
+ * Release search lock early (called after cacheResults() completes).
+ * Safe to call even if lock already expired.
+ */
+async function releaseSearchLock(query, category) {
+  if (!redis || redis.status !== 'ready') return
+  try {
+    await redis.del(lockKey(query, category))
+  } catch { /* non-fatal */ }
+}
+
+/**
+ * Poll for a cached search result (called by waiters who couldn't get the lock).
+ * Returns cached results as soon as they appear, or null after LOCK_WAIT_MAX_MS.
+ * The lock holder will call cacheResults() once done, making the key appear.
+ */
+async function waitForSearchCache(query, category) {
+  if (!redis || redis.status !== 'ready') return null
+  const cacheKey = buildSearchKey(query, category)
+  const deadline = Date.now() + LOCK_WAIT_MAX_MS
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, LOCK_POLL_MS))
+    try {
+      const raw = await redis.get(cacheKey)
+      if (raw) {
+        const cached = JSON.parse(raw)
+        logger.info(`Redis COALESCED: "${cacheKey}" — served cached result to waiting request`)
+        return cached.results || null
+      }
+    } catch { /* keep polling */ }
+  }
+  logger.warn(`Redis COALESCE TIMEOUT: "${cacheKey}" — proceeding with independent search after ${LOCK_WAIT_MAX_MS}ms`)
+  return null  // timed out — caller should do the search itself
+}
+
 // ── UTILITIES ────────────────────────────────────────────────────
 
 async function invalidateCache(query, category) {
@@ -440,4 +512,8 @@ module.exports = {
   // Sub-type helpers (product-type specific pools within a category)
   getSubTypeProducts,
   setSubTypeProducts,
+  // Search lock (thundering herd prevention)
+  acquireSearchLock,
+  releaseSearchLock,
+  waitForSearchCache,
 }

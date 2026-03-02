@@ -27,6 +27,7 @@ const { startNightlyRefresh, stopNightlyRefresh } = require("./src/jobs/nightlyR
 const { setPrisma: setTelegramPrisma, startTelegramReport, stopTelegramReport } = require("./src/jobs/telegramReport");
 const snapshotCron  = require("./src/cron/rankingSnapshotCron");
 const priceRefreshCron = require("./src/cron/priceRefreshCron");
+const autoSeedCron  = require("./src/cron/autoSeedCron");
 
 const app = express();
 const prisma = new PrismaClient();
@@ -59,13 +60,16 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Rate limiting
+// Global rate limiter — non-search routes only (products, categories, blog, admin).
+// Search has its own per-query limiter in search.js so it is excluded here.
+// 600 requests / 15 min per IP = comfortable headroom for real users browsing the app.
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 600,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests. Please try again later." },
+  skip: (req) => req.path.startsWith('/search'),  // search has its own limiter
 });
 app.use("/api/", limiter);
 
@@ -209,6 +213,11 @@ async function start() {
     // priceRefreshCron.init(prisma);
     // priceRefreshCron.startPriceRefresh();
     // logger.info("✅ Price refresh cron started (daily 3:00 AM IST)");
+
+    // // 8. Auto-seed cron (Monday 3:10 AM IST) — re-runs top zero-result queries
+    // autoSeedCron.init(getRedisClient());
+    // autoSeedCron.startAutoSeedCron();
+    // logger.info("✅ Auto-seed cron scheduled (weekly Monday 3:10 AM IST)");
 
     app.listen(PORT, () => {
       logger.info(`bestpickr API on http://localhost:${PORT}`);
