@@ -83,11 +83,6 @@ export default function DetailPage({
             onBuy={openPlatform}
           />
           <DetailReviews p={p} />
-          <DetailOtherPicks
-            allResults={allResults}
-            currentName={p.name}
-            onSelect={(pick) => onViewProduct?.(pick, allResults)}
-          />
         </div>
 
         {/* ── RIGHT: STICKY BUY CARD ───────────── */}
@@ -100,6 +95,13 @@ export default function DetailPage({
           />
         </div>
       </div>
+
+      {/* ── OTHER TOP PICKS — full-width below both columns ── */}
+      <DetailOtherPicks
+        allResults={allResults}
+        currentName={p.name}
+        onSelect={(pick) => onViewProduct?.(pick, allResults)}
+      />
     </div>
   );
 }

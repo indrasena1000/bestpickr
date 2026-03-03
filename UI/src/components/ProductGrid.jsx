@@ -4,7 +4,6 @@ import { PlatformPill } from "./PlatformLogo.jsx";
 
 const fmt = (n) => (n ? `₹${Number(n).toLocaleString("en-IN")}` : null);
 
-// Picks the best buy URL from platform list or fallback fields
 function getBuyUrl(item) {
   const platforms = item.platforms || [];
   const best = platforms.find((p) => p.url) || platforms[0];
@@ -47,161 +46,76 @@ export default function ProductGrid({ items = [], onSelect, title }) {
 function ProductRow({ item, rank, onSelect }) {
   const platforms = item.platforms || [];
   const buyUrl = getBuyUrl(item);
+  const price = fmt(item.price || item.lowestPrice);
 
   return (
-    <div
-      className="rcard"
-      style={{
-        padding: "14px 16px",
-        cursor: "pointer",
-        display: "flex",
-        gap: 14,
-        alignItems: "center",
-      }}
-      onClick={() => onSelect?.(item)}
-    >
-      {/* Rank */}
-      <span
-        style={{
-          fontFamily: "'DM Mono',monospace",
-          fontWeight: 700,
-          fontSize: 13,
-          color: rank <= 3 ? "var(--accent)" : "var(--ink4)",
-          minWidth: 24,
-          flexShrink: 0,
-        }}
-      >
-        #{rank}
-      </span>
-
-      {/* Image */}
-      <div
-        style={{
-          width: 56,
-          height: 56,
-          borderRadius: 8,
-          background: "var(--paper3)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          overflow: "hidden",
-        }}
-      >
-        {item.imageUrl ? (
-          <img
-            src={item.imageUrl}
-            alt={item.name}
-            style={{ width: "100%", height: "100%", objectFit: "contain" }}
-          />
-        ) : (
-          <span style={{ fontSize: 22 }}>📦</span>
-        )}
-      </div>
-
-      {/* Info */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 11, color: "var(--ink4)", marginBottom: 1 }}>
-          {item.brand}
-        </div>
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 700,
-            color: "var(--ink)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
+    <div className="pgrid-card" onClick={() => onSelect?.(item)}>
+      {/* ── TOP ROW: rank + image + name block + score badge ── */}
+      <div className="pgrid-top">
+        {/* Rank */}
+        <span
+          className="pgrid-rank"
+          style={{ color: rank <= 3 ? "var(--accent)" : "var(--ink4)" }}
         >
-          {item.name}
+          #{rank}
+        </span>
+
+        {/* Image */}
+        <div className="pgrid-img">
+          {item.imageUrl ? (
+            <img
+              src={item.imageUrl}
+              alt={item.name}
+              style={{ width: "100%", height: "100%", objectFit: "contain" }}
+            />
+          ) : (
+            <span style={{ fontSize: 20 }}>📦</span>
+          )}
         </div>
 
-        {platforms.length > 0 && (
-          <div
-            style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 5 }}
-          >
-            {platforms.slice(0, 3).map((plt) => (
-              <PlatformPill key={plt.name} name={plt.name} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Price + Score + Actions */}
-      <div
-        style={{
-          textAlign: "right",
-          flexShrink: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "flex-end",
-          gap: 6,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 16,
-            fontWeight: 800,
-            color: "var(--accent)",
-            fontFamily: "'DM Mono',monospace",
-          }}
-        >
-          {fmt(item.price || item.lowestPrice) || "—"}
+        {/* Name + brand + price */}
+        <div className="pgrid-info">
+          {item.brand && <div className="pgrid-brand">{item.brand}</div>}
+          <div className="pgrid-name">{item.name}</div>
+          {price && <div className="pgrid-price">{price}</div>}
         </div>
+
+        {/* Score badge — top right */}
         {item.aiScore != null && (
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: "var(--ink4)",
-              fontFamily: "'DM Mono',monospace",
-            }}
-          >
-            {item.aiScore}/10
+          <div className="pgrid-score">
+            <div className="pgrid-score-val">{item.aiScore}</div>
+            <div className="pgrid-score-lbl">AI</div>
           </div>
         )}
-        <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-          {/* View Details — opens the in-app product detail view */}
+      </div>
+
+      {/* ── BOTTOM ROW: platform pills + action buttons ── */}
+      <div className="pgrid-bottom">
+        {/* Platform pills */}
+        <div className="pgrid-platforms">
+          {platforms.slice(0, 3).map((plt) => (
+            <PlatformPill key={plt.name} name={plt.name} />
+          ))}
+        </div>
+
+        {/* Action buttons */}
+        <div className="pgrid-actions" onClick={(e) => e.stopPropagation()}>
           <button
+            className="pgrid-btn-details"
             onClick={(e) => {
               e.stopPropagation();
               onSelect?.(item);
             }}
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              padding: "4px 10px",
-              borderRadius: 6,
-              border: "1px solid var(--line)",
-              background: "var(--paper2)",
-              color: "var(--ink2)",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
           >
             View details
           </button>
-          {/* Buy Now — opens the best available store URL in a new tab */}
           {buyUrl && (
             <a
               href={buyUrl}
               target="_blank"
               rel="noopener noreferrer"
+              className="pgrid-btn-buy"
               onClick={(e) => e.stopPropagation()}
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                padding: "4px 10px",
-                borderRadius: 6,
-                border: "none",
-                background: "var(--accent)",
-                color: "#fff",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                textDecoration: "none",
-                display: "inline-block",
-              }}
             >
               Buy now ›
             </a>
