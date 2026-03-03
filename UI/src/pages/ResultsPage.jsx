@@ -822,13 +822,31 @@ export default function ResultsPage({
                   suggestions.length > 0 &&
                   (() => {
                     // Filter out wrong-category items — backend cache can occasionally return
-                    // products from a different category (contaminated Redis/Mongo cache entry)
+                    // products from a different category (contaminated Redis/Mongo cache entry).
+                    // When we know the primary category, ONLY show suggestions that either:
+                    //   a) match that category exactly, OR
+                    //   b) have no category but their name/brand contains a query token
                     const primaryCat =
                       primaryProduct?.category || detectedCategory || null;
+                    const qTokens = query
+                      .toLowerCase()
+                      .split(/[\s,]+/)
+                      .filter((t) => t.length >= 3);
                     const relevantSuggestions = primaryCat
-                      ? suggestions.filter(
-                          (s) => !s.category || s.category === primaryCat,
-                        )
+                      ? suggestions.filter((s) => {
+                          if (s.category === primaryCat) return true;
+                          // Null-category items need ≥2 token matches to avoid
+                          // cross-category contamination (e.g. skincare for "hp laptop")
+                          if (!s.category) {
+                            const text =
+                              `${s.name || ""} ${s.brand || ""}`.toLowerCase();
+                            const matchCount = qTokens.filter((t) =>
+                              text.includes(t),
+                            ).length;
+                            return matchCount >= 2;
+                          }
+                          return false;
+                        })
                       : suggestions;
                     if (relevantSuggestions.length === 0) return null;
                     return (
@@ -884,8 +902,14 @@ export default function ResultsPage({
                         <div className="ai-summary">
                           <div className="ai-summary-label">★ AI Summary</div>
                           <div className="ai-summary-text">
-                            <strong>{guardedItems[0].name}</strong> leads with
-                            the highest combined score (
+                            <strong>
+                              {guardedItems[0].brand ||
+                                guardedItems[0].name
+                                  ?.split(" ")
+                                  .slice(0, 3)
+                                  .join(" ")}
+                            </strong>{" "}
+                            leads with the highest combined score (
                             {guardedItems[0].aiScore}/10).{" "}
                             {
                               guardedItems.filter((p) => p.positivePct >= 75)

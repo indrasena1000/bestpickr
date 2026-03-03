@@ -1034,9 +1034,10 @@ function formatProductResult(product, analysis, rank) {
       : amazonRating || null;
 
   // ── Sentiment percentages (frontend uses p.positivePct) ──
+  // Only use real sentiment data — never fall back to a hardcoded default
   const positivePct = sentiment
     ? Math.round(sentiment.positive || 0)
-    : a?.positivePct || p.positivePct || 75;
+    : a?.positivePct || p.positivePct || null;
 
   // ── AI Score breakdown (frontend uses p.breakdown) ──
   const breakdown = a?.breakdown || {
