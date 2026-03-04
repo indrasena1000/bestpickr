@@ -32,8 +32,35 @@ export default function FallbackView({ suggestions = [], categorySuggestions }) 
           No exact match found
         </div>
         <div style={{ fontSize: 14 }}>
-          Here's what's trending, or browse by category below.
+          Try one of these popular searches, or browse by category below.
         </div>
+      </div>
+
+      {/* Quick search suggestions */}
+      <div style={{ display:'flex', flexWrap:'wrap', justifyContent:'center', gap:8, marginBottom:28 }}>
+        {[
+          'Best headphones under ₹2000',
+          'Best laptop under ₹50000',
+          'Best AC under ₹40000',
+          'Best smartwatch under ₹5000',
+          'Best running shoes',
+          'Best air fryer',
+        ].map(s => (
+          <button
+            key={s}
+            onClick={() => handleSearch(s)}
+            style={{
+              padding:'7px 14px', fontSize:13, fontWeight:600,
+              background:'var(--accent-bg)', border:'1px solid var(--accent)',
+              borderRadius:20, color:'var(--accent)', cursor:'pointer',
+              transition:'background .15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background='var(--accent)'; e.currentTarget.style.color='#fff' }}
+            onMouseLeave={e => { e.currentTarget.style.background='var(--accent-bg)'; e.currentTarget.style.color='var(--accent)' }}
+          >
+            {s}
+          </button>
+        ))}
       </div>
 
       {/* Trending grid */}

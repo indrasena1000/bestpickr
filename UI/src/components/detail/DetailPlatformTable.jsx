@@ -4,6 +4,9 @@ import { PlatformLogo } from "../PlatformLogo.jsx";
 const fmt = (n) => (n ? `₹${Number(n).toLocaleString("en-IN")}` : "—");
 
 export default function DetailPlatformTable({ platforms, bestPlt, onBuy }) {
+  const hasRatingData  = platforms.some(p => p.rating  && p.rating > 0);
+  const hasReviewData  = platforms.some(p => p.reviewCount && p.reviewCount > 0);
+
   return (
     <div style={{ marginBottom: 16 }}>
       <div className="compare-title">
@@ -16,8 +19,8 @@ export default function DetailPlatformTable({ platforms, bestPlt, onBuy }) {
           <thead>
             <tr>
               <th>Platform</th>
-              <th>Rating</th>
-              <th>Reviews</th>
+              {hasRatingData && <th>Rating</th>}
+              {hasReviewData && <th>Reviews</th>}
               <th>Price</th>
               <th>Delivery</th>
               <th></th>
@@ -49,26 +52,30 @@ export default function DetailPlatformTable({ platforms, bestPlt, onBuy }) {
                       </div>
                     </div>
                   </td>
-                  <td>
-                    <div className="cell-rating">
-                      <span className="stars-num">{plt.rating || "—"}</span>
-                      {plt.rating && (
-                        <div className="stars-bar">
-                          <div
-                            className="stars-fill"
-                            style={{ width: `${(plt.rating / 5) * 100}%` }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td>
-                    <span style={{ fontWeight: 600 }}>
-                      {plt.reviewCount > 0
-                        ? plt.reviewCount.toLocaleString()
-                        : "—"}
-                    </span>
-                  </td>
+                  {hasRatingData && (
+                    <td>
+                      <div className="cell-rating">
+                        <span className="stars-num">{plt.rating || "—"}</span>
+                        {plt.rating && (
+                          <div className="stars-bar">
+                            <div
+                              className="stars-fill"
+                              style={{ width: `${(plt.rating / 5) * 100}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  )}
+                  {hasReviewData && (
+                    <td>
+                      <span style={{ fontWeight: 600 }}>
+                        {plt.reviewCount > 0
+                          ? plt.reviewCount.toLocaleString()
+                          : "—"}
+                      </span>
+                    </td>
+                  )}
                   <td
                     className="cell-price"
                     style={{ color: isBest ? "var(--accent)" : "var(--ink)" }}

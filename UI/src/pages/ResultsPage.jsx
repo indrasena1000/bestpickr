@@ -747,7 +747,7 @@ export default function ResultsPage({
             <div
               style={{
                 textAlign: "center",
-                padding: "60px 20px",
+                padding: "48px 20px",
                 color: "var(--ink3)",
               }}
             >
@@ -763,10 +763,35 @@ export default function ResultsPage({
                 No products found for &ldquo;{query}&rdquo;
               </div>
               <div
-                style={{ fontSize: 14, color: "var(--ink3)", marginBottom: 24 }}
+                style={{ fontSize: 14, color: "var(--ink3)", marginBottom: 20 }}
               >
                 {noResultsMessage ||
-                  "Try a different search term or browse our categories."}
+                  "We couldn't find what you're looking for. Try one of these popular searches:"}
+              </div>
+              <div style={{ display:'flex', flexWrap:'wrap', justifyContent:'center', gap:8, marginBottom:24 }}>
+                {[
+                  'Best headphones under ₹2000',
+                  'Best laptop under ₹50000',
+                  'Best AC under ₹40000',
+                  'Best smartwatch under ₹5000',
+                  'Best running shoes',
+                  'Best air fryer',
+                ].map(s => (
+                  <button
+                    key={s}
+                    onClick={() => onSearch && onSearch(s)}
+                    style={{
+                      padding:'7px 14px', fontSize:13, fontWeight:600,
+                      background:'var(--paper3)', border:'1px solid var(--line)',
+                      borderRadius:20, color:'var(--ink)', cursor:'pointer',
+                      transition:'background .15s, border-color .15s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background='var(--accent-bg)'; e.currentTarget.style.borderColor='var(--accent)' }}
+                    onMouseLeave={e => { e.currentTarget.style.background='var(--paper3)'; e.currentTarget.style.borderColor='var(--line)' }}
+                  >
+                    {s}
+                  </button>
+                ))}
               </div>
               <button
                 onClick={() => onSearch && onSearch("")}
@@ -1153,6 +1178,14 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
       ? Math.round((youSave / p.highestPrice) * 100)
       : null;
 
+  // Issue 2: AI score — show beta label if insufficient data
+  const hasReliableAiScore = p.aiScore && p.totalReviews > 0 && p.aiScore !== 3.8;
+  const showBetaAiLabel = p.aiScore && (!p.totalReviews || p.totalReviews === 0);
+
+  // Issue 3: Reviews — hide sentiment when reviews = 0
+  const hasRealReviews = (p.totalReviews || 0) > 0;
+  const hasRealSentiment = hasRealReviews && p.positivePct != null && p.positivePct > 0;
+
   // BUG #18: AI tooltip reason
   const aiReason = `AI Score ${p.aiScore}/10 based on ${(p.totalReviews || 0).toLocaleString()} reviews across ${(p.platforms || []).length} platforms. ${p.positivePct || 75}% positive sentiment.${isTop ? " Ranked #1 — highest overall score in this search." : ""}`;
 
@@ -1185,11 +1218,12 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
                   cursor: "help",
                 }}
               >
+                {showBetaAiLabel && <span style={{ fontSize: 9, fontWeight: 600, opacity: 0.65 }}>BETA</span>}
                 ★ {p.aiScore}/10
               </span>
             </AITooltip>
             {isTop && <span className="tag tag-g">Best Match</span>}
-            {p.positivePct >= 80 && (
+            {hasRealSentiment && p.positivePct >= 80 && (
               <span className="tag tag-b">Highly Praised</span>
             )}
             {/* BUG #10 FIX: Show you-save badge */}
@@ -1214,41 +1248,51 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
             {p.aiScore}
             <span className="score-denom">/10</span>
           </div>
-          <div className="score-label">AI Score</div>
+          <div className="score-label">{showBetaAiLabel ? 'Beta AI Score' : 'AI Score'}</div>
         </div>
       </div>
 
       <div className="rcard-bottom">
-        {/* Reviews */}
+        {/* Reviews — Issue 3: hide sentiment when reviews = 0 */}
         <div>
           <div className="rcard-bottom-label">Reviews</div>
-          <div className="rcard-bottom-val">
-            {(p.totalReviews || 0).toLocaleString()}
-          </div>
-          <div className="rcard-bottom-sub">
-            across {(p.platforms || []).length} platforms
-          </div>
-          <div className="sent-mini" style={{ marginTop: 6 }}>
-            {[
-              ["Positive", p.positivePct, "sent-pos"],
-              [
-                "Negative",
-                Math.max(0, 100 - (p.positivePct || 75) - 10),
-                "sent-neg",
-              ],
-            ].map(([lbl, pct, cls]) => (
-              <div key={lbl} className="sent-mini-row">
-                <span className="sent-mini-lbl">{lbl}</span>
-                <div className="sent-mini-track">
-                  <div
-                    className={`sent-mini-fill ${cls}`}
-                    style={{ width: `${pct || 0}%` }}
-                  />
-                </div>
-                <span className="sent-mini-pct">{Math.round(pct || 0)}%</span>
+          {hasRealReviews ? (
+            <>
+              <div className="rcard-bottom-val">
+                {p.totalReviews.toLocaleString()}
               </div>
-            ))}
-          </div>
+              <div className="rcard-bottom-sub">
+                across {(p.platforms || []).length} platforms
+              </div>
+              {hasRealSentiment && (
+                <div className="sent-mini" style={{ marginTop: 6 }}>
+                  {[
+                    ["Positive", p.positivePct, "sent-pos"],
+                    [
+                      "Negative",
+                      Math.max(0, 100 - (p.positivePct || 75) - 10),
+                      "sent-neg",
+                    ],
+                  ].map(([lbl, pct, cls]) => (
+                    <div key={lbl} className="sent-mini-row">
+                      <span className="sent-mini-lbl">{lbl}</span>
+                      <div className="sent-mini-track">
+                        <div
+                          className={`sent-mini-fill ${cls}`}
+                          style={{ width: `${pct || 0}%` }}
+                        />
+                      </div>
+                      <span className="sent-mini-pct">{Math.round(pct || 0)}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--ink4)', marginTop: 4, lineHeight: 1.5 }}>
+              Review data unavailable
+            </div>
+          )}
         </div>
 
         {/* Platforms */}

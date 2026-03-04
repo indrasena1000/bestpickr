@@ -117,7 +117,7 @@ function ProductRow({ item, rank, onSelect }) {
               className="pgrid-btn-buy"
               onClick={(e) => e.stopPropagation()}
             >
-              Buy now ›
+              View price ›
             </a>
           )}
         </div>

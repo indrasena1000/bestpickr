@@ -103,7 +103,7 @@ export default function BlogPostPage({
           return;
         }
         setPost(d.post);
-        setCtaQ(extractProduct(d.post.title));
+        setCtaQ("");
 
         // ── Full SEO meta injection ────────────────────────────────
         const post = d.post;
@@ -200,6 +200,12 @@ export default function BlogPostPage({
   }
 
   function navigate(path) {
+    if (path === "blog" || path.startsWith("blog/")) {
+      // Use clean path for SEO — no # fragment
+      window.history.pushState(null, "", "/" + path);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+      return;
+    }
     window.location.hash = "/" + path;
   }
 

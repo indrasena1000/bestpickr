@@ -152,8 +152,9 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
               Find the <em>best-rated</em> product.
             </h1>
             <p className="hero-sub">
-              bestpickr compares ratings, reviews &amp; prices across Amazon,
-              Flipkart &amp; Myntra — then ranks them so you always pick the right one.
+              bestpickr analyzes ratings, reviews &amp; prices on Amazon — then
+              ranks them so you always pick the right one.
+              <span style={{ fontSize:12, opacity:0.7 }}> Flipkart &amp; Myntra coming soon.</span>
             </p>
             <div style={{ position: 'relative' }}>
               <form onSubmit={handleSearch}>
@@ -195,13 +196,37 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
         </div>
       </div>
 
+      {/* ── TRUST BAR ────────────────────────── */}
+      <div style={{
+        background:'var(--paper2)', borderTop:'1px solid var(--line)', borderBottom:'1px solid var(--line)',
+        padding:'14px 0',
+      }}>
+        <div className="wrap">
+          <div style={{
+            display:'flex', flexWrap:'wrap', justifyContent:'center', gap:'20px 36px',
+            fontSize:13, color:'var(--ink3)', fontWeight:600,
+          }}>
+            {[
+              ['🚫', 'No paid rankings'],
+              ['🤖', 'AI review analysis'],
+              ['🔗', 'Transparent affiliate links'],
+              ['💯', '100% free to use'],
+            ].map(([icon, text]) => (
+              <span key={text} style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <span style={{ fontSize:15 }}>{icon}</span>{text}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* ── HOW IT WORKS ─────────────────────── */}
       <div className="how-strip">
         <div className="wrap">
           <div className="how-items">
             {[
               ["1", "You search", "any product"],
-              ["2", "AI scans", "3 platforms"],
+              ["2", "AI scans", "Amazon"],
               ["3", "Analyzes", "100K+ reviews"],
               ["4", "Shows you", "the Top 10"],
               ["5", "Buy from", "best price store"],
