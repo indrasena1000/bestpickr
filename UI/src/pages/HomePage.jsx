@@ -12,11 +12,11 @@ import { useState, useEffect, useRef } from "react";
 import { getCategories, searchProducts, getTopIndiaProducts } from "../services/api.js";
 import { useSuggestions } from "../hooks/useSearch.js";
 import SearchDropdown from "../components/SearchDropdown.jsx";
-import { HomeTableSkeleton } from "../components/Skeleton.jsx";
+// HomeTableSkeleton no longer used (replaced by inline shimmer card rail)
 import BlogCarousel from "../components/BlogCarousel.jsx";
 
 
-const RANK_CLASS = ["", "g", "s", "b", "n", "n", "n", "n", "n", "n", "n"];
+// RANK_CLASS removed — replaced by card rail with medal badges
 const SUGGESTS = [
   "noise cancelling headphones",
   "air fryer",
@@ -69,7 +69,8 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
   const [q, setQ] = useState("");
   const sugg = useSuggestions();
   const [categories, setCats] = useState([]);
-  const [activeCat, setActive] = useState("headphones");
+  const [loadingCats, setLoadingCats] = useState(true);
+  const [activeCat, setActive] = useState(null);
   const [products, setProds] = useState([]);
   const [loadingProds, setLoad] = useState(false);
   const [topIndia, setTopIndia] = useState([]);
@@ -82,9 +83,15 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
 
 
   useEffect(() => {
+    setLoadingCats(true);
     getCategories()
-      .then((d) => setCats(d.categories || FALLBACK_CATS))
-      .catch(() => setCats(FALLBACK_CATS));
+      .then((d) => {
+        const cats = d.categories || [];
+        setCats(cats);
+        if (cats.length > 0) setActive(cats[0].slug);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingCats(false));
   }, []);
 
   // Lazy-load top-india when the section scrolls into view.
@@ -112,12 +119,12 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
   }, []);
 
   useEffect(() => {
-    if (!activeCat) return;
+    if (!activeCat) return;   // wait until real category is set from API
     setLoad(true);
     setProds([]);
     searchProducts(activeCat, activeCat)
       .then((d) => setProds(d.results || []))
-      .catch(() => setProds([]))   // show empty state — never show wrong-category fallback
+      .catch(() => setProds([]))
       .finally(() => setLoad(false));
   }, [activeCat]);
 
@@ -246,17 +253,46 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
           <div className="section-head">
             <div className="section-title">Browse by category</div>
           </div>
-          <div className="cat-row">
-            {(categories.length > 0 ? categories : FALLBACK_CATS).map((c) => (
-              <div
-                key={c.slug}
-                className={`cat-btn ${c.slug === activeCat ? "sel" : ""}`}
-                onClick={() => setActive(c.slug)}
-              >
-                <span>{c.emoji}</span>
-                {c.name}
-              </div>
-            ))}
+          {/* ── Category icon circles (Zomato-style) ───────────── */}
+          <div style={{
+            display:'flex', gap:20, overflowX:'auto', scrollbarWidth:'none',
+            msOverflowStyle:'none', paddingBottom:8, paddingTop:4,
+          }}>
+            {loadingCats
+              ? Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, minWidth:72, flexShrink:0 }}>
+                    <div style={{ width:64, height:64, borderRadius:'50%', background:'var(--paper3)', animation:'bp-shimmer 1.4s infinite', backgroundSize:'200% 100%',
+                      backgroundImage:'linear-gradient(90deg,var(--paper3) 25%,var(--line) 50%,var(--paper3) 75%)' }} />
+                    <div style={{ width:44, height:10, borderRadius:4, backgroundImage:'linear-gradient(90deg,var(--paper3) 25%,var(--line) 50%,var(--paper3) 75%)', backgroundSize:'200% 100%', animation:'bp-shimmer 1.4s infinite' }} />
+                  </div>
+                ))
+              : categories.map((c) => {
+              const isActive = c.slug === activeCat;
+              return (
+                <div
+                  key={c.slug}
+                  onClick={() => setActive(c.slug)}
+                  style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, cursor:'pointer', minWidth:72, flexShrink:0 }}
+                >
+                  <div style={{
+                    width:64, height:64, borderRadius:'50%',
+                    background: isActive ? 'var(--accent)' : 'var(--paper)',
+                    border: isActive ? '2.5px solid var(--accent)' : '2px solid var(--line)',
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    fontSize:28, transition:'all .15s',
+                    boxShadow: isActive ? '0 4px 14px rgba(26,107,60,.28)' : 'none',
+                  }}>
+                    {c.emoji}
+                  </div>
+                  <span style={{
+                    fontSize:11, fontWeight:700, lineHeight:1.2, textAlign:'center',
+                    color: isActive ? 'var(--accent)' : 'var(--ink3)', transition:'color .15s',
+                  }}>
+                    {c.name}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -265,7 +301,7 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
           <div className="section-head">
             {/* BUG #17 FIX: Show active category name clearly */}
             <div className="section-title">
-              {CATEGORY_EMOJI[activeCat] || "📦"} Top 10 {cat?.name || activeCat} — by bestpickr AI
+              {cat?.emoji || "📦"} Top 10 {cat?.name || activeCat} — by bestpickr AI
             </div>
             <div className="see-all" onClick={() => onSearch(activeCat, activeCat)}>
               See full analysis →
@@ -273,81 +309,112 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
           </div>
 
           {loadingProds ? (
-            <HomeTableSkeleton />
-          ) : products.length > 0 ? (
-            <div className="picks-table">
-              <div className="picks-table-head">
-                <div className="th">#</div>
-                <div className="th">Product</div>
-                <div className="th">AI Score</div>
-                <div className="th">Reviews</div>
-                {/* BUG #16 FIX: Best Price column header now visible */}
-                <div className="th">Best Price</div>
-                <div className="th"></div>
-              </div>
-              {products.map((p, i) => (
-                <div
-                  key={i}
-                  className={`picks-row ${i === 0 ? "top-pick" : ""}`}
-                  onClick={() => onViewProduct(p, products)}
-                >
-                  <div className={`rank ${RANK_CLASS[p.rank || i + 1]}`}>
-                    #{p.rank || i + 1}
-                  </div>
-                  <div>
-                    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                      <span style={{ fontSize:24 }}>{CATEGORY_EMOJI[activeCat] || "📦"}</span>
-                      <div>
-                        <div className="pick-name">{p.name}</div>
-                        <div className="pick-brand">{p.brand}</div>
-                        <div className="pick-tags">
-                          {i === 0 && <span className="tag tag-g">Best Overall</span>}
-                          {p.positivePct >= 80 && <span className="tag tag-b">Highly Praised</span>}
-                          {p.lowestPrice && p.highestPrice && p.lowestPrice < p.highestPrice * 0.7 && (
-                            <span className="tag tag-o">Best Value</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="plt-pills" style={{ marginTop:6 }}>
-                      {(p.platforms || []).map((plt) => (
-                        <PlatformPill key={plt.name} name={plt.name} />
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="score-num">{p.aiScore}</div>
-                    <div className="score-bar">
-                      <div className="score-fill" style={{ width:`${(p.aiScore / 10) * 100}%` }} />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="rev-count">{(p.totalReviews || 0).toLocaleString()}</div>
-                    <div className="rev-sub">{p.positivePct}% positive</div>
-                  </div>
-                  {/* BUG #16 FIX: Price now renders with fallback */}
-                  <div>
-                    <div className="price-best" style={{ fontSize:15, fontWeight:700, color:'var(--accent)', fontFamily:"'DM Mono',monospace" }}>
-                      {p.lowestPrice ? `₹${Number(p.lowestPrice).toLocaleString('en-IN')}` : '—'}
-                    </div>
-                    {p.highestPrice && p.highestPrice !== p.lowestPrice && (
-                      <div className="price-range">
-                        up to ₹{Number(p.highestPrice).toLocaleString('en-IN')}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    {/* BUG #18 FIX: Hover tooltip on view button */}
-                    <AITooltip reason={
-                      i === 0
-                        ? `#1 pick with AI score ${p.aiScore}/10. ${p.positivePct}% positive reviews across ${(p.platforms||[]).length} platforms.`
-                        : `Ranked #${i+1} with AI score ${p.aiScore}/10. ${p.positivePct || 70}% positive reviews.`
-                    }>
-                      <button className="view-btn">View deals</button>
-                    </AITooltip>
-                  </div>
-                </div>
+            /* Loading shimmer rail */
+            <div style={{ display:'flex', gap:14, overflowX:'auto', scrollbarWidth:'none', paddingBottom:8 }}>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} style={{
+                  minWidth:200, height:300, borderRadius:'var(--r3)', flexShrink:0,
+                  background:'linear-gradient(90deg,var(--paper3) 25%,var(--line) 50%,var(--paper3) 75%)',
+                  backgroundSize:'200% 100%', animation:'bp-shimmer 1.4s infinite',
+                }} />
               ))}
+              <style>{`@keyframes bp-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+            </div>
+          ) : products.length > 0 ? (
+            /* ── Horizontal card rail ───────────────────────────── */
+            <div style={{
+              display:'flex', gap:14, overflowX:'auto', scrollbarWidth:'none',
+              msOverflowStyle:'none', paddingBottom:8, scrollSnapType:'x mandatory',
+            }}>
+              {products.map((p, i) => {
+                const rank = p.rank || i + 1;
+                const MEDAL = { 1:'🥇', 2:'🥈', 3:'🥉' };
+                const RANK_STYLE = {
+                  1: { border:'#F5C518', badge:'#FFF8DC', badgeText:'#7A5200' },
+                  2: { border:'#B0B3B8', badge:'#F4F4F4', badgeText:'#444' },
+                  3: { border:'#CD7F32', badge:'#FDF0E0', badgeText:'#6B3A00' },
+                };
+                const rs = RANK_STYLE[rank] || { border:'var(--line)', badge:'var(--paper2)', badgeText:'var(--ink3)' };
+                return (
+                  <div
+                    key={i}
+                    onClick={() => onViewProduct(p, products)}
+                    style={{
+                      minWidth:200, maxWidth:200, background:'var(--paper)',
+                      borderRadius:'var(--r3)', border:`2px solid ${rs.border}`,
+                      padding:16, cursor:'pointer', display:'flex', flexDirection:'column', gap:10,
+                      scrollSnapAlign:'start', flexShrink:0, position:'relative',
+                      transition:'transform .15s, box-shadow .15s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.transform='translateY(-4px)'; e.currentTarget.style.boxShadow='0 10px 28px rgba(0,0,0,.10)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='none'; }}
+                  >
+                    {/* Rank badge */}
+                    <div style={{
+                      position:'absolute', top:10, left:10, fontSize:11, fontWeight:800,
+                      background: rs.badge, color: rs.badgeText,
+                      borderRadius:'var(--r)', padding:'2px 8px', lineHeight:1.6,
+                    }}>
+                      {MEDAL[rank] || `#${rank}`}
+                    </div>
+                    {/* Best Overall badge for #1 */}
+                    {i === 0 && (
+                      <div style={{
+                        position:'absolute', top:10, right:10, fontSize:10, fontWeight:700,
+                        background:'var(--accent)', color:'white',
+                        borderRadius:'var(--r)', padding:'2px 7px',
+                      }}>Best</div>
+                    )}
+                    {/* Product image */}
+                    <div style={{
+                      width:'100%', height:120, display:'flex', alignItems:'center', justifyContent:'center',
+                      background:'#fff', borderRadius:'var(--r2)', marginTop:16,
+                    }}>
+                      {p.imageUrl ? (
+                        <img src={p.imageUrl} alt={p.name}
+                          style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', padding:8 }} />
+                      ) : (
+                        <span style={{ fontSize:44 }}>{cat?.emoji || '📦'}</span>
+                      )}
+                    </div>
+                    {/* Brand + Name */}
+                    <div>
+                      {p.brand && <div style={{ fontSize:10, color:'var(--ink4)', fontWeight:700, textTransform:'uppercase', letterSpacing:'.4px', marginBottom:3 }}>{p.brand}</div>}
+                      <div style={{
+                        fontSize:13, fontWeight:700, color:'var(--ink)', lineHeight:1.35,
+                        display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden',
+                      }}>{p.name}</div>
+                    </div>
+                    {/* AI Score bar */}
+                    <div>
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:4 }}>
+                        <span style={{
+                          fontSize:11, fontWeight:800, color:'var(--accent)', background:'var(--accent-bg)',
+                          padding:'2px 8px', borderRadius:5, fontFamily:"'DM Mono',monospace",
+                        }}>AI {p.aiScore}/10</span>
+                        {p.positivePct > 0 && (
+                          <span style={{ fontSize:10, color:'var(--ink3)', fontWeight:600 }}>👍 {p.positivePct}%</span>
+                        )}
+                      </div>
+                      <div style={{ height:4, background:'var(--paper3)', borderRadius:4, overflow:'hidden' }}>
+                        <div style={{ height:'100%', width:`${(p.aiScore / 10) * 100}%`, background:'var(--accent)', borderRadius:4, transition:'width .6s ease' }} />
+                      </div>
+                    </div>
+                    {/* Price + CTA */}
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:'auto' }}>
+                      <div style={{ fontSize:15, fontWeight:800, color:'var(--ink)', fontFamily:"'DM Mono',monospace" }}>
+                        {p.lowestPrice ? `₹${Number(p.lowestPrice).toLocaleString('en-IN')}` : '—'}
+                      </div>
+                      <AITooltip reason={`Ranked #${rank} with AI score ${p.aiScore}/10. ${p.positivePct || ''}${p.positivePct ? '% positive reviews.' : ''}`}>
+                        <button style={{
+                          fontSize:11, fontWeight:700, color:'var(--accent)', background:'var(--accent-bg)',
+                          border:'1.5px solid var(--accent)', borderRadius:'var(--r)', padding:'5px 12px', cursor:'pointer',
+                        }}>View →</button>
+                      </AITooltip>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div style={{
@@ -417,14 +484,21 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
               </div>
             ) : (
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:14 }}>
-                {topIndia.map((p) => (
+                {topIndia.map((p, ri) => (
                   <div key={p.id || p.name} onClick={() => onViewProduct(p, topIndia)}
                     style={{ background:'var(--paper)', borderRadius:'var(--r3)', border:'1px solid var(--line)',
                       padding:16, cursor:'pointer', transition:'box-shadow .15s,border-color .15s',
-                      display:'flex', flexDirection:'column', gap:10 }}
+                      display:'flex', flexDirection:'column', gap:10, position:'relative' }}
                     onMouseEnter={e => { e.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,.08)'; e.currentTarget.style.borderColor='var(--accent)' }}
                     onMouseLeave={e => { e.currentTarget.style.boxShadow='none'; e.currentTarget.style.borderColor='var(--line)' }}
                   >
+                    {/* Rank badge */}
+                    <div style={{
+                      position:'absolute', top:10, right:10, fontSize:11, fontWeight:800,
+                      background: ri === 0 ? '#FFF8DC' : ri === 1 ? '#F4F4F4' : ri === 2 ? '#FDF0E0' : 'var(--paper2)',
+                      color: ri === 0 ? '#7A5200' : ri === 1 ? '#444' : ri === 2 ? '#6B3A00' : 'var(--ink3)',
+                      borderRadius:'var(--r)', padding:'2px 7px',
+                    }}>{ri === 0 ? '🥇' : ri === 1 ? '🥈' : ri === 2 ? '🥉' : `#${ri + 1}`}</div>
                     {/* Category tag */}
                     <div style={{ fontSize:11, fontWeight:700, color:'var(--accent)', background:'var(--accent-bg)', borderRadius:'var(--r)', padding:'2px 8px', display:'inline-flex', alignItems:'center', gap:4, alignSelf:'flex-start' }}>
                       <span>{p.emoji}</span> {p.category}
@@ -512,20 +586,6 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
 }
 
 // ── HELPERS ────────────────────────────────────────────────────────
-const CATEGORY_EMOJI = {
-  headphones:"🎧", smartphones:"📱", laptops:"💻", gaming:"🎮",
-  footwear:"👟", skincare:"✨", fashion:"👗", books:"📚", appliances:"🍳",
-};
-
-const FALLBACK_CATS = [
-  { slug:"headphones", name:"Headphones", emoji:"🎧" },
-  { slug:"smartphones", name:"Smartphones", emoji:"📱" },
-  { slug:"laptops", name:"Laptops", emoji:"💻" },
-  { slug:"gaming", name:"Gaming", emoji:"🎮" },
-  { slug:"footwear", name:"Footwear", emoji:"👟" },
-  { slug:"skincare", name:"Skincare", emoji:"✨" },
-  { slug:"fashion", name:"Fashion", emoji:"👗" },
-  { slug:"appliances", name:"Appliances", emoji:"🍳" },
-];
+// No static category data — emoji comes from API category objects
 
 
