@@ -6,7 +6,7 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const compression = require("compression");
 const rateLimit = require("express-rate-limit");
-const cookieParser = require('cookie-parser')
+const cookieParser = require("cookie-parser");
 const { PrismaClient } = require("@prisma/client");
 const logger = require("./src/utils/logger");
 const {
@@ -22,12 +22,23 @@ const {
 } = require("./src/utils/mongodb");
 
 // ── CRON IMPORTS ──────────────────────────────────────────────────
-const { setSearchAgent, startCron, stopCron } = require("./src/cron/categoryPreloader");
-const { startNightlyRefresh, stopNightlyRefresh } = require("./src/jobs/nightlyRefresh");
-const { setPrisma: setTelegramPrisma, startTelegramReport, stopTelegramReport } = require("./src/jobs/telegramReport");
-const snapshotCron  = require("./src/cron/rankingSnapshotCron");
+const {
+  setSearchAgent,
+  startCron,
+  stopCron,
+} = require("./src/cron/categoryPreloader");
+const {
+  startNightlyRefresh,
+  stopNightlyRefresh,
+} = require("./src/jobs/nightlyRefresh");
+const {
+  setPrisma: setTelegramPrisma,
+  startTelegramReport,
+  stopTelegramReport,
+} = require("./src/jobs/telegramReport");
+const snapshotCron = require("./src/cron/rankingSnapshotCron");
 const priceRefreshCron = require("./src/cron/priceRefreshCron");
-const autoSeedCron  = require("./src/cron/autoSeedCron");
+const autoSeedCron = require("./src/cron/autoSeedCron");
 
 const app = express();
 const prisma = new PrismaClient();
@@ -69,7 +80,7 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests. Please try again later." },
-  skip: (req) => req.path.startsWith('/search'),  // search has its own limiter
+  skip: (req) => req.path.startsWith("/search"), // search has its own limiter
 });
 app.use("/api/", limiter);
 
@@ -138,11 +149,21 @@ async function start() {
     setPrisma(prisma);
     logger.info("✅ Prisma injected into rankingAgent");
 
-    const { setPrisma: setSearchCtrlPrisma }  = require("./src/controllers/searchController");
-    const { setPrisma: setProductMatchPrisma } = require("./src/services/productMatchService");
-    const { setPrisma: setLiveFetchPrisma }    = require("./src/services/liveProductFetchService");
-    const { setPrisma: setRelatedSvcPrisma }   = require("./src/services/relatedProductService");
-    const { setPrisma: setBgEnricherPrisma }   = require("./src/services/backgroundCategoryEnricher");
+    const {
+      setPrisma: setSearchCtrlPrisma,
+    } = require("./src/controllers/searchController");
+    const {
+      setPrisma: setProductMatchPrisma,
+    } = require("./src/services/productMatchService");
+    const {
+      setPrisma: setLiveFetchPrisma,
+    } = require("./src/services/liveProductFetchService");
+    const {
+      setPrisma: setRelatedSvcPrisma,
+    } = require("./src/services/relatedProductService");
+    const {
+      setPrisma: setBgEnricherPrisma,
+    } = require("./src/services/backgroundCategoryEnricher");
     setSearchCtrlPrisma(prisma);
     setProductMatchPrisma(prisma);
     setLiveFetchPrisma(prisma);
@@ -153,15 +174,19 @@ async function start() {
     // Auto-load dynamic brand detection from DB
     try {
       const brandRecords = await prisma.product.findMany({
-        select:   { brand: true },
-        distinct: ['brand'],
-        where:    { brand: { not: null } },
+        select: { brand: true },
+        distinct: ["brand"],
+        where: { brand: { not: null } },
       });
       const { setDynamicBrands } = require("./src/utils/productNameNormalizer");
       setDynamicBrands(brandRecords.map((b) => b.brand).filter(Boolean));
-      logger.info(`✅ Dynamic brand detection loaded (${brandRecords.length} brands from DB)`);
+      logger.info(
+        `✅ Dynamic brand detection loaded (${brandRecords.length} brands from DB)`,
+      );
     } catch (brandErr) {
-      logger.warn(`⚠️  Dynamic brand loading failed (non-fatal): ${brandErr.message}`);
+      logger.warn(
+        `⚠️  Dynamic brand loading failed (non-fatal): ${brandErr.message}`,
+      );
     }
 
     // Connect MongoDB
@@ -175,49 +200,67 @@ async function start() {
     // Connect Redis
     await connectRedis();
 
-    // ── CRONS (commented out for dev restart) ────────────────────────
+    // ── CRONS ─────────────────────────────────────────────────────────
 
-    // // 1. Category preloader (runs at 12 AM IST)
-    // const { runSearchAgent } = require("./src/agents/rankingAgent");
-    // setSearchAgent(runSearchAgent);
-    // startCron();
-    // logger.info("✅ Category preloader cron started (12 AM IST)");
+    // 1. Category preloader (runs at 12 AM IST)
+    const {
+      runSearchAgent,
+      setPrisma: setAgentPrisma,
+    } = require("./src/agents/rankingAgent");
+    setAgentPrisma(prisma); // inject shared Prisma instance
+    setSearchAgent(runSearchAgent); // wire up agent for preloader
+    startCron();
+    logger.info("✅ Category preloader cron started (12 AM IST)");
 
-    // // 2. Ranking snapshot cron — refreshes top50:{category} every 6h
+    // // 2. Ranking snapshot cron — enable later (heavier, needs more testing)
     // snapshotCron.init(getRedisClient(), prisma);
     // snapshotCron.start();
     // logger.info("✅ Ranking snapshot cron started (every 6h)");
 
-    // // 3. Seed sub-type pools immediately on startup so search works right away
+    // // 3. Sub-type snapshot seeding — enable once snapshot cron is on
     // snapshotCron.runSubTypeSnapshot().catch(err =>
     //   logger.error(`SubTypeCron: startup seed failed: ${err.message}`)
     // );
-    // logger.info("✅ Sub-type snapshot seeding started in background (~3-4 min)");
 
-    // // 4. Nightly product refresh (12:01 AM IST)
+    // // 4. Nightly product refresh (12:01 AM IST) — enable next week
     // startNightlyRefresh();
     // logger.info("✅ Nightly refresh job started (12:01 AM IST)");
 
-    // // 5. Telegram daily report (9:00 AM IST)
+    // // 5. Telegram daily report — enable when ready
     // setTelegramPrisma(prisma);
     // startTelegramReport();
-    // logger.info("✅ Telegram daily report scheduled (9:00 AM IST)");
 
-    // // 6. Blog generation cron (9:00 AM IST)
+    // // 6. Blog generation cron — enable when ready
     // const cron = require("node-cron");
     // const { runBlogGeneration } = require("./src/jobs/blogGenerator");
     // cron.schedule("30 3 * * *", runBlogGeneration);
-    // logger.info("✅ Blog generation cron scheduled (3:30 AM UTC / 9:00 AM IST)");
 
-    // // 7. Daily price refresh (3:00 AM IST) — lightweight Creators API price check
-    // priceRefreshCron.init(prisma);
-    // priceRefreshCron.startPriceRefresh();
-    // logger.info("✅ Price refresh cron started (daily 3:00 AM IST)");
+    // 7. Daily price refresh (3:00 AM IST)
+    priceRefreshCron.init(prisma);
+    priceRefreshCron.startPriceRefresh();
+    logger.info("✅ Price refresh cron started (daily 3:00 AM IST)");
 
-    // // 8. Auto-seed cron (Monday 3:10 AM IST) — re-runs top zero-result queries
-    // autoSeedCron.init(getRedisClient());
-    // autoSeedCron.startAutoSeedCron();
-    // logger.info("✅ Auto-seed cron scheduled (weekly Monday 3:10 AM IST)");
+    // 8. Auto-seed cron (Monday 3:10 AM IST) — re-runs top zero-result queries
+    autoSeedCron.init(getRedisClient());
+    autoSeedCron.startAutoSeedCron();
+    logger.info("✅ Auto-seed cron scheduled (weekly Monday 3:10 AM IST)");
+
+    // ── STARTUP PRELOAD: seed all categories immediately on first deploy ──
+    // Runs 8s after boot so DB + Redis are fully ready. Non-blocking.
+    // Skip if Redis already has category cache data (i.e. after a normal restart).
+    const { preloadAllCategories } = require("./src/cron/categoryPreloader");
+    setTimeout(() => {
+      preloadAllCategories()
+        .then((r) =>
+          logger.info(
+            `✅ Startup preload done: ${r.success}/${r.success + r.failed} categories cached`,
+          ),
+        )
+        .catch((err) =>
+          logger.warn(`⚠️  Startup preload failed (non-fatal): ${err.message}`),
+        );
+    }, 8000);
+    logger.info("✅ Startup category preload scheduled (8s delay)");
 
     app.listen(PORT, () => {
       logger.info(`bestpickr API on http://localhost:${PORT}`);

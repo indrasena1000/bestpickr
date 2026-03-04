@@ -46,6 +46,53 @@ const API_BASE = "https://api.rainforestapi.com/request";
 // ── HELPERS ──────────────────────────────────────────────────────
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// ── MULTI-KEY ROTATION ────────────────────────────────────────────
+// Supports up to 3 Rainforest API keys to triple your free monthly quota.
+// Set RAINFOREST_API_KEY, RAINFOREST_API_KEY_2, RAINFOREST_API_KEY_3 in .env
+// Keys with exhausted credits are skipped automatically until next month.
+//
+// Reset: exhausted key state resets at the start of each calendar month (UTC)
+// so you don't need to restart the server.
+
+const _exhaustedKeys = new Set(); // keys currently exhausted
+let _exhaustedResetMonth = new Date().getUTCMonth();
+
+function _getAllKeys() {
+  // Check if it's a new month — reset exhausted list
+  const currentMonth = new Date().getUTCMonth();
+  if (currentMonth !== _exhaustedResetMonth) {
+    _exhaustedKeys.clear();
+    _exhaustedResetMonth = currentMonth;
+    logger.info(
+      "📖 ReviewScraper: new month — Rainforest key exhaustion state reset",
+    );
+  }
+
+  const keys = [
+    process.env.RAINFOREST_API_KEY,
+    process.env.RAINFOREST_API_KEY_2,
+    process.env.RAINFOREST_API_KEY_3,
+  ].filter(Boolean); // only include keys that are actually set
+
+  return keys;
+}
+
+function _getActiveKey() {
+  const keys = _getAllKeys();
+  const active = keys.find((k) => !_exhaustedKeys.has(k));
+  return active || null;
+}
+
+function _markKeyExhausted(key) {
+  _exhaustedKeys.add(key);
+  const total = _getAllKeys().length;
+  const remaining = total - _exhaustedKeys.size;
+  logger.warn(
+    `📖 ReviewScraper: key ...${key.slice(-6)} exhausted — ` +
+      `${remaining}/${total} key(s) still active`,
+  );
+}
+
 // ── MAIN EXPORT: FETCH REVIEWS ──────────────────────────────────
 /**
  * Fetch and parse Amazon India reviews for a given ASIN via Rainforest API.
@@ -64,10 +111,17 @@ async function fetchReviews(asin, options = {}) {
     throw new Error("fetchReviews: valid ASIN string is required");
   }
 
-  const apiKey = process.env.RAINFOREST_API_KEY;
+  const apiKey = _getActiveKey();
   if (!apiKey) {
+    const total = _getAllKeys().length;
+    if (total === 0) {
+      throw new Error(
+        "RAINFOREST_API_KEY must be set in .env — sign up at https://rainforestapi.com",
+      );
+    }
     throw new Error(
-      "RAINFOREST_API_KEY must be set in .env — sign up at https://rainforestapi.com",
+      `All ${total} Rainforest API key(s) are exhausted for this month. ` +
+        "Add more keys (RAINFOREST_API_KEY_2, _3) or wait for next month.",
     );
   }
 
@@ -78,8 +132,9 @@ async function fetchReviews(asin, options = {}) {
 
   const cleanAsin = asin.trim().toUpperCase();
   const startTime = Date.now();
+  const keyLabel = `...${apiKey.slice(-6)}`;
   logger.info(
-    `📖 ReviewScraper [Rainforest]: starting for ASIN=${cleanAsin} (up to ${maxPages} pages)`,
+    `📖 ReviewScraper [Rainforest]: starting for ASIN=${cleanAsin} (up to ${maxPages} pages) key=${keyLabel}`,
   );
 
   const allReviews = [];
@@ -112,8 +167,32 @@ async function fetchReviews(asin, options = {}) {
 
       // Verify success
       if (!data?.request_info?.success) {
+        const reqInfo = data?.request_info || {};
+        const msg = reqInfo.message || "";
+
+        // Detect credit exhaustion — rotate to next key and retry the whole ASIN
+        if (
+          reqInfo.credits_remaining === 0 ||
+          msg.toLowerCase().includes("used up your free credits") ||
+          msg.toLowerCase().includes("please consider upgrading")
+        ) {
+          _markKeyExhausted(apiKey);
+          const nextKey = _getActiveKey();
+          if (nextKey) {
+            logger.info(
+              `📖 ReviewScraper [Rainforest]: rotating to next key and retrying ASIN=${cleanAsin}`,
+            );
+            return fetchReviews(asin, options); // retry with next active key
+          }
+          // All keys exhausted
+          logger.warn(
+            `📖 ReviewScraper [Rainforest]: ALL keys exhausted — returning 0 reviews for ${cleanAsin}`,
+          );
+          break;
+        }
+
         logger.warn(
-          `📖 ReviewScraper [Rainforest]: page ${page} unsuccessful — ${JSON.stringify(data?.request_info)}`,
+          `📖 ReviewScraper [Rainforest]: page ${page} unsuccessful — ${JSON.stringify(reqInfo)}`,
         );
         pagesErrored++;
         continue;

@@ -24,8 +24,9 @@
 // ─────────────────────────────────────────────────────────────────
 "use strict";
 
-const { fetchReviews } = require("../services/amazonReviewScraper");
-const { analyzeProduct } = require("../services/aiAnalysisService");
+// Rainforest review scraper — disabled; using spec-based GPT analysis instead
+// const { fetchReviews } = require("../services/amazonReviewScraper");
+const { analyzeProductFromSpecs } = require("../services/aiAnalysisService");
 const { ProductAnalysis, ProductListing } = require("../models");
 const { getClient: getRedis } = require("../utils/redis");
 const logger = require("../utils/logger");
@@ -33,7 +34,7 @@ const logger = require("../utils/logger");
 // ── CONFIG ──────────────────────────────────────────────────────
 const ANALYSIS_CACHE_TTL = 7 * 24 * 60 * 60; // 7 days in Redis — matches MongoDB staleness window
 const ANALYSIS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in MongoDB
-const REVIEW_CHANGE_PCT = 0.10; // Re-analyze if review count grew ≥10% (smarter than absolute threshold)
+const REVIEW_CHANGE_PCT = 0.1; // Re-analyze if review count grew ≥10% (smarter than absolute threshold)
 const REDIS_KEY_PREFIX = "bestpickr:analysis"; // Matches existing key convention
 
 // ═════════════════════════════════════════════════════════════════
@@ -46,9 +47,12 @@ const REDIS_KEY_PREFIX = "bestpickr:analysis"; // Matches existing key conventio
  * @param {string} productName  — e.g. "Sony WH-1000XM5"
  * @param {string} category     — Category slug e.g. "headphones"
  * @param {Object} options
- * @param {number} options.currentReviewCount — Known review count (from PA-API), avoids extra lookup
- * @param {boolean} options.forceRefresh      — Skip freshness check, force re-analysis
- * @param {string} options.brand              — Product brand for MongoDB record
+ * @param {number}   options.currentReviewCount — Known review count (from PA-API), avoids extra lookup
+ * @param {boolean}  options.forceRefresh      — Skip freshness check, force re-analysis
+ * @param {string}   options.brand             — Product brand for MongoDB record
+ * @param {number}   options.rating            — Amazon star rating (1-5), used in spec-based scoring
+ * @param {number}   options.price             — Current price in INR
+ * @param {string[]} options.features          — Amazon feature bullet points array
  * @returns {Object|null} Analysis result or null on total failure
  */
 async function runAnalysisPipeline(asin, productName, category, options = {}) {
@@ -58,6 +62,9 @@ async function runAnalysisPipeline(asin, productName, category, options = {}) {
     currentReviewCount = null,
     forceRefresh = false,
     brand = null,
+    rating = null,
+    price = null,
+    features = [],
   } = options;
 
   logger.info(
@@ -107,99 +114,35 @@ async function runAnalysisPipeline(asin, productName, category, options = {}) {
       );
     }
 
-    // ── STEP 2: Fetch reviews from Amazon India ─────────────────
+    // ── STEP 2+3: Spec-based GPT analysis (no Rainforest needed) ──
+    // Uses Amazon feature bullet points + rating/price to call GPT-4o-mini
+    // and generate pros/cons/verdict/aiScore — same output shape as review-based.
     const step2Start = Date.now();
-    logger.info(`🔬 Pipeline [2/7]: scraping reviews from amazon.in`);
-
-    let reviewData;
-    try {
-      reviewData = await fetchReviews(cleanAsin);
-    } catch (scrapeErr) {
-      logger.error(
-        `🔬 Pipeline [2/7]: review scrape FAILED — ${scrapeErr.message} (${Date.now() - step2Start}ms)`,
-      );
-
-      // Scrape failed — return existing analysis if we have one
-      if (existing) {
-        logger.info(
-          `🔬 Pipeline: returning STALE analysis as fallback (scrape failed)`,
-        );
-        const fallback = mongoDocToResult(existing);
-        return {
-          ...fallback,
-          _pipelineMeta: {
-            source: "MongoDB-fallback",
-            fresh: false,
-            error: `Review scrape failed: ${scrapeErr.message}`,
-            elapsed: Date.now() - pipelineStart,
-          },
-        };
-      }
-
-      // No existing analysis + scrape failed = total failure
-      logger.error(
-        `🔬 Pipeline: TOTAL FAILURE — no existing analysis and scrape failed`,
-      );
-      return null;
-    }
-
-    const { reviews, starDistribution, meta: reviewMeta } = reviewData;
     logger.info(
-      `🔬 Pipeline [2/7]: scraped ${reviews.length} reviews ` +
-        `(overall=${reviewMeta.overallRating}/5, ` +
-        `verified=${reviewMeta.verifiedPurchasePct}%, ` +
-        `pages=${reviewMeta.pagesScraped}) (${Date.now() - step2Start}ms)`,
+      `🔬 Pipeline [2/7]: running spec-based GPT analysis ` +
+        `(features=${features.length}, rating=${rating}, price=${price})`,
     );
 
-    // Edge case: 0 reviews scraped but product exists
-    if (reviews.length === 0) {
-      logger.warn(`🔬 Pipeline: 0 reviews scraped — returning minimal result`);
-
-      if (existing) {
-        const fallback = mongoDocToResult(existing);
-        return {
-          ...fallback,
-          _pipelineMeta: {
-            source: "MongoDB-fallback",
-            fresh: false,
-            reason: "zero-reviews",
-            elapsed: Date.now() - pipelineStart,
-          },
-        };
-      }
-
-      return buildMinimalResult(
-        cleanAsin,
-        productName,
-        category,
-        starDistribution,
-      );
-    }
-
-    // ── STEP 3: Run AI analysis (includes authenticity check) ───
-    // analyzeProduct() internally runs:
-    //   Step 3a: checkReviewAuthenticity (statistical, fast)
-    //   Step 3b: buildPrompt (category-aware, dynamic)
-    //   Step 3c: callGPT (GPT-4o-mini, JSON mode)
-    //   Step 3d: calculateFinalScore (weighted formula)
-    const step3Start = Date.now();
-    logger.info(`🔬 Pipeline [3/7]: running AI analysis (GPT-4o-mini)`);
-
-    const analysis = await analyzeProduct(
-      reviews,
+    const analysis = await analyzeProductFromSpecs(
       productName,
       category,
-      starDistribution,
+      features,
+      {
+        platformRating: rating,
+        reviewCount: currentReviewCount || 0,
+        brand,
+        price,
+      },
     );
 
     if (!analysis) {
       logger.error(
-        `🔬 Pipeline [3/7]: AI analysis returned null (${Date.now() - step3Start}ms)`,
+        `🔬 Pipeline [2/7]: spec-based GPT analysis returned null (${Date.now() - step2Start}ms)`,
       );
 
       if (existing) {
         logger.info(
-          `🔬 Pipeline: returning STALE analysis as fallback (AI failed)`,
+          `🔬 Pipeline: returning STALE analysis as fallback (GPT failed)`,
         );
         const fallback = mongoDocToResult(existing);
         return {
@@ -207,7 +150,7 @@ async function runAnalysisPipeline(asin, productName, category, options = {}) {
           _pipelineMeta: {
             source: "MongoDB-fallback",
             fresh: false,
-            error: "AI analysis failed",
+            error: "Spec-based GPT analysis failed",
             elapsed: Date.now() - pipelineStart,
           },
         };
@@ -217,13 +160,10 @@ async function runAnalysisPipeline(asin, productName, category, options = {}) {
     }
 
     logger.info(
-      `🔬 Pipeline [3/7]: AI analysis complete — aiScore=${analysis.aiScore} ` +
-        `badge=${analysis.authenticityBadge} confidence=${analysis.confidenceLevel} ` +
-        `(${Date.now() - step3Start}ms)`,
+      `🔬 Pipeline [2/7]: spec-based GPT analysis complete — ` +
+        `aiScore=${analysis.aiScore} confidence=${analysis.confidenceLevel} ` +
+        `(${Date.now() - step2Start}ms)`,
     );
-
-    // Reviews are now consumed by the AI — they will NOT be saved or returned.
-    // This is the point of discard per architecture rules.
 
     // ── STEP 4: Save to MongoDB (upsert by ASIN) ───────────────
     const step4Start = Date.now();
@@ -263,12 +203,10 @@ async function runAnalysisPipeline(asin, productName, category, options = {}) {
     const result = {
       ...analysis,
       _pipelineMeta: {
-        source: "fresh-analysis",
+        source: "spec-analysis",
         fresh: true,
         elapsed,
-        reviewsScraped: reviews.length,
-        amazonTotalRatings: reviewMeta.totalRatingsCount,
-        pagesScraped: reviewMeta.pagesScraped,
+        featuresAnalyzed: features.length,
       },
     };
 
@@ -276,7 +214,7 @@ async function runAnalysisPipeline(asin, productName, category, options = {}) {
     logger.info(
       `🔬 Pipeline: COMPLETE for ${cleanAsin} "${productName}" — ` +
         `aiScore=${analysis.aiScore} | badge=${analysis.authenticityBadge} | ` +
-        `${reviews.length} reviews analyzed | ${elapsed}ms total`,
+        `spec-based (${features.length} features) | ${elapsed}ms total`,
     );
 
     return result;
@@ -869,23 +807,23 @@ module.exports = {
    * Used by productEnricher to avoid unnecessary ScraperAPI calls.
    */
   async lookupAnalysis(asin) {
-    const cleanAsin = asin?.trim().toUpperCase()
-    if (!cleanAsin) return null
+    const cleanAsin = asin?.trim().toUpperCase();
+    if (!cleanAsin) return null;
 
     // 1. Redis check (fastest)
-    const cached = await getAnalysisFromRedis(cleanAsin)
-    if (cached) return { ...cached, _analysisSource: 'redis' }
+    const cached = await getAnalysisFromRedis(cleanAsin);
+    if (cached) return { ...cached, _analysisSource: "redis" };
 
     // 2. MongoDB check
-    const existing = await getExistingAnalysis(cleanAsin)
+    const existing = await getExistingAnalysis(cleanAsin);
     if (existing) {
-      const result = mongoDocToResult(existing)
+      const result = mongoDocToResult(existing);
       // Warm Redis for next call (non-blocking)
-      cacheAnalysisInRedis(cleanAsin, result).catch(() => {})
-      return { ...result, _analysisSource: 'mongodb' }
+      cacheAnalysisInRedis(cleanAsin, result).catch(() => {});
+      return { ...result, _analysisSource: "mongodb" };
     }
 
-    return null
+    return null;
   },
 
   // Batch operations (cron)

@@ -76,7 +76,10 @@ export default function DetailPage({
         <div className="detail-main">
           <DetailBreadcrumb name={p.name} onHome={onHome} onBack={onBack} />
           <DetailHeader p={p} />
-          <DetailScoreBreakdown breakdown={p.breakdown} />
+          <DetailScoreBreakdown
+            breakdown={p.breakdown}
+            authenticityBadge={p.authenticityBadge}
+          />
           <DetailPlatformTable
             platforms={platforms}
             bestPlt={bestPlt}
