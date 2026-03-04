@@ -75,76 +75,83 @@ export default function PrimaryProductCard({ product, status, onBuy, onViewDetai
   const isPartial = status === 'partial'
   const confPct = confidence ? Math.round(confidence * 100) : null
 
+  // Issue 2: Determine if AI score has sufficient data
+  const hasReliableScore = p.aiScore && p.totalReviews > 0 && p.aiScore !== 3.8
+  const showBetaLabel = p.aiScore && (!p.totalReviews || p.totalReviews === 0)
+
   return (
-    <div className="rcard" style={{ padding: 0, overflow: 'hidden', border: '2px solid var(--accent)', position: 'relative' }}>
-      {/* Best Match Badge — prominent header */}
+    <div className="rcard" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--accent)', position: 'relative' }}>
+      {/* Best Match Badge — refined, lighter */}
       <div style={{
         background: 'linear-gradient(135deg, var(--accent), #228B47)',
-        color: '#fff', padding: '10px 18px',
+        color: '#fff', padding: '8px 16px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: 12,
+        gap: 10,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 16 }}>🏆</span>
-          <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '.5px', textTransform: 'uppercase' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 14 }}>🏆</span>
+          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.3px', textTransform: 'uppercase' }}>
             Best Match for Your Search
           </span>
         </div>
         {confPct && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{
-              width: 40, height: 5, borderRadius: 3,
-              background: 'rgba(255,255,255,0.3)', overflow: 'hidden',
+              width: 36, height: 4, borderRadius: 2,
+              background: 'rgba(255,255,255,0.25)', overflow: 'hidden',
             }}>
               <div style={{
-                width: `${confPct}%`, height: '100%', borderRadius: 3,
+                width: `${confPct}%`, height: '100%', borderRadius: 2,
                 background: '#fff',
               }} />
             </div>
-            <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.9 }}>{confPct}% match</span>
+            <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.85 }}>{confPct}%</span>
           </div>
         )}
       </div>
 
-      <div style={{ padding: '16px 20px 20px', display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <div style={{ padding: '14px 18px 18px', display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* Image */}
         <div style={{
-          width: 120, height: 120, borderRadius: 10,
+          width: 100, height: 100, borderRadius: 8,
           background: 'var(--paper3)', display: 'flex', alignItems: 'center',
           justifyContent: 'center', flexShrink: 0, overflow: 'hidden',
         }}>
           {p.imageUrl && !imgErr
             ? <img src={p.imageUrl} alt={p.name} onError={() => setImgErr(true)}
                    style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-            : <span style={{ fontSize: 36 }}>📦</span>}
+            : <span style={{ fontSize: 32 }}>📦</span>}
         </div>
 
         {/* Info */}
         <div style={{ flex: 1, minWidth: 180 }}>
-          <div style={{ fontSize: 12, color: 'var(--ink4)', fontWeight: 600, marginBottom: 2 }}>{p.brand}</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.3 }}>{p.name}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink4)', fontWeight: 600, marginBottom: 2 }}>{p.brand}</div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.3 }}>{p.name}</div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
             {/* Price */}
-            <span style={{ fontSize: 24, fontWeight: 800, color: 'var(--accent)', fontFamily: "'DM Mono',monospace" }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent)', fontFamily: "'DM Mono',monospace" }}>
               {fmt(p.price || p.lowestPrice || bestPlt?.price)}
             </span>
-            {/* AI Score */}
+            {/* AI Score — Issue 2: show beta label or hide if unreliable */}
             {isPartial
               ? <SkeletonPulse w={60} h={28} r={6} />
               : p.aiScore
                 ? <span style={{
                     background: 'var(--accent-bg)', color: 'var(--accent)',
-                    fontWeight: 800, fontSize: 14, fontFamily: "'DM Mono',monospace",
-                    padding: '4px 10px', borderRadius: 6,
-                  }}>AI {p.aiScore}/10</span>
+                    fontWeight: 800, fontSize: 13, fontFamily: "'DM Mono',monospace",
+                    padding: '3px 8px', borderRadius: 5, display: 'inline-flex', alignItems: 'center', gap: 4,
+                  }}>
+                    {showBetaLabel && <span style={{ fontSize: 9, fontWeight: 600, opacity: 0.7 }}>BETA</span>}
+                    AI {p.aiScore}/10
+                  </span>
                 : null}
           </div>
 
           {/* AI Summary line */}
           {p.aiSummary && (
             <div style={{
-              fontSize: 12, color: 'var(--ink3)', marginTop: 8,
+              fontSize: 12, color: 'var(--ink3)', marginTop: 6,
               lineHeight: 1.5, maxHeight: 36, overflow: 'hidden',
               textOverflow: 'ellipsis',
             }}>
@@ -153,37 +160,31 @@ export default function PrimaryProductCard({ product, status, onBuy, onViewDetai
           )}
 
           {/* Platform pills */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
             {platforms.length > 0
               ? platforms.map(plt => (
                   <button key={plt.name} onClick={() => onBuy?.(plt)}
                     style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                      padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      padding: '4px 10px', borderRadius: 16, fontSize: 11, fontWeight: 600,
                       border: '1px solid var(--line)', background: 'var(--paper)',
                       cursor: 'pointer', color: 'var(--ink)',
                     }}>
-                    <PlatformLogo name={plt.name} size={13} />
+                    <PlatformLogo name={plt.name} size={12} />
                     {fmt(plt.price)}
                   </button>
                 ))
-              : ['Amazon', 'Flipkart', 'Myntra'].map(name => (
-                  <span key={name} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
-                    padding: '5px 12px', borderRadius: 20, fontSize: 12,
-                    border: '1px solid var(--line)', color: 'var(--ink4)' }}>
-                    <PlatformLogo name={name} size={13} />
-                  </span>
-                ))}
+              : <span style={{ fontSize: 11, color: 'var(--ink4)' }}>Currently powered by Amazon data</span>}
           </div>
         </div>
 
         {/* Action buttons */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignSelf: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignSelf: 'center' }}>
           {onViewDetails && !isPartial && (
             <button onClick={() => onViewDetails(product)} style={{
               background: 'var(--paper2)', color: 'var(--accent)',
-              fontWeight: 700, fontSize: 13, padding: '10px 20px',
-              borderRadius: 10, border: '1.5px solid var(--accent)', cursor: 'pointer',
+              fontWeight: 700, fontSize: 12, padding: '8px 16px',
+              borderRadius: 8, border: '1px solid var(--accent)', cursor: 'pointer',
               whiteSpace: 'nowrap',
             }}>
               View Details
@@ -192,11 +193,11 @@ export default function PrimaryProductCard({ product, status, onBuy, onViewDetai
           {!isPartial && bestPlt && (
             <button onClick={() => onBuy?.(bestPlt)} style={{
               background: 'var(--accent)', color: '#fff',
-              fontWeight: 700, fontSize: 14, padding: '12px 24px',
-              borderRadius: 10, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
-              boxShadow: '0 4px 12px rgba(26,107,60,0.3)',
+              fontWeight: 700, fontSize: 13, padding: '10px 20px',
+              borderRadius: 8, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
+              boxShadow: '0 2px 8px rgba(26,107,60,0.2)',
             }}>
-              Buy on {bestPlt.name} →
+              View Today's Best Price →
             </button>
           )}
         </div>

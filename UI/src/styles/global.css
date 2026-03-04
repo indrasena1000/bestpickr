@@ -956,7 +956,7 @@ a {
 }
 .dh-scores {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
   gap: 1px;
   border-top: 1px solid var(--line);
   background: var(--line);

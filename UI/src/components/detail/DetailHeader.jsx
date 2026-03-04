@@ -73,16 +73,16 @@ export default function DetailHeader({ p }) {
                 : "Analysed by AI"}
           </div>
         </div>
-        <div className="dh-score-cell">
-          <div className="dh-score-label">Avg Rating</div>
-          <div className="dh-score-val">
-            {hasRealRating ? displayRating : "—"}
-            <span style={{ fontSize: 14, color: "var(--ink4)" }}>/5</span>
+        {hasRealRating && (
+          <div className="dh-score-cell">
+            <div className="dh-score-label">Avg Rating</div>
+            <div className="dh-score-val">
+              {displayRating}
+              <span style={{ fontSize: 14, color: "var(--ink4)" }}>/5</span>
+            </div>
+            <div className="dh-score-sub">Amazon rating</div>
           </div>
-          <div className="dh-score-sub">
-            {hasRealRating ? "Amazon rating" : "Not yet rated"}
-          </div>
-        </div>
+        )}
         {hasRealReviews && (
           <div className="dh-score-cell">
             <div className="dh-score-label">Total Reviews</div>

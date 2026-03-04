@@ -319,6 +319,27 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
+  // ── POPSTATE LISTENER (blog back/forward button) ───────────────
+  // When the user hits Back after visiting a /blog/... URL, the browser
+  // fires popstate. We read the new pathname and update route state.
+  useEffect(() => {
+    function onPopState() {
+      const pn = window.location.pathname.replace(/^\//, "");
+      if (pn === "blog" || pn.startsWith("blog/")) {
+        setSeoMeta(null);
+        setRoute({ path: pn, params: {} });
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      // For hash-based routes, fall back to hash parsing
+      const r = parseHash();
+      setRoute(r);
+      setSeoMeta(null);
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   // ── PAGE TITLE ─────────────────────────────────────────────────
   useEffect(() => {
     if (activeSeoMeta) return;
@@ -342,8 +363,17 @@ export default function App() {
   // ── NAVIGATION ─────────────────────────────────────────────────
   const navigate = useCallback((path, params = {}) => {
     setSeoMeta(null);
-    // If we're on a non-root pathname (e.g. /nonexistent-url), silently fix
-    // the URL to '/' via history.replaceState — no full page reload needed.
+    // Blog routes use clean /blog/... paths for SEO — no hash fragment.
+    // Vercel already rewrites all paths to index.html, so these URLs are
+    // fully crawlable by Google without a # in the address bar.
+    if (path === "blog" || path.startsWith("blog/")) {
+      window.history.pushState(null, "", "/" + path);
+      setRoute({ path, params });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      trackPageView(path, params);
+      return;
+    }
+    // For non-blog routes: if on a non-root pathname, silently fix to '/'.
     if (window.location.pathname.replace(/^\//, "") !== "") {
       window.history.replaceState(null, "", "/");
     }
@@ -461,9 +491,7 @@ export default function App() {
       <>
         {maintenance.enabled ? (
           <MaintenanceBlogNav
-            onBack={() => {
-              window.location.hash = "";
-            }}
+            onBack={() => navigate("home")}
           />
         ) : (
           <Navbar
@@ -494,9 +522,7 @@ export default function App() {
       <>
         {maintenance.enabled ? (
           <MaintenanceBlogNav
-            onBack={() => {
-              window.location.hash = "#/blog";
-            }}
+            onBack={() => navigate("blog")}
           />
         ) : (
           <Navbar

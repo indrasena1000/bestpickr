@@ -96,6 +96,67 @@ function applyFilters(products, { brand, price_min, price_max, features }) {
   return f;
 }
 
+// ── RELEVANCE SCORING (Issue 1) ──────────────────────────────────
+// Prevents unrelated products (kitchen scale for "air conditioner") from
+// appearing just to fill space. Returns items sorted by relevance score;
+// items scoring 0 are dropped entirely.
+function scoreRelevance(products, intentResult) {
+  const { category, brand, cleanQuery, features } = intentResult;
+  const qTokens = (cleanQuery || '')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
+
+  return products
+    .map((p) => {
+      const text = `${p.name || ''} ${p.brand || ''} ${p.category || ''}`.toLowerCase();
+      let score = 0;
+
+      // Category match (strong signal)
+      if (category && p.category === category) score += 40;
+
+      // Brand match
+      if (brand && text.includes(brand.toLowerCase())) score += 25;
+
+      // Query token matches (each token hit = 10 pts)
+      for (const t of qTokens) {
+        if (text.includes(t)) score += 10;
+        // Stem plural: "conditioners" → "conditioner"
+        else if (t.endsWith('s') && t.length > 4 && text.includes(t.slice(0, -1))) score += 8;
+      }
+
+      // Feature match
+      if (features?.length) {
+        for (const ft of features) {
+          if (text.includes(ft.toLowerCase())) score += 5;
+        }
+      }
+
+      return { ...p, _relevance: score };
+    })
+    .filter((p) => p._relevance > 0)
+    .sort((a, b) => b._relevance - a._relevance);
+}
+
+// ── DEDUPLICATION (Issue 6) ───────────────────────────────────────
+// Removes duplicate products by ASIN, platformId, or normalized name.
+function dedup(products) {
+  const seen = new Set();
+  return products.filter((p) => {
+    // Primary key: ASIN or platformId
+    const asinKey = p.asin || p.platformId || null;
+    if (asinKey && seen.has(`id:${asinKey}`)) return false;
+    if (asinKey) seen.add(`id:${asinKey}`);
+
+    // Secondary key: normalized name (first 60 chars lowercase, no spaces)
+    const nameKey = (p.name || '').toLowerCase().replace(/\s+/g, '').slice(0, 60);
+    if (nameKey && seen.has(`n:${nameKey}`)) return false;
+    if (nameKey) seen.add(`n:${nameKey}`);
+
+    return true;
+  });
+}
+
 async function getTop50(redis, category) {
   if (!redis || !category) return [];
   try {
@@ -131,7 +192,7 @@ async function pathA(redis, query, intentResult, startTime) {
             primary.id,
             primary.name,
           );
-    const suggestions = await enrichAll(rawRelated, { scrapeLimit: 0 });
+    const suggestions = dedup(await enrichAll(rawRelated, { scrapeLimit: 0 }));
 
     logger.info(
       `PathA: Redis HIGH confidence (${redisResult.confidence}) — "${primary.name}" — skipping Amazon`,
@@ -159,7 +220,7 @@ async function pathA(redis, query, intentResult, startTime) {
     }));
     const enriched = await enrichAll(formatted, { scrapeLimit: 1 });
     const primary = enriched[0];
-    const suggestions = enriched.slice(1);
+    const suggestions = dedup(enriched.slice(1));
 
     logger.info(
       `PathA: DB HIGH confidence (${dbResult.confidence}) — "${primary.name}" — skipping Amazon`,
@@ -187,7 +248,7 @@ async function pathA(redis, query, intentResult, startTime) {
     }));
     const enriched = await enrichAll(formatted, { scrapeLimit: 1 });
     const primary = enriched[0];
-    const suggestions = enriched.slice(1);
+    const suggestions = dedup(enriched.slice(1));
 
     if (isStale(dbResult.products[0])) {
       logger.info(
@@ -221,9 +282,9 @@ async function pathA(redis, query, intentResult, startTime) {
     redisResult.confidence >= partialThreshold
   ) {
     const primary = await enrichFromCache(redisResult.products[0]);
-    const suggestions = await enrichAll(redisResult.products.slice(1, 10), {
+    const suggestions = dedup(await enrichAll(redisResult.products.slice(1, 10), {
       scrapeLimit: 0,
-    });
+    }));
 
     return makeResponse({
       intent: intentResult.intent,
@@ -247,7 +308,7 @@ async function pathA(redis, query, intentResult, startTime) {
     }));
     const enriched = await enrichAll(formatted, { scrapeLimit: 1 });
     const primary = enriched[0];
-    const suggestions = enriched.slice(1);
+    const suggestions = dedup(enriched.slice(1));
 
     logger.info(`PathA: legacy DB hit — ${enriched.length} enriched results`);
     return makeResponse({
@@ -325,19 +386,28 @@ async function pathB(redis, intentResult, startTime, prisma, rawQuery) {
     }
   }
 
+  // ── Relevance scoring + dedup (Issue 1 + Issue 6) ───────────────
+  // Only keep products that actually match the query; prevent kitchen
+  // scales appearing for "air conditioner under 50k".
+  let final = dedup(filtered);
+  if (intentResult.cleanQuery && intentResult.cleanQuery.split(/\s+/).length >= 2) {
+    const scored = scoreRelevance(final, intentResult);
+    if (scored.length > 0) final = scored;
+  }
+
   // ── Fire background enrichment if results are thin ─────────────
   // This populates Redis top50:{category} + PostgreSQL for future queries
-  if (filtered.length < 5 && category) {
+  if (final.length < 5 && category) {
     const hint = rawQuery || `best ${category}`;
     logger.info(
-      `PathB: thin results (${filtered.length}) for "${category}" — triggering background enrichment`,
+      `PathB: thin results (${final.length}) for "${category}" — triggering background enrichment`,
     );
     triggerCategoryEnrichment(redis, category, hint);
   }
 
   // ── If ZERO results, fall through to pathA live fetch ──────────
   // So the user gets immediate results instead of an empty page
-  if (filtered.length === 0 && rawQuery) {
+  if (final.length === 0 && rawQuery) {
     logger.info(
       `PathB: zero results for "${category}" — falling through to pathA live fetch`,
     );
@@ -348,7 +418,7 @@ async function pathB(redis, intentResult, startTime, prisma, rawQuery) {
     intent,
     confidence: intentResult.confidence,
     matchType: intentResult.matchType,
-    suggestions: filtered.slice(0, 10),
+    suggestions: final.slice(0, 10),
     source: products.length > 0 ? "cache" : "database",
     status: "ready",
     executionTimeMs: Date.now() - startTime,

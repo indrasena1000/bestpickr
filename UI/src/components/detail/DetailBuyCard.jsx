@@ -60,7 +60,7 @@ export default function DetailBuyCard({ p, bestPlt, platforms, onBuy }) {
   // ── BUY BUTTON ───────────────────────────────────────────────────
   const BuyButton = (
     <button className="buy-card-main-btn" onClick={() => onBuy(bestPlt)}>
-      Buy on {bestPlt?.name || "Amazon"} →
+      View Today's Best Price →
     </button>
   );
 
