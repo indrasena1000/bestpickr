@@ -314,8 +314,9 @@
 
 const pLimit = require("p-limit");
 const amazonService = require("../services/amazonService");
-const flipkartService = require("../services/flipkartService");
-const myntraService = require("../services/myntraService");
+// Flipkart + Myntra disabled for Amazon-only mode (week 1 launch)
+// const flipkartService = require("../services/flipkartService");
+// const myntraService = require("../services/myntraService");
 const { getAffiliateLinks } = require("../services/cuelinkService");
 const { groupByProduct, aggregateGroup } = require("../utils/scorer");
 const {
@@ -345,40 +346,134 @@ const limit = pLimit(3);
 // Otherwise, we try to detect it from the query text.
 const CATEGORY_KEYWORDS = {
   headphones: [
-    "headphone", "headphones", "earphone", "earphones",
-    "earbuds", "earbud", "headset", "tws", "neckband", "airpods", "audio", "speaker",
+    "headphone",
+    "headphones",
+    "earphone",
+    "earphones",
+    "earbuds",
+    "earbud",
+    "headset",
+    "tws",
+    "neckband",
+    "airpods",
+    "audio",
+    "speaker",
   ],
   smartphones: [
-    "phone", "phones", "mobile", "smartphone", "smartphones",
-    "iphone", "android", "samsung galaxy", "oneplus", "pixel",
-    "redmi", "realme", "vivo", "oppo",
+    "phone",
+    "phones",
+    "mobile",
+    "smartphone",
+    "smartphones",
+    "iphone",
+    "android",
+    "samsung galaxy",
+    "oneplus",
+    "pixel",
+    "redmi",
+    "realme",
+    "vivo",
+    "oppo",
   ],
-  laptops: ["laptop", "laptops", "macbook", "notebook", "chromebook", "ultrabook"],
+  laptops: [
+    "laptop",
+    "laptops",
+    "macbook",
+    "notebook",
+    "chromebook",
+    "ultrabook",
+  ],
   appliances: [
-    "appliance", "appliances", "mixer", "grinder", "microwave", "oven",
-    "toaster", "blender", "juicer", "washing", "fridge", "refrigerator",
-    "air conditioner", "vacuum", "purifier", "cooker", "induction",
+    "appliance",
+    "appliances",
+    "mixer",
+    "grinder",
+    "microwave",
+    "oven",
+    "toaster",
+    "blender",
+    "juicer",
+    "washing",
+    "fridge",
+    "refrigerator",
+    "air conditioner",
+    "vacuum",
+    "purifier",
+    "cooker",
+    "induction",
   ],
   gaming: [
-    "gaming", "game", "gamer", "controller", "gamepad",
-    "console", "playstation", "xbox", "ps5", "ps4", "nintendo",
+    "gaming",
+    "game",
+    "gamer",
+    "controller",
+    "gamepad",
+    "console",
+    "playstation",
+    "xbox",
+    "ps5",
+    "ps4",
+    "nintendo",
   ],
   footwear: [
-    "footwear", "shoe", "shoes", "sneaker", "sneakers",
-    "sandal", "slipper", "boot", "boots", "running shoe", "trainer",
-    "trainers", "clogs", "loafer", "nike", "adidas", "puma", "reebok",
+    "footwear",
+    "shoe",
+    "shoes",
+    "sneaker",
+    "sneakers",
+    "sandal",
+    "slipper",
+    "boot",
+    "boots",
+    "running shoe",
+    "trainer",
+    "trainers",
+    "clogs",
+    "loafer",
+    "nike",
+    "adidas",
+    "puma",
+    "reebok",
   ],
   skincare: [
-    "skincare", "skin care", "beauty", "cosmetic",
-    "serum", "sunscreen", "moisturizer", "cleanser", "face wash",
-    "toner", "spf",
+    "skincare",
+    "skin care",
+    "beauty",
+    "cosmetic",
+    "serum",
+    "sunscreen",
+    "moisturizer",
+    "cleanser",
+    "face wash",
+    "toner",
+    "spf",
   ],
   fashion: [
-    "fashion", "clothing", "clothes", "apparel", "shirt", "tshirt",
-    "t-shirt", "jeans", "kurta", "dress", "jacket", "hoodie", "trouser", "saree",
+    "fashion",
+    "clothing",
+    "clothes",
+    "apparel",
+    "shirt",
+    "tshirt",
+    "t-shirt",
+    "jeans",
+    "kurta",
+    "dress",
+    "jacket",
+    "hoodie",
+    "trouser",
+    "saree",
   ],
   books: ["book", "books", "novel", "textbook", "fiction", "non-fiction"],
-  cameras: ["camera", "cameras", "dslr", "mirrorless", "gopro", "webcam", "lens"],
+  cameras: [
+    "camera",
+    "cameras",
+    "dslr",
+    "mirrorless",
+    "gopro",
+    "webcam",
+    "lens",
+  ],
 };
 
 function detectCategory(query, category) {
@@ -443,32 +538,20 @@ async function runSearchAgent(query, category = "") {
     }
   }
 
-  // ── TIER 3: Live scrape (costs ScraperAPI credits) ──────────────
-  // Both caches missed — call all platform APIs in parallel.
-  // Promise.allSettled = if one fails, others still return results.
-  logger.info(`Agent: Tier 3 — live scraping all platforms for "${query}"...`);
+  // ── TIER 3: Live scrape — Amazon only (week-1 launch mode) ────────
+  // Flipkart + Myntra disabled until fully tested. Cuelinks still adds
+  // affiliate tracking links to Amazon products in Step 6 below.
+  logger.info(`Agent: Tier 3 — live scraping Amazon for "${query}"...`);
 
-  const [amazonResult, flipkartResult, myntraResult] = await Promise.allSettled(
-    [
-      limit(() => amazonService.searchProducts(query, category)),
-      limit(() => flipkartService.searchProducts(query, category)),
-      limit(() => myntraService.searchProducts(query, category)),
-    ],
-  );
+  const [amazonResult] = await Promise.allSettled([
+    limit(() => amazonService.searchProducts(query, category)),
+  ]);
 
   const amazonProducts = extractSettled(amazonResult, "Amazon");
-  const flipkartProducts = extractSettled(flipkartResult, "Flipkart");
-  const myntraProducts = extractSettled(myntraResult, "Myntra");
-
-  const allProducts = [
-    ...amazonProducts,
-    ...flipkartProducts,
-    ...myntraProducts,
-  ];
+  const allProducts = [...amazonProducts];
 
   logger.info(
-    `Agent: raw products: ${allProducts.length} ` +
-      `(Amazon:${amazonProducts.length} Flipkart:${flipkartProducts.length} Myntra:${myntraProducts.length})`,
+    `Agent: raw products: ${allProducts.length} (Amazon:${amazonProducts.length})`,
   );
 
   // FIX 3: If ALL platforms return empty, fall back to mock_products.json
@@ -476,12 +559,18 @@ async function runSearchAgent(query, category = "") {
     logger.warn(`Agent: ⚠️  ALL platforms returned 0 products for "${query}"`);
     const mockResults = getMockResults(query, category);
     if (mockResults.length > 0) {
-      logger.info(`Agent: serving ${mockResults.length} mock products as fallback`);
+      logger.info(
+        `Agent: serving ${mockResults.length} mock products as fallback`,
+      );
       // Cache mock results so subsequent searches hit Tier 1
       cacheResults(query, category, mockResults).catch((err) =>
         logger.warn(`Agent: mock→cache failed: ${err.message}`),
       );
-      return { results: mockResults, fromCache: false, source: "mock_fallback" };
+      return {
+        results: mockResults,
+        fromCache: false,
+        source: "mock_fallback",
+      };
     }
     return { results: [], fromCache: false, error: "no_products_found" };
   }
@@ -648,8 +737,6 @@ async function runSearchAgent(query, category = "") {
     elapsed_ms: elapsed,
     platforms: {
       amazon: amazonProducts.length,
-      flipkart: flipkartProducts.length,
-      myntra: myntraProducts.length,
     },
   };
 }

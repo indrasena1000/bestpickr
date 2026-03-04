@@ -36,6 +36,7 @@ import BlogPostPage from "./pages/BlogPostPage.jsx";
 import { matchSeoRoute } from "./seoRoutes.js";
 import { trackPageView, trackSearch } from "./utils/analytics.js";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
+import ErrorBoundary from "./components/ErrorBoundary.jsx";
 
 // ── MAINTENANCE BLOG NAV ───────────────────────────────────────────
 // Shown instead of the main Navbar when maintenance is ON but user is
@@ -192,15 +193,19 @@ export default function App() {
   const pathname = window.location.pathname.replace(/^\//, "");
   const seoMatch = matchSeoRoute(pathname);
 
+  // Path-based blog routing: /blog or /blog/:slug visited directly (e.g. from Google)
+  // Vercel rewrites to index.html; we detect the path here and set the initial route.
+  const isBlogPathRoute = pathname === "blog" || pathname.startsWith("blog/");
+
   const initialRoute = parseHash();
   const initialSession =
     initialRoute.path === "detail"
       ? loadDetailFromSession()
       : { product: null, results: [] };
 
-  // If the visitor landed on an unknown path (not root, not an SEO route),
+  // If the visitor landed on an unknown path (not root, not SEO route, not blog),
   // treat it as a 404 from the start — don't silently fall back to home.
-  const isUnknownPathRoute = pathname !== "" && !seoMatch;
+  const isUnknownPathRoute = pathname !== "" && !seoMatch && !isBlogPathRoute;
 
   const [route, setRoute] = useState(
     seoMatch
@@ -208,9 +213,11 @@ export default function App() {
           path: "results",
           params: { q: seoMatch.query, cat: seoMatch.category },
         }
-      : isUnknownPathRoute
-        ? { path: "404", params: {} }
-        : initialRoute,
+      : isBlogPathRoute
+        ? { path: pathname, params: {} } // e.g. "blog" or "blog/how-to-spot-fake-reviews-amazon-india"
+        : isUnknownPathRoute
+          ? { path: "404", params: {} }
+          : initialRoute,
   );
   const [selectedProduct, setProduct] = useState(initialSession.product);
   const [searchResults, setResults] = useState(initialSession.results);
@@ -616,25 +623,29 @@ export default function App() {
       )}
 
       {path === "results" && (
-        <ResultsPage
-          query={params.q || activeSeoMeta?.query || ""}
-          category={params.cat || activeSeoMeta?.category || ""}
-          onViewProduct={handleViewProduct}
-          onSearch={handleSearch}
-        />
+        <ErrorBoundary onRetry={() => window.location.reload()}>
+          <ResultsPage
+            query={params.q || activeSeoMeta?.query || ""}
+            category={params.cat || activeSeoMeta?.category || ""}
+            onViewProduct={handleViewProduct}
+            onSearch={handleSearch}
+          />
+        </ErrorBoundary>
       )}
 
       {path === "detail" && (
-        <DetailPage
-          product={selectedProduct}
-          allResults={searchResults}
-          onViewProduct={handleViewProduct}
-          onBack={() => {
-            const { q = "", cat = "" } = lastSearchRef.current;
-            navigate("results", { q, cat });
-          }}
-          onHome={() => navigate("home")}
-        />
+        <ErrorBoundary onRetry={() => window.history.back()}>
+          <DetailPage
+            product={selectedProduct}
+            allResults={searchResults}
+            onViewProduct={handleViewProduct}
+            onBack={() => {
+              const { q = "", cat = "" } = lastSearchRef.current;
+              navigate("results", { q, cat });
+            }}
+            onHome={() => navigate("home")}
+          />
+        </ErrorBoundary>
       )}
 
       <Footer

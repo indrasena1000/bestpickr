@@ -35,7 +35,14 @@ export default function BlogPostPage({
   maintenanceMode = false,
 }) {
   const resolvedSlug =
-    slug || window.location.hash.replace(/^#\/?blog\//, "").split("?")[0];
+    slug ||
+    (() => {
+      // Path-based: /blog/my-slug (SEO-friendly URL, preferred)
+      const pathMatch = window.location.pathname.match(/^\/blog\/([^/?#]+)/);
+      if (pathMatch) return pathMatch[1];
+      // Hash-based: /#/blog/my-slug (fallback for internal navigation)
+      return window.location.hash.replace(/^#\/?blog\//, "").split("?")[0];
+    })();
 
   const [post, setPost] = useState(null);
   const [related, setRelated] = useState([]);
@@ -77,6 +84,10 @@ export default function BlogPostPage({
       if (postRef.current && progressRef.current > 5) {
         trackBlogReadDepth(slugRef.current, progressRef.current);
       }
+      // Clean up injected schema + canonical to avoid leaking into next page
+      document.getElementById("blog-post-schema")?.remove();
+      const canonical = document.querySelector('link[rel="canonical"]');
+      if (canonical) canonical.href = "https://bestpickr.in/";
     };
   }, []); // intentionally empty — runs only on unmount
 
@@ -93,10 +104,78 @@ export default function BlogPostPage({
         }
         setPost(d.post);
         setCtaQ(extractProduct(d.post.title));
-        document.title = d.post.title + " | bestpickr";
-        const meta = document.querySelector('meta[name="description"]');
-        if (meta) meta.content = d.post.excerpt || "";
-        return getBlogPosts({ category: d.post.category, limit: 4 });
+
+        // ── Full SEO meta injection ────────────────────────────────
+        const post = d.post;
+        const canonicalUrl = `https://bestpickr.in/blog/${post.slug}`;
+        const ogImage = post.coverImage || "https://bestpickr.in/og-image.png";
+        document.title = `${post.title} | bestpickr`;
+
+        const setMeta = (sel, attr, val) => {
+          const el = document.querySelector(sel);
+          if (el) el.setAttribute(attr, val);
+        };
+        setMeta('meta[name="description"]', "content", post.excerpt || "");
+        setMeta('meta[property="og:title"]', "content", post.title);
+        setMeta(
+          'meta[property="og:description"]',
+          "content",
+          post.excerpt || "",
+        );
+        setMeta('meta[property="og:url"]', "content", canonicalUrl);
+        setMeta('meta[property="og:image"]', "content", ogImage);
+        setMeta('meta[property="og:type"]', "content", "article");
+        setMeta('meta[name="twitter:title"]', "content", post.title);
+        setMeta(
+          'meta[name="twitter:description"]',
+          "content",
+          post.excerpt || "",
+        );
+        setMeta('meta[name="twitter:image"]', "content", ogImage);
+        setMeta('meta[name="twitter:card"]', "content", "summary_large_image");
+
+        // Canonical URL
+        let canonical = document.querySelector('link[rel="canonical"]');
+        if (!canonical) {
+          canonical = document.createElement("link");
+          canonical.rel = "canonical";
+          document.head.appendChild(canonical);
+        }
+        canonical.href = canonicalUrl;
+
+        // Article JSON-LD structured data
+        const existing = document.getElementById("blog-post-schema");
+        if (existing) existing.remove();
+        const sd = document.createElement("script");
+        sd.type = "application/ld+json";
+        sd.id = "blog-post-schema";
+        sd.text = JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "Article",
+          headline: post.title,
+          description: post.excerpt || "",
+          image: ogImage,
+          datePublished: post.publishedAt,
+          dateModified: post.updatedAt || post.publishedAt,
+          author: {
+            "@type": "Organization",
+            name: "bestpickr",
+            url: "https://bestpickr.in",
+          },
+          publisher: {
+            "@type": "Organization",
+            name: "bestpickr",
+            url: "https://bestpickr.in",
+            logo: {
+              "@type": "ImageObject",
+              url: "https://bestpickr.in/og-image.png",
+            },
+          },
+          mainEntityOfPage: { "@type": "WebPage", "@id": canonicalUrl },
+        });
+        document.head.appendChild(sd);
+
+        return getBlogPosts({ category: post.category, limit: 4 });
       })
       .then((d) => {
         if (!d) return;
@@ -226,7 +305,8 @@ export default function BlogPostPage({
 
   if (!post) return null;
 
-  const postUrl = window.location.href;
+  // Always share the canonical path URL regardless of hash vs path navigation
+  const postUrl = `https://bestpickr.in/blog/${post.slug}`;
   const shareText = encodeURIComponent(post.title + " — " + postUrl);
   const waUrl = `https://wa.me/?text=${shareText}`;
   const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(post.title)}&url=${encodeURIComponent(postUrl)}`;

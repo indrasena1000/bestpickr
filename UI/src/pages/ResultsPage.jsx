@@ -148,17 +148,29 @@ function queryRelevanceFilter(items, query) {
     .filter((t) => t.length >= 3 && !QUERY_STOP.has(t));
   // If no meaningful tokens (e.g. "best laptops"), skip filtering
   if (tokens.length < 2) return items;
+  // Also build concatenated variants so "skull candy" matches "skullcandy"
+  const joined = tokens.join(""); // e.g. ["skull","candy"] → "skullcandy"
   // Check if any token looks like a brand/model (starts with letter, mixed alphanum)
   const hasModelToken = tokens.some(
     (t) => /^[a-z][a-z0-9-]+$/.test(t) && t.length >= 3,
   );
   if (!hasModelToken) return items;
-  return items.filter((p) => {
+  const filtered = items.filter((p) => {
     const text =
       `${p.name || ""} ${p.brand || ""} ${p.category || ""}`.toLowerCase();
-    // At least 1 query token must appear in the product text
-    return tokens.some((t) => text.includes(t));
+    // Match individual tokens OR the joined form (handles "skull candy" → "skullcandy")
+    // Also stem plurals: "cameras" → "camera", "phones" → "phone"
+    return (
+      tokens.some(
+        (t) =>
+          text.includes(t) ||
+          (t.endsWith("es") && t.length > 3 && text.includes(t.slice(0, -2))) ||
+          (t.endsWith("s") && t.length > 3 && text.includes(t.slice(0, -1))),
+      ) || text.includes(joined)
+    );
   });
+  // If the filter is too aggressive and removes everything, return all items
+  return filtered.length > 0 ? filtered : items;
 }
 
 // BUG #18: Tooltip component
@@ -225,7 +237,7 @@ function AITooltip({ reason, children }) {
 
 // ── SEARCH LOADING STATE ────────────────────────────────────────────
 const SEARCH_STEPS = [
-  { icon: "🔍", label: "Searching Amazon, Flipkart & Myntra" },
+  { icon: "🔍", label: "Searching Amazon for best matches" },
   { icon: "📦", label: "Fetching prices and product specs" },
   { icon: "🤖", label: "Reading thousands of reviews" },
   { icon: "📊", label: "Scoring by value, sentiment & reliability" },
@@ -508,7 +520,7 @@ export default function ResultsPage({
                 Clear
               </button>
             </div>
-            {["Amazon", "Flipkart", "Myntra"].map((plt) => {
+            {["Amazon"].map((plt) => {
               const count = baseList.filter((p) =>
                 (p.platforms || []).some((pl) => pl.name === plt),
               ).length;
@@ -895,34 +907,37 @@ export default function ResultsPage({
                 {/* AI Summary bar for category results */}
                 {(() => {
                   const guardedItems = queryRelevanceFilter(sorted, query);
-                  if (guardedItems.length === 0) return null;
+                  // If relevance filter wiped everything out, show all sorted items as fallback
+                  const displayItems =
+                    guardedItems.length > 0 ? guardedItems : sorted;
+                  if (displayItems.length === 0) return null;
                   return (
                     <>
-                      {guardedItems.length > 0 && top && (
+                      {displayItems.length > 0 && top && (
                         <div className="ai-summary">
                           <div className="ai-summary-label">★ AI Summary</div>
                           <div className="ai-summary-text">
                             <strong>
-                              {guardedItems[0].brand ||
-                                guardedItems[0].name
+                              {displayItems[0].brand ||
+                                displayItems[0].name
                                   ?.split(" ")
                                   .slice(0, 3)
                                   .join(" ")}
                             </strong>{" "}
                             leads with the highest combined score (
-                            {guardedItems[0].aiScore}/10).{" "}
+                            {displayItems[0].aiScore}/10).{" "}
                             {
-                              guardedItems.filter((p) => p.positivePct >= 75)
+                              displayItems.filter((p) => p.positivePct >= 75)
                                 .length
                             }{" "}
-                            of {guardedItems.length} products have 75%+ positive
+                            of {displayItems.length} products have 75%+ positive
                             reviews.
                           </div>
                         </div>
                       )}
                       <ProductGrid
                         title={`Bestpickr\'s top picks for "${query}"`}
-                        items={guardedItems}
+                        items={displayItems}
                         onSelect={(p) => onViewProduct(p, baseList)}
                       />
                     </>
@@ -978,6 +993,25 @@ export default function ResultsPage({
               categorySuggestions={null}
             />
           )}
+
+          {/* CATCH-ALL — unknown intent with results (prevents blank page) */}
+          {!loading &&
+            !error &&
+            !noResults &&
+            intent &&
+            intent !== "PRODUCT_SPECIFIC" &&
+            intent !== "CATEGORY" &&
+            intent !== "BRAND_CATEGORY" &&
+            intent !== "GENERIC" &&
+            intent !== "LOW_CONFIDENCE" &&
+            intent !== "FALLBACK" &&
+            sorted.length > 0 && (
+              <ProductGrid
+                title={`Bestpickr\'s top picks for "${query}"`}
+                items={sorted}
+                onSelect={(p) => onViewProduct(p, baseList)}
+              />
+            )}
 
           {/* LEGACY FALLBACK — no intent set (old API response shape) */}
           {!loading && !error && !intent && (

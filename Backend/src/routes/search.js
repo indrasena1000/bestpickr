@@ -88,7 +88,7 @@ const {
 
 // ── Config
 const CACHE_TTL_MS = (parseInt(process.env.CACHE_TTL_SECONDS) || 21600) * 1000; // 6h in ms
-const MAX_AMAZON_RESULTS = 15; // fetch 15, rank to top 10
+const MAX_AMAZON_RESULTS = 10; // fetch 10, rank to top 10
 const MAX_RESPONSE_RESULTS = 10; // return top 10
 const PARALLEL_CONCURRENCY = 5; // max products enriched simultaneously
 const ANALYSIS_TIMEOUT_MS = 25000; // 25s per product (scrape + GPT)
@@ -196,6 +196,20 @@ const CATEGORY_FILTER_MAP = {
     "appliance",
     "induction",
     "juicer",
+  ],
+  cameras: [
+    "camera",
+    "dslr",
+    "mirrorless",
+    "lens",
+    "canon",
+    "nikon",
+    "sony",
+    "fujifilm",
+    "olympus",
+    "gopro",
+    "action camera",
+    "point and shoot",
   ],
 };
 
@@ -800,11 +814,14 @@ async function enrichProduct(amazonProduct, category) {
   } else {
     // ── REAL PATH: full analysis pipeline + Cuelinks in parallel ──
     const [analysisResult, cuelinksResult] = await Promise.allSettled([
-      // Analysis pipeline: MongoDB check → review scrape → GPT → save
+      // Analysis pipeline: MongoDB check → spec-based GPT → save (no Rainforest)
       withTimeout(
         runAnalysisPipeline(asin, productName, category || "general", {
           currentReviewCount: reviewCount,
           brand,
+          rating: amazonProduct.rating || null,
+          price: amazonProduct.price || null,
+          features: amazonProduct.features || [],
         }),
         ANALYSIS_TIMEOUT_MS,
         `Analysis timeout for ${asin}`,
@@ -1040,12 +1057,37 @@ function formatProductResult(product, analysis, rank) {
     : a?.positivePct || p.positivePct || null;
 
   // ── AI Score breakdown (frontend uses p.breakdown) ──
-  const breakdown = a?.breakdown || {
-    ratingScore: avgRating ? +(avgRating * 2).toFixed(1) : aiScore || 0,
-    sentimentScore: positivePct ? +(positivePct / 10).toFixed(1) : aiScore || 0,
-    valueScore: aiScore ? +(aiScore * 0.85).toFixed(1) : 0,
-    volumeScore: totalReviews > 1000 ? 9 : totalReviews > 100 ? 7 : 5,
-  };
+  // For spec-based analysis, derive sub-scores from aiScore + sentiment + rating
+  const isSpecBased = a?.authenticityBadge === "spec-based";
+  const breakdown =
+    a?.breakdown ||
+    (() => {
+      if (isSpecBased && aiScore) {
+        // Derive sub-scores from the GPT spec analysis
+        const sentScore = positivePct
+          ? +(positivePct / 10).toFixed(1)
+          : +(aiScore * 0.9).toFixed(1);
+        const ratingScoreVal = avgRating
+          ? +(avgRating * 2).toFixed(1)
+          : +(aiScore * 0.95).toFixed(1);
+        const valueScoreVal = +(aiScore * 0.85).toFixed(1);
+        const volScore = 3; // no real reviews — honest low volume score
+        return {
+          ratingScore: ratingScoreVal,
+          sentimentScore: sentScore,
+          valueScore: valueScoreVal,
+          volumeScore: volScore,
+        };
+      }
+      return {
+        ratingScore: avgRating ? +(avgRating * 2).toFixed(1) : aiScore || 0,
+        sentimentScore: positivePct
+          ? +(positivePct / 10).toFixed(1)
+          : aiScore || 0,
+        valueScore: aiScore ? +(aiScore * 0.85).toFixed(1) : 0,
+        volumeScore: totalReviews > 1000 ? 9 : totalReviews > 100 ? 7 : 5,
+      };
+    })();
 
   // ── praiseSummary / complaintSummary (strings joined by "·") ──
   const whatPeopleLove = a?.whatPeopleLove || [];
@@ -3181,6 +3223,7 @@ async function handleSearch(req, res) {
         req._searchLog.outcome = "coalesced";
         return res.json({
           success: true,
+          intent: detectedIntent?.intent || "GENERIC",
           query: rawQuery,
           normalized: normalizedQuery,
           category: effectiveCategory || null,
@@ -3480,6 +3523,7 @@ async function handleSearch(req, res) {
 
   return res.json({
     success: true,
+    intent: detectedIntent?.intent || "GENERIC",
     query: rawQuery,
     normalized: normalizedQuery,
     category: effectiveCategory || null,

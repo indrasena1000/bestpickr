@@ -1014,16 +1014,10 @@ async function analyzeProductFromSpecs(
   } = opts;
   const startTime = Date.now();
 
+  const hasFeatures = features && features.length > 0;
   logger.info(
-    `🤖 SpecsAnalysis: starting for "${productName}" [${category}] — ${features.length} features`,
+    `🤖 SpecsAnalysis: starting for "${productName}" [${category}] — ${hasFeatures ? features.length + " features" : "name/brand/price only (no spec bullets)"}`,
   );
-
-  if (!features || features.length === 0) {
-    logger.warn(
-      `🤖 SpecsAnalysis: no features provided for "${productName}" — cannot analyse`,
-    );
-    return null;
-  }
 
   const catConfig = getCategoryConfig(category);
   const aspects = getAspects(category).slice(0, 8); // max 8 aspects for spec-based
@@ -1037,44 +1031,48 @@ async function analyzeProductFromSpecs(
     : "not available";
   const brandStr = brand || "unknown brand";
 
-  const systemPrompt = `You are a senior product analyst for bestpickr.in, an AI-powered product ranking platform for Indian shoppers. You are analyzing a product based ONLY on its official manufacturer specs and Amazon India listing information — NO customer reviews are available yet.
+  const specsSection = hasFeatures
+    ? `OFFICIAL FEATURES / SPECS:\n${features.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
+    : `OFFICIAL FEATURES / SPECS: Not available — infer strengths and trade-offs from the product name, brand reputation, category, and price tier.`;
 
-RULES FOR SPEC-BASED ANALYSIS:
-1. Be factual about specs — mention actual numbers, chipset names, RAM, storage etc if present in the features.
-2. For "whatPeopleLove", list genuine strengths visible in the specs (e.g. "Large 16GB RAM ideal for multitasking").
-3. For "commonComplaints", list realistic spec-based trade-offs (e.g. "60Hz display at this price point is below average for 2025").
-4. Do NOT make up reviews or pretend customers said things.
-5. "buyRecommendation" should be a clear 1-2 sentence verdict based purely on specs vs price.
-6. "avoidIf" should describe user profiles who would NOT benefit from this product based on specs.
-7. confidenceLevel must always be "low" since this is spec-based only.
-8. Aspect scores: base on specs only. If a spec is exceptional (e.g. i9 CPU), score 8-9. Mid-range spec = 5-7. Missing/poor spec = 2-4.
+  const systemPrompt = `You are a senior product analyst for bestpickr.in, an AI-powered product ranking platform for Indian shoppers. You are analyzing a product based on its Amazon India listing — NO customer reviews are available yet.
+
+RULES:
+1. Use product name, brand, price tier, and any provided specs to reason about the product.
+2. If no spec bullets are provided, use your knowledge of the brand/product line/price tier to infer realistic pros and cons.
+3. For "whatPeopleLove", list 3 genuine strengths specific to this product (specs, brand reliability, value at price point).
+4. For "commonComplaints", list 2 realistic trade-offs for this product at this price.
+5. "buyRecommendation": clear 1-2 sentence verdict for Indian buyers — who should buy this and why.
+6. "avoidIf": 1 sentence on who should NOT buy this.
+7. confidenceLevel: "low" always for spec/name-only analysis.
+8. Aspect scores 0-10: use brand reputation + price tier + known product line quality. Score generously for well-known brands at fair prices.
+9. Be specific — mention the product name and price in your recommendation.
 
 You must respond with ONLY a valid JSON object. No markdown, no explanation.`;
 
-  const userPrompt = `Analyze this ${categoryName} based on its official Amazon India listing:
+  const userPrompt = `Analyze this ${categoryName} for Indian shoppers:
 
 PRODUCT: ${productName}
 BRAND: ${brandStr}
 PRICE: ${priceStr}
 AMAZON RATING: ${ratingStr}
 
-OFFICIAL FEATURES / SPECS:
-${features.map((f, i) => `${i + 1}. ${f}`).join("\n")}
+${specsSection}
 
-ASPECTS TO SCORE (0-10 based on specs, skip any not inferable from specs):
+ASPECTS TO SCORE (0-10):
 ${aspects.map((a, i) => `${i + 1}. ${a}`).join("\n")}
 
 Respond with this EXACT JSON:
 {
   "aspectScores": { ${aspects.map((a) => `"${a}": <0-10>`).join(", ")} },
   "overallSentiment": { "positive": <0-100>, "neutral": <0-100>, "negative": <0-100> },
-  "whatPeopleLove": ["<spec-based strength 1>", "<spec-based strength 2>", "<spec-based strength 3>"],
-  "commonComplaints": ["<spec-based trade-off 1>", "<spec-based trade-off 2>"],
+  "whatPeopleLove": ["<strength 1 with specific detail>", "<strength 2>", "<strength 3>"],
+  "commonComplaints": ["<trade-off 1 with specific detail>", "<trade-off 2>"],
   "redFlags": [],
-  "buyRecommendation": "<1-2 sentence verdict based on specs vs price for Indian buyers>",
-  "avoidIf": "<type of user who should not buy this based on specs>",
+  "buyRecommendation": "<1-2 sentence verdict mentioning product name and price for Indian buyers>",
+  "avoidIf": "<type of user who should NOT buy this>",
   "confidenceLevel": "low",
-  "reviewQualitySummary": "Analysis based on official product specifications only — customer reviews not yet available on Amazon India."
+  "reviewQualitySummary": "${hasFeatures ? "Analysis based on official product specifications — customer reviews not yet available." : "Analysis based on product name, brand, and price tier — customer reviews not yet available."}"
 }`;
 
   try {
@@ -1127,7 +1125,7 @@ Respond with this EXACT JSON:
         "Analysis based on product specs, not customer reviews",
       ],
       reviewsAnalyzed: 0,
-      specsAnalyzed: features.length,
+      specsAnalyzed: hasFeatures ? features.length : 0,
       analysisDate: new Date(),
       _pipelineMeta: { source: "spec-analysis", fresh: true, elapsed },
     };
