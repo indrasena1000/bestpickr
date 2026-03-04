@@ -109,7 +109,7 @@ function ProductRow({ item, rank, onSelect }) {
           >
             View details
           </button>
-          {buyUrl && (
+          {buyUrl ? (
             <a
               href={buyUrl}
               target="_blank"
@@ -119,6 +119,14 @@ function ProductRow({ item, rank, onSelect }) {
             >
               View price ›
             </a>
+          ) : (
+            <span style={{
+              fontSize:11, fontWeight:600, color:'var(--ink4)',
+              background:'var(--paper3)', border:'1px solid var(--line)',
+              borderRadius:'var(--r)', padding:'5px 10px',
+            }}>
+              🛍️ Unavailable
+            </span>
           )}
         </div>
       </div>
