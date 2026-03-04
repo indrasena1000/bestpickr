@@ -190,7 +190,7 @@ export default function PrimaryProductCard({ product, status, onBuy, onViewDetai
               View Details
             </button>
           )}
-          {!isPartial && bestPlt && (
+          {!isPartial && bestPlt && (bestPlt.affiliateUrl || bestPlt.url) && (
             <button onClick={() => onBuy?.(bestPlt)} style={{
               background: 'var(--accent)', color: '#fff',
               fontWeight: 700, fontSize: 13, padding: '10px 20px',

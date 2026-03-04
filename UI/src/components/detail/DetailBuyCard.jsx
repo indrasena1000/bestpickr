@@ -58,36 +58,51 @@ export default function DetailBuyCard({ p, bestPlt, platforms, onBuy }) {
   const currentPriceDisplay = p.lowestPrice || bestPlt?.price || null;
 
   // ── BUY BUTTON ───────────────────────────────────────────────────
-  const BuyButton = (
+  const bestBuyUrl = bestPlt?.affiliateUrl || bestPlt?.url || null;
+  const BuyButton = bestBuyUrl ? (
     <button className="buy-card-main-btn" onClick={() => onBuy(bestPlt)}>
-      View Today's Best Price →
+      View Today’s Best Price →
     </button>
+  ) : (
+    <div style={{
+      background: 'var(--paper3)', border: '1px dashed var(--line)', borderRadius: 'var(--r2)',
+      padding: '14px 20px', textAlign: 'center',
+    }}>
+      <div style={{ fontSize: 20, marginBottom: 4 }}>🛍️</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 2 }}>Not available to buy</div>
+      <div style={{ fontSize: 11, color: 'var(--ink3)' }}>No active store listing found for this product</div>
+    </div>
   );
 
   // ── PLATFORMS LIST ───────────────────────────────────────────────
   const PlatformList = (
     <div className="platform-quick">
       <div className="pq-title">All platforms</div>
-      {platforms.map((plt) => (
-        <div key={plt.name} className="pq-row">
-          <span
-            className="pq-icon"
-            style={{ display: "inline-flex", alignItems: "center" }}
-          >
-            <PlatformLogo name={plt.name} size={16} />
-          </span>
-          <span className="pq-name">{plt.name}</span>
-          <span
-            className="pq-price"
-            style={!plt.price ? { color: "var(--ink4)" } : {}}
-          >
-            {plt.price ? fmt(plt.price) : "Check price"}
-          </span>
-          <span className="pq-btn" onClick={() => onBuy(plt)}>
-            {plt.price ? "Buy" : "Go"}
-          </span>
-        </div>
-      ))}
+      {platforms.map((plt) => {
+          const pltUrl = plt.affiliateUrl || plt.url;
+          return (
+          <div key={plt.name} className="pq-row">
+            <span
+              className="pq-icon"
+              style={{ display: "inline-flex", alignItems: "center" }}
+            >
+              <PlatformLogo name={plt.name} size={16} />
+            </span>
+            <span className="pq-name">{plt.name}</span>
+            <span
+              className="pq-price"
+              style={!plt.price ? { color: "var(--ink4)" } : {}}
+            >
+              {plt.price ? fmt(plt.price) : "—"}
+            </span>
+            {plt.inStock === false
+              ? <span style={{ fontSize:11, color:'#e05a4a', fontWeight:700 }}>Out of stock</span>
+              : pltUrl
+                ? <span className="pq-btn" onClick={() => onBuy(plt)}>Buy</span>
+                : <span style={{ fontSize:11, color:'var(--ink4)' }}>Unavailable</span>}
+          </div>
+          );
+        })}
     </div>
   );
 
