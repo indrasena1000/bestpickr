@@ -4,17 +4,7 @@
 // Auto-focuses after 400ms to let entrance animation settle first.
 // ─────────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef } from 'react'
-
-const CATEGORIES = [
-  { label: 'Headphones',  emoji: '🎧' },
-  { label: 'Smartphones', emoji: '📱' },
-  { label: 'Laptops',     emoji: '💻' },
-  { label: 'Appliances',  emoji: '🍳' },
-  { label: 'Gaming',      emoji: '🎮' },
-  { label: 'Footwear',    emoji: '👟' },
-  { label: 'Skincare',    emoji: '✨' },
-  { label: 'Fashion',     emoji: '👗' },
-]
+import { getCategories } from '../../services/api.js'
 
 const boxStyle = {
   background: 'var(--paper)',
@@ -24,16 +14,24 @@ const boxStyle = {
 }
 
 export default function NotFoundSearch({ onSearch }) {
-  const [q,        setQ]        = useState('')
-  const [focused,  setFocused]  = useState(false)
-  const [hoveredCat, setHover]  = useState(null)
-  const [btnHover, setBtnHover] = useState(false)
+  const [q,          setQ]        = useState('')
+  const [focused,    setFocused]  = useState(false)
+  const [hoveredCat, setHover]    = useState(null)
+  const [btnHover,   setBtnHover] = useState(false)
+  const [categories, setCats]     = useState([])
   const inputRef = useRef(null)
 
   // Auto-focus after 400ms — let entrance animation settle
   useEffect(() => {
     const t = setTimeout(() => inputRef.current?.focus(), 400)
     return () => clearTimeout(t)
+  }, [])
+
+  // Load categories from API
+  useEffect(() => {
+    getCategories()
+      .then((d) => setCats(d.categories || []))
+      .catch(() => setCats([]))
   }, [])
 
   function handleSearch() {
@@ -68,8 +66,8 @@ export default function NotFoundSearch({ onSearch }) {
     flexShrink: 0,
   }
 
-  function pillStyle(label) {
-    const active = hoveredCat === label
+  function pillStyle(name) {
+    const active = hoveredCat === name
     return {
       background: active ? 'var(--accent-bg)' : 'var(--paper3)',
       border: `1px solid ${active ? 'var(--accent)' : 'var(--line)'}`,
@@ -111,17 +109,17 @@ export default function NotFoundSearch({ onSearch }) {
         </button>
       </div>
 
-      {/* Category shortcut pills */}
+      {/* Category shortcut pills — loaded from API */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
-        {CATEGORIES.map(({ label, emoji }) => (
+        {categories.map(({ name, emoji }) => (
           <div
-            key={label}
-            style={pillStyle(label)}
-            onMouseEnter={() => setHover(label)}
+            key={name}
+            style={pillStyle(name)}
+            onMouseEnter={() => setHover(name)}
             onMouseLeave={() => setHover(null)}
-            onClick={() => onSearch(label)}
+            onClick={() => onSearch(name)}
           >
-            {emoji} {label}
+            {emoji} {name}
           </div>
         ))}
       </div>

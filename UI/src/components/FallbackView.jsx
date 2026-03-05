@@ -1,23 +1,26 @@
 // src/components/FallbackView.jsx
 // Rendered when intent === FALLBACK: trending products + category shortcut pills
 import { useNavigate } from 'react-router-dom'
-
-const CATEGORY_PILLS = [
-  { label: 'Smartphones', emoji: '📱', query: 'best smartphones' },
-  { label: 'Laptops',     emoji: '💻', query: 'best laptops' },
-  { label: 'Headphones',  emoji: '🎧', query: 'best headphones' },
-  { label: 'Tablets',     emoji: '📺', query: 'best tablets' },
-  { label: 'Cameras',     emoji: '📷', query: 'best cameras' },
-  { label: 'Smartwatches',emoji: '⌚', query: 'best smartwatches' },
-  { label: 'Speakers',    emoji: '🔊', query: 'best bluetooth speakers' },
-  { label: 'Monitors',    emoji: '🖥️', query: 'best monitors' },
-]
+import { useState, useEffect } from 'react'
+import { getCategories } from '../services/api.js'
 
 const fmt = (n) => n ? `₹${Number(n).toLocaleString('en-IN')}` : '—'
 
-export default function FallbackView({ suggestions = [], categorySuggestions }) {
+export default function FallbackView({ suggestions = [] }) {
   const navigate = useNavigate()
-  const pills = categorySuggestions || CATEGORY_PILLS
+  const [pills, setPills] = useState([])
+
+  useEffect(() => {
+    getCategories()
+      .then((d) => setPills(
+        (d.categories || []).map((c) => ({
+          label: c.name,
+          emoji: c.emoji,
+          query: `best ${c.name.toLowerCase()}`,
+        }))
+      ))
+      .catch(() => setPills([]))
+  }, [])
 
   const handleSearch = (q) => {
     navigate(`/#/results?q=${encodeURIComponent(q)}`)

@@ -7,6 +7,23 @@ export default function DetailPlatformTable({ platforms, bestPlt, onBuy }) {
   const hasRatingData  = platforms.some(p => p.rating  && p.rating > 0);
   const hasReviewData  = platforms.some(p => p.reviewCount && p.reviewCount > 0);
 
+  // ── No platform data at all ───────────────────────────────────
+  if (!platforms || platforms.length === 0) {
+    return (
+      <div style={{
+        background: 'var(--paper2)', border: '1px dashed var(--line)',
+        borderRadius: 'var(--r3)', padding: '28px 20px',
+        textAlign: 'center', marginBottom: 16,
+      }}>
+        <div style={{ fontSize: 28, marginBottom: 8 }}>🛍️</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>No store listings found</div>
+        <div style={{ fontSize: 12, color: 'var(--ink3)', lineHeight: 1.5 }}>
+          This product isn’t currently listed on Amazon, Flipkart or Myntra.<br />
+          Check back later or search for a similar product.
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{ marginBottom: 16 }}>
       <div className="compare-title">
@@ -47,7 +64,9 @@ export default function DetailPlatformTable({ platforms, bestPlt, onBuy }) {
                           )}
                         </div>
                         <div className="plt-reviews">
-                          {plt.inStock !== false ? "In stock" : "Out of stock"}
+                          {plt.inStock === false
+                            ? <span style={{ color:'#e05a4a', fontWeight:600 }}>❌ Out of stock</span>
+                            : <span style={{ color:'#1A6B3C', fontWeight:600 }}>✓ In stock</span>}
                         </div>
                       </div>
                     </div>
@@ -88,9 +107,19 @@ export default function DetailPlatformTable({ platforms, bestPlt, onBuy }) {
                     </span>
                   </td>
                   <td>
-                    <button className="buy-link" onClick={() => onBuy(plt)}>
-                      Buy →
-                    </button>
+                    {plt.inStock === false
+                      ? <span style={{
+                          fontSize:11, fontWeight:700, color:'#e05a4a',
+                          background:'rgba(224,90,74,0.08)', borderRadius:'var(--r)',
+                          padding:'4px 10px', display:'inline-block',
+                        }}>Out of stock</span>
+                      : (plt.affiliateUrl || plt.url)
+                        ? <button className="buy-link" onClick={() => onBuy(plt)}>Buy →</button>
+                        : <span style={{
+                            fontSize:11, fontWeight:600, color:'var(--ink4)',
+                            background:'var(--paper3)', borderRadius:'var(--r)',
+                            padding:'4px 10px', display:'inline-block',
+                          }}>Not available</span>}
                   </td>
                 </tr>
               );
