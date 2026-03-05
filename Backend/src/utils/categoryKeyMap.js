@@ -9,7 +9,6 @@ const CANONICAL_CATEGORIES = [
   "mobile",
   "laptop",
   "headphones",
-  "tablets",
   "smartwatch",
   "camera",
   "televisions",

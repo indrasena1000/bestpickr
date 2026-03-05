@@ -382,6 +382,14 @@ const PRODUCT_SYNONYM_MAP = {
   purifier: ["purifier", "purification", " ro "],
   refrigerator: ["refrigerator", "fridge"],
   fridge: ["fridge", "refrigerator"],
+  geyser: [
+    "geyser",
+    "water heater",
+    "instant heater",
+    "storage geyser",
+    "geysir",
+  ],
+  heater: ["heater", "geyser", "water heater", "instant geyser"],
   iron: ["steam iron", "garment", "ironing", "steam generator"],
   ironing: ["iron", "ironing", "steam"],
   vacuum: ["vacuum", "robovac", "robot cleaner"],
@@ -442,7 +450,9 @@ function filterByQueryRelevance(results, query) {
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((w) => w.length >= 3 && !QUERY_STOP_WORDS.has(w));
+    .filter(
+      (w) => w.length >= 3 && !QUERY_STOP_WORDS.has(w) && !/^\d+$/.test(w),
+    ); // strip pure numbers (prices like 20000)
 
   if (words.length === 0) return results;
 
@@ -591,12 +601,18 @@ function validateAndSanitize(rawQuery, rawCategory) {
   // Step 1: Trim + collapse whitespace
   let query = rawQuery.trim().replace(/\s+/g, " ");
 
-  // Step 2: Strip characters that could cause injection or break APIs
-  // Keep: letters, digits, spaces, hyphens, apostrophes (Sony's), dots (v3.0)
+  // Step 2: Replace word-separator punctuation with spaces first, so
+  // "RAM,128GB" → "RAM 128GB" and "EMI/Additional" → "EMI Additional"
+  // (not "RAM128GB" / "EMIAdditional" which break Amazon search)
+  query = query.replace(/[,\/\\()\[\]{}|:;!?@#$%^&*=+<>~`]+/g, " ");
+
+  // Then strip anything that is still not a word char, space, hyphen, apostrophe, or dot
   query = query.replace(/[^\w\s\-'.]/g, "");
 
   // Re-trim after stripping
   query = query.trim();
+  // Collapse any double spaces introduced above
+  query = query.replace(/\s+/g, " ");
 
   // Step 3: Length checks
   if (query.length < 3) {
@@ -873,6 +889,15 @@ async function enrichProduct(amazonProduct, category) {
   if (!asin) {
     logger.warn(
       `🔍 Enrichment: skipping product with no ASIN: "${productName}"`,
+    );
+    return null;
+  }
+
+  // Skip products explicitly marked out-of-stock by Amazon — no point running
+  // the full 25s analysis pipeline on something users cannot buy.
+  if (amazonProduct.inStock === false) {
+    logger.info(
+      `🔍 Enrichment: skipping out-of-stock product ${asin} "${productName?.slice(0, 50)}"`,
     );
     return null;
   }
@@ -2845,14 +2870,16 @@ async function handleSearch(req, res) {
   })();
 
   // ── STEP 2: Redis Cache Check ─────────────────────────────────
-  // getCachedResults() in redis.js uses buildSearchKey() internally
-  // and handles all the HIT/MISS logging + hit count update.
+  // IMPORTANT: always check with earlyCat (intent-detected category) not just
+  // the raw category param — the frontend rarely sends category in the URL,
+  // so checking with null always misses the cache even when results exist.
   console.log(`\n━━━ [SEARCH] "${rawQuery}" ━━━`);
   console.log(
-    `[CACHE] Checking Redis cache for "${query}" category="${category || "-"}"...`,
+    `[CACHE] Checking Redis cache for "${query}" category="${earlyCat || "-"}"...`,
   );
   try {
-    const redisResults = await checkRedisCache(query, category);
+    // Check with earlyCat first (covers 99% of cases), fallback to raw category
+    const redisResults = await checkRedisCache(query, earlyCat || category);
     console.log(`[CACHE] Redis → ${redisResults?.length || 0} results`);
 
     if (redisResults && redisResults.length > 0) {
@@ -2907,7 +2934,10 @@ async function handleSearch(req, res) {
   // Second-tier cache: survives Redis flushes, slower than Redis but
   // faster than re-scraping. Uses TTL index for auto-expiry.
   try {
-    const mongoResults = await checkMongoCache(normalizedQuery, category);
+    const mongoResults = await checkMongoCache(
+      normalizedQuery,
+      earlyCat || category,
+    );
 
     if (mongoResults && mongoResults.length > 0) {
       // Apply strict category filter — use earlyCat same as Redis path
@@ -2928,7 +2958,7 @@ async function handleSearch(req, res) {
         req._searchLog.outcome = "mongo_hit";
 
         // Repopulate Redis while we respond (non-blocking)
-        cacheResults(query, category, finalMongo).catch((err) =>
+        cacheResults(query, earlyCat || category, finalMongo).catch((err) =>
           logger.warn(`🔍 Search: Redis repopulate failed — ${err.message}`),
         );
 
@@ -2937,7 +2967,7 @@ async function handleSearch(req, res) {
           success: true,
           query: rawQuery,
           normalized: normalizedQuery,
-          category: category || null,
+          category: earlyCat || category || null,
           intent: mongoIntent.intent || "GENERIC",
           totalResults: Math.min(finalMongo.length, MAX_RESPONSE_RESULTS),
           cached: true,

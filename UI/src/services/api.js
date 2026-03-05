@@ -16,9 +16,15 @@ const api = axios.create({
 let _accessToken = null;
 let _refreshPromise = null; // prevent multiple simultaneous refresh calls
 
-export function setAccessToken(token) { _accessToken = token; }
-export function clearAccessToken()    { _accessToken = null; }
-export function getAccessToken()      { return _accessToken; }
+export function setAccessToken(token) {
+  _accessToken = token;
+}
+export function clearAccessToken() {
+  _accessToken = null;
+}
+export function getAccessToken() {
+  return _accessToken;
+}
 
 // ── REQUEST INTERCEPTOR — attach Bearer token ─────────────────────
 api.interceptors.request.use((config) => {
@@ -26,7 +32,10 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${_accessToken}`;
   }
   if (import.meta.env.DEV) {
-    console.log(`→ ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`, config.data || "");
+    console.log(
+      `→ ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`,
+      config.data || "",
+    );
   }
   return config;
 });
@@ -52,7 +61,9 @@ api.interceptors.response.use(
 
       // Deduplicate concurrent refresh calls
       if (!_refreshPromise) {
-        _refreshPromise = api.post("/admin/refresh").finally(() => { _refreshPromise = null; });
+        _refreshPromise = api.post("/admin/refresh").finally(() => {
+          _refreshPromise = null;
+        });
       }
 
       try {
@@ -80,13 +91,14 @@ export const adminLogin = (username, password) =>
 export const adminRefresh = () =>
   api.post("/admin/refresh").then((r) => r.data);
 
-export const adminLogout = () =>
-  api.post("/admin/logout").then((r) => r.data);
+export const adminLogout = () => api.post("/admin/logout").then((r) => r.data);
 
 // ── API METHODS ────────────────────────────────────────────────────
 
 export const searchProducts = (query, category = "") =>
-  api.post("/search", { query, category }, { timeout: 90000 }).then((r) => r.data);
+  api
+    .post("/search", { query, category }, { timeout: 90000 })
+    .then((r) => r.data);
 
 export const getSuggestions = (q) =>
   api.get("/search/suggestions", { params: { q } }).then((r) => r.data);
@@ -102,7 +114,28 @@ export const getTopProducts = (category, limit = 10) =>
 export const getTopIndiaProducts = () =>
   api.get("/products/top-india").then((r) => r.data);
 
-export const getProduct = (id) => api.get(`/products/${id}`).then((r) => r.data);
+export const getCategoryProducts = (slug, limit = 10) =>
+  api
+    .get(`/products/category/${slug}`, { params: { limit } })
+    .then((r) => r.data);
+
+export const getProduct = (id) =>
+  api.get(`/products/${id}`).then((r) => r.data);
+
+// Trigger AI analysis for a product; returns { success, analysis } or { success: false }
+// Passes product details as query params so the backend can run GPT even when
+// the product is not yet saved in Postgres (e.g. fresh live search results).
+export const triggerAnalysis = (id, product = {}) => {
+  const params = {};
+  if (product.name) params.name = product.name;
+  if (product.brand) params.brand = product.brand;
+  if (product.category) params.category = product.category;
+  if (product.lowestPrice) params.price = product.lowestPrice;
+  if (product.avgRating) params.rating = product.avgRating;
+  return api
+    .get(`/products/${id}/analyze`, { params, timeout: 60000 })
+    .then((r) => r.data);
+};
 
 export const checkHealth = () => api.get("/health").then((r) => r.data);
 
@@ -122,12 +155,18 @@ export const getBlogPost = (slug) =>
 
 // ── BLOG ADMIN — token is now automatically injected by the request interceptor ──
 
-export const getAdminBlogPosts  = ()      => api.get("/blog/admin/posts").then((r) => r.data);
-export const publishBlogPost    = (id)    => api.patch(`/blog/admin/posts/${id}/publish`, {}).then((r) => r.data);
-export const unpublishBlogPost  = (id)    => api.patch(`/blog/admin/posts/${id}/unpublish`, {}).then((r) => r.data);
-export const deleteBlogPost     = (id)    => api.delete(`/blog/admin/posts/${id}`).then((r) => r.data);
+export const getAdminBlogPosts = () =>
+  api.get("/blog/admin/posts").then((r) => r.data);
+export const publishBlogPost = (id) =>
+  api.patch(`/blog/admin/posts/${id}/publish`, {}).then((r) => r.data);
+export const unpublishBlogPost = (id) =>
+  api.patch(`/blog/admin/posts/${id}/unpublish`, {}).then((r) => r.data);
+export const deleteBlogPost = (id) =>
+  api.delete(`/blog/admin/posts/${id}`).then((r) => r.data);
 // 180s timeout — 3 sequential OpenAI calls + RSS fetches can take 60-120s
-export const generateBlogPosts  = ()      => api.post("/blog/admin/generate", {}, { timeout: 180000 }).then((r) => r.data);
-export const getBlogAnalytics   = ()      => api.get("/blog/admin/analytics").then((r) => r.data);
+export const generateBlogPosts = () =>
+  api.post("/blog/admin/generate", {}, { timeout: 180000 }).then((r) => r.data);
+export const getBlogAnalytics = () =>
+  api.get("/blog/admin/analytics").then((r) => r.data);
 
 export default api;

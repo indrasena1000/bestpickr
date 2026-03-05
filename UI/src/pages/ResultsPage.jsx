@@ -110,6 +110,10 @@ function applyFilters(results, filters) {
       const pltNames = (p.platforms || []).map((pl) => pl.name);
       if (!filters.platforms.some((f) => pltNames.includes(f))) return false;
     }
+    // Hide products where every platform is explicitly out-of-stock
+    const plts = p.platforms || [];
+    if (plts.length > 0 && plts.every((pl) => pl.inStock === false))
+      return false;
     return true;
   });
 }
@@ -639,11 +643,7 @@ export default function ResultsPage({
                     }}
                   >
                     <PlatformLogo name="Amazon" size={13} />{" "}
-                    {meta.platforms.amazon} &nbsp;·&nbsp;
-                    <PlatformLogo name="Flipkart" size={13} />{" "}
-                    {meta.platforms.flipkart} &nbsp;·&nbsp;
-                    <PlatformLogo name="Myntra" size={13} />{" "}
-                    {meta.platforms.myntra}
+                    {meta.platforms.amazon}
                   </span>
                 </div>
               )}
@@ -768,26 +768,45 @@ export default function ResultsPage({
                 {noResultsMessage ||
                   "We couldn't find what you're looking for. Try one of these popular searches:"}
               </div>
-              <div style={{ display:'flex', flexWrap:'wrap', justifyContent:'center', gap:8, marginBottom:24 }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  justifyContent: "center",
+                  gap: 8,
+                  marginBottom: 24,
+                }}
+              >
                 {[
-                  'Best headphones under ₹2000',
-                  'Best laptop under ₹50000',
-                  'Best AC under ₹40000',
-                  'Best smartwatch under ₹5000',
-                  'Best running shoes',
-                  'Best air fryer',
-                ].map(s => (
+                  "Best headphones under ₹2000",
+                  "Best laptop under ₹50000",
+                  "Best AC under ₹40000",
+                  "Best smartwatch under ₹5000",
+                  "Best running shoes",
+                  "Best air fryer",
+                ].map((s) => (
                   <button
                     key={s}
                     onClick={() => onSearch && onSearch(s)}
                     style={{
-                      padding:'7px 14px', fontSize:13, fontWeight:600,
-                      background:'var(--paper3)', border:'1px solid var(--line)',
-                      borderRadius:20, color:'var(--ink)', cursor:'pointer',
-                      transition:'background .15s, border-color .15s',
+                      padding: "7px 14px",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      background: "var(--paper3)",
+                      border: "1px solid var(--line)",
+                      borderRadius: 20,
+                      color: "var(--ink)",
+                      cursor: "pointer",
+                      transition: "background .15s, border-color .15s",
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.background='var(--accent-bg)'; e.currentTarget.style.borderColor='var(--accent)' }}
-                    onMouseLeave={e => { e.currentTarget.style.background='var(--paper3)'; e.currentTarget.style.borderColor='var(--line)' }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "var(--accent-bg)";
+                      e.currentTarget.style.borderColor = "var(--accent)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "var(--paper3)";
+                      e.currentTarget.style.borderColor = "var(--line)";
+                    }}
                   >
                     {s}
                   </button>
@@ -887,9 +906,8 @@ export default function ResultsPage({
                       : suggestions;
                     if (relevantSuggestions.length === 0) return null;
                     return (
-                      <SuggestionsGrid
-                        title="Bestpickr Suggested Alternatives"
-                        subtitle="Suggested based on your search"
+                      <ResultCardList
+                        title="Alternatives"
                         items={relevantSuggestions}
                         onSelect={(p) => onViewProduct(p, relevantSuggestions)}
                       />
@@ -960,8 +978,7 @@ export default function ResultsPage({
                           </div>
                         </div>
                       )}
-                      <ProductGrid
-                        title={`Bestpickr\'s top picks for "${query}"`}
+                      <ResultCardList
                         items={displayItems}
                         onSelect={(p) => onViewProduct(p, baseList)}
                       />
@@ -995,14 +1012,13 @@ export default function ResultsPage({
                 onConfirm={(p) => onViewProduct(p, suggestions || [])}
               />
               {suggestions && suggestions.length > 0 ? (
-                <SuggestionsGrid
+                <ResultCardList
                   title="You might be looking for…"
-                  subtitle="Based on related searches"
                   items={suggestions}
                   onSelect={(p) => onViewProduct(p, suggestions)}
                 />
               ) : (
-                <ProductGrid
+                <ResultCardList
                   title="Popular products"
                   items={sorted}
                   onSelect={(p) => onViewProduct(p, results)}
@@ -1031,8 +1047,7 @@ export default function ResultsPage({
             intent !== "LOW_CONFIDENCE" &&
             intent !== "FALLBACK" &&
             sorted.length > 0 && (
-              <ProductGrid
-                title={`Bestpickr\'s top picks for "${query}"`}
+              <ResultCardList
                 items={sorted}
                 onSelect={(p) => onViewProduct(p, baseList)}
               />
@@ -1113,8 +1128,7 @@ export default function ResultsPage({
                       </div>
                     </div>
                   )}
-                  <ProductGrid
-                    title={`Bestpickr's top picks for "${query}"`}
+                  <ResultCardList
                     items={sorted}
                     onSelect={(p) => onViewProduct(p, results)}
                   />
@@ -1164,6 +1178,41 @@ export default function ResultsPage({
   );
 }
 
+// ── RESULT CARD LIST — 1-per-row column, matches skeleton layout ──
+function ResultCardList({ items, title, onSelect }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div>
+      {title && (
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: "var(--ink4)",
+            letterSpacing: ".4px",
+            textTransform: "uppercase",
+            marginBottom: 12,
+            marginTop: 20,
+          }}
+        >
+          {title}
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {items.map((p, i) => (
+          <ResultCard
+            key={p.id || p.asin || p.platformId || i}
+            product={p}
+            rank={i + 1}
+            isTop={i === 0}
+            onClick={() => onSelect?.(p)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── RESULT CARD ────────────────────────────────────────────────────
 function ResultCard({ product: p, rank, isTop, onClick }) {
   const fmt = (n) => (n ? `₹${Number(n).toLocaleString("en-IN")}` : "—");
@@ -1179,12 +1228,15 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
       : null;
 
   // Issue 2: AI score — show beta label if insufficient data
-  const hasReliableAiScore = p.aiScore && p.totalReviews > 0 && p.aiScore !== 3.8;
-  const showBetaAiLabel = p.aiScore && (!p.totalReviews || p.totalReviews === 0);
+  const hasReliableAiScore =
+    p.aiScore && p.totalReviews > 0 && p.aiScore !== 3.8;
+  const showBetaAiLabel =
+    p.aiScore && (!p.totalReviews || p.totalReviews === 0);
 
   // Issue 3: Reviews — hide sentiment when reviews = 0
   const hasRealReviews = (p.totalReviews || 0) > 0;
-  const hasRealSentiment = hasRealReviews && p.positivePct != null && p.positivePct > 0;
+  const hasRealSentiment =
+    hasRealReviews && p.positivePct != null && p.positivePct > 0;
 
   // BUG #18: AI tooltip reason
   const aiReason = `AI Score ${p.aiScore}/10 based on ${(p.totalReviews || 0).toLocaleString()} reviews across ${(p.platforms || []).length} platforms. ${p.positivePct || 75}% positive sentiment.${isTop ? " Ranked #1 — highest overall score in this search." : ""}`;
@@ -1218,7 +1270,11 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
                   cursor: "help",
                 }}
               >
-                {showBetaAiLabel && <span style={{ fontSize: 9, fontWeight: 600, opacity: 0.65 }}>BETA</span>}
+                {showBetaAiLabel && (
+                  <span style={{ fontSize: 9, fontWeight: 600, opacity: 0.65 }}>
+                    BETA
+                  </span>
+                )}
                 ★ {p.aiScore}/10
               </span>
             </AITooltip>
@@ -1248,7 +1304,9 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
             {p.aiScore}
             <span className="score-denom">/10</span>
           </div>
-          <div className="score-label">{showBetaAiLabel ? 'Beta AI Score' : 'AI Score'}</div>
+          <div className="score-label">
+            {showBetaAiLabel ? "Beta AI Score" : "AI Score"}
+          </div>
         </div>
       </div>
 
@@ -1282,14 +1340,23 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
                           style={{ width: `${pct || 0}%` }}
                         />
                       </div>
-                      <span className="sent-mini-pct">{Math.round(pct || 0)}%</span>
+                      <span className="sent-mini-pct">
+                        {Math.round(pct || 0)}%
+                      </span>
                     </div>
                   ))}
                 </div>
               )}
             </>
           ) : (
-            <div style={{ fontSize: 12, color: 'var(--ink4)', marginTop: 4, lineHeight: 1.5 }}>
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--ink4)",
+                marginTop: 4,
+                lineHeight: 1.5,
+              }}
+            >
               Review data unavailable
             </div>
           )}

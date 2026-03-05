@@ -289,7 +289,7 @@ function Badge({ color, bg, children }) {
 // ─────────────────────────────────────────────────────────────────
 export function AboutPage({ onHome, onNav }) {
   const stats = [
-    { n: "3+", label: "Platforms compared", sub: "Amazon · Flipkart · Myntra" },
+    { n: "1", label: "Platform (live)", sub: "Amazon India" },
     { n: "100K+", label: "Reviews analysed", sub: "Per top-10 list generated" },
     { n: "50+", label: "Product categories", sub: "Electronics to skincare" },
     { n: "0", label: "Paid rankings", sub: "Ever. Not a single one." },

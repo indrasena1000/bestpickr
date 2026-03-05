@@ -212,10 +212,10 @@ async function start() {
     startCron();
     logger.info("✅ Category preloader cron started (12 AM IST)");
 
-    // // 2. Ranking snapshot cron — enable later (heavier, needs more testing)
-    // snapshotCron.init(getRedisClient(), prisma);
-    // snapshotCron.start();
-    // logger.info("✅ Ranking snapshot cron started (every 6h)");
+    // 2. Ranking snapshot cron — reads Postgres → Redis top50:{category}, zero external API calls
+    snapshotCron.init(getRedisClient(), prisma);
+    snapshotCron.start();
+    logger.info("✅ Ranking snapshot cron started (every 6h + startup run)");
 
     // // 3. Sub-type snapshot seeding — enable once snapshot cron is on
     // snapshotCron.runSubTypeSnapshot().catch(err =>

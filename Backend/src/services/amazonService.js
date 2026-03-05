@@ -114,15 +114,34 @@ async function getAccessToken() {
 // CREATORS API — PRODUCT SEARCH
 // ═════════════════════════════════════════════════════════════════
 
+// Retail noise that appears in Amazon product titles but hurts search quality
+const RETAIL_NOISE_RE =
+  /\b(no cost emi|additional exchange|exchange offer[s]?|with emi|certified refurbished|factory unlocked|open box|free delivery|fast delivery|limited edition|special edition|renewed|refurbished|with adapter|without adapter|with charger|without charger|with cable|bulk packaging|prime eligible|sponsored|new launch|old model|old version|new model|new version|latest model|latest version)\b/gi;
+
+// Color/finish variants — too specific, hurt Amazon keyword matching
+const COLOR_VARIANT_RE =
+  /\b(ice white|midnight black|space gr[ae]y|phantom black|arctic dawn|ocean blue|cloud white|starlight|graphite|forest green|sierra blue|alpine green|titanium|lavender|coral|aqua|burgundy|racing blue|thunder black|fiery gold|stardust|prism|aurora|matte black|glossy black|pearl white|rose gold|champagne gold|cosmic black|deep black|dark blue|light blue|dark green|light green|sonic black|sonic white|racing orange|neon mint|mystery white)\b/gi;
+
 // Strip ranking/superlative noise words that confuse Amazon search
 function cleanAmazonQuery(q) {
-  return q
-    .replace(
-      /\b(best|top|cheap|cheapest|affordable|good|great|latest|new|popular|recommended|under|below|above|budget|premium|buy|review|compare|vs|versus)\b/gi,
-      "",
-    )
-    .replace(/\s{2,}/g, " ")
-    .trim();
+  return (
+    q
+      .replace(
+        /\b(best|top|cheap|cheapest|affordable|good|great|latest|new|popular|recommended|under|below|above|budget|premium|buy|review|compare|vs|versus)\b/gi,
+        "",
+      )
+      .replace(RETAIL_NOISE_RE, "")
+      .replace(COLOR_VARIANT_RE, "")
+      .replace(/\s{2,}/g, " ")
+      .trim()
+      // Cap at 6 words — Amazon returns best results with concise queries.
+      // A full product title with 15+ words confuses the search index and often
+      // returns 0 results, causing the enrichment pipeline to run on irrelevant
+      // fallback products for 25s+ each.
+      .split(/\s+/)
+      .slice(0, 6)
+      .join(" ")
+  );
 }
 
 async function searchViaCreatorsAPI(query, category, retries = 2) {
@@ -162,8 +181,17 @@ async function searchViaCreatorsAPI(query, category, retries = 2) {
       timeout: 15000,
     });
 
-    const items = res.data?.searchResult?.items || [];
-    logger.info(`Amazon Creators API: ${items.length} items returned`);
+    const allItems = res.data?.searchResult?.items || [];
+    // Filter out items with no listing or explicitly out-of-stock
+    const items = allItems.filter((item) => {
+      const listing = item.offersV2?.listings?.[0] || {};
+      const hasPrice = !!listing.price?.money?.amount;
+      const isInStock = listing.availability?.type === "IN_STOCK";
+      return hasPrice && isInStock;
+    });
+    logger.info(
+      `Amazon Creators API: ${allItems.length} total, ${items.length} in-stock with price`,
+    );
     return items.map(normalizeCreatorsItem);
   } catch (err) {
     if (err.response?.status === 429 && retries > 0) {

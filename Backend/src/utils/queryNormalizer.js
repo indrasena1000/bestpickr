@@ -150,6 +150,23 @@ const STOP_WORDS = new Set([
   "2025",
   "2026",
   "2027",
+  // RetailNoise: common Amazon product-title suffixes that carry no search intent
+  "no",
+  "cost",
+  "emi",
+  "additional",
+  "exchange",
+  "storage",
+  "ram",
+  "rom",
+  "fast",
+  "free",
+  "renewed",
+  "refurbished",
+  "certified",
+  "unlocked",
+  "eligible",
+  "prime",
 ]);
 
 // Price patterns to strip: "under 5000", "below ₹10000", "upto 20k"
@@ -681,6 +698,12 @@ function normalize(query) {
   words = words.map((w) => SYNONYMS[w] || w); // synonym normalization
   words = words.map((w) => PLURAL_MAP[w] || w); // plural → singular stemming
   words = [...new Set(words)];
+
+  // Cap at 8 significant words before sorting.
+  // Prevents full Amazon product titles (15+ words) from generating unique
+  // cache keys that never match simpler searches for the same product.
+  if (words.length > 8) words = words.slice(0, 8);
+
   words.sort();
 
   return words.join(" ");

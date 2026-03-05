@@ -38,6 +38,14 @@ const REVIEW_CHANGE_PCT = 0.1; // Re-analyze if review count grew ≥10% (smarte
 const REDIS_KEY_PREFIX = "bestpickr:analysis"; // Matches existing key convention
 
 // ═════════════════════════════════════════════════════════════════
+// IN-FLIGHT DEDUPLICATION
+// Prevents concurrent requests for the same ASIN from firing
+// multiple GPT calls. The second caller waits on the first's
+// promise and gets the same result for free.
+// ═════════════════════════════════════════════════════════════════
+const _inFlight = new Map(); // asin → Promise
+
+// ═════════════════════════════════════════════════════════════════
 // MAIN EXPORT: runAnalysisPipeline()
 // ═════════════════════════════════════════════════════════════════
 /**
@@ -56,8 +64,28 @@ const REDIS_KEY_PREFIX = "bestpickr:analysis"; // Matches existing key conventio
  * @returns {Object|null} Analysis result or null on total failure
  */
 async function runAnalysisPipeline(asin, productName, category, options = {}) {
-  const pipelineStart = Date.now();
   const cleanAsin = asin.trim().toUpperCase();
+
+  // ── Deduplication: if another request is already running for this ASIN,
+  //    await that promise instead of spinning up a duplicate GPT call.
+  if (_inFlight.has(cleanAsin) && !options.forceRefresh) {
+    logger.info(
+      `🔬 Pipeline: DEDUPE — joining in-flight request for ${cleanAsin}`,
+    );
+    return _inFlight.get(cleanAsin);
+  }
+
+  const promise = _runPipeline(cleanAsin, productName, category, options);
+  _inFlight.set(cleanAsin, promise);
+  try {
+    return await promise;
+  } finally {
+    _inFlight.delete(cleanAsin);
+  }
+}
+
+async function _runPipeline(cleanAsin, productName, category, options = {}) {
+  const pipelineStart = Date.now();
   const {
     currentReviewCount = null,
     forceRefresh = false,

@@ -2,7 +2,10 @@
 const express = require("express");
 const { PrismaClient } = require("@prisma/client");
 const logger = require("../utils/logger");
-const { getTop50Products } = require("../utils/redis");
+const {
+  getTop50Products,
+  getClient: getRedisClient,
+} = require("../utils/redis");
 const { CANONICAL_CATEGORIES } = require("../utils/categoryKeyMap");
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -11,129 +14,204 @@ const CAT_EMOJI = {
   mobile: "📱",
   laptop: "💻",
   headphones: "🎧",
-  tablets: "📱",
   smartwatch: "⌚",
   camera: "📷",
   gaming: "🎮",
   appliances: "🍳",
+  televisions: "📺",
   footwear: "👟",
   skincare: "✨",
   fashion: "👗",
   books: "📚",
 };
 
+// Stable cache key for the top-india list — reused across all requests
+// Invalidated + rebuilt every time rankingSnapshotCron runs (every 6h)
+const TOP_INDIA_CACHE_KEY = "bestpickr:top-india:stable";
+const TOP_INDIA_TTL = 21600; // 6h — aligned with snapshot cron cadence
+
 // GET /api/products/top-india
-// Returns a RANDOM top-10 product from each canonical category on every request.
-// Randomises on each call so the home page grid feels fresh on every page load.
-// Architecture:
-//   1. Parallel Redis pool lookup across all categories
-//   2. If ALL Redis pools are empty → Postgres fallback (top 10 per category, random pick)
-//   3. NEVER calls Amazon — always 0 external API calls
-//   4. No whole-response cache — randomisation requires a fresh pick each time
+// Returns the single BEST analyzed product for each canonical category.
 //
-// Pool size: up to 50 products per category cached in Redis by rankingSnapshotCron.
-// We cap the random window at the top 10 by score so we never show a poor product.
-const TOP_INDIA_RANDOM_WINDOW = 3; // pick randomly from top N by aiScore
+// Design principles:
+//   • STABLE — same products returned on every reload (6h stable cache).
+//   • DETERMINISTIC — always the #1 product by aiScore, never random.
+//   • FULL DATA — includes platforms[] so detail page works immediately,
+//     no client-side hydration needed.
+//   • ZERO external calls — reads only from Redis snapshot pool or Postgres.
+//   • PER-CATEGORY fallback — if a category has no Redis pool, queries
+//     Postgres directly (not only when ALL pools are empty).
+//
+// Cache: bestpickr:top-india:stable (6h TTL)
+//   Invalidated by rankingSnapshotCron after each snapshot run so the
+//   next request automatically picks up newly-ranked products.
+
+// Helper: build a canonical product shape with platforms[]
+function buildTopIndiaEntry(pick, cat, source) {
+  // Field name varies by source:
+  // Redis snapshot stores:  affiliateLink
+  // Postgres product stores: affiliateUrl
+  const url = pick.affiliateLink || pick.affiliateUrl || pick.url || null;
+  const price = pick.price || pick.currentPrice || null;
+  const rating = pick.rating || pick.platformRating || null;
+  const reviewCount = pick.reviewCount || null;
+  const platform = pick.platform || "Amazon";
+
+  return {
+    id: pick.id || pick.platformId,
+    name: pick.name,
+    brand: pick.brand || null,
+    category: cat,
+    emoji: CAT_EMOJI[cat] || "📦",
+    price,
+    lowestPrice: price,
+    imageUrl: pick.imageUrl || null,
+    aiScore: pick.aiScore || null,
+    rating,
+    reviewCount,
+    url,
+    affiliateUrl: url,
+    platform,
+    // Include platforms[] so DetailPage renders the buy table immediately
+    // without needing a background search hydration
+    platforms: url
+      ? [
+          {
+            name: platform,
+            price,
+            url,
+            affiliateUrl: url,
+            inStock: true,
+            rating,
+            reviewCount,
+          },
+        ]
+      : [],
+    source,
+  };
+}
 
 router.get("/top-india", async (req, res) => {
   const pr = req.app.locals.prisma || prisma;
+  const rc = getRedisClient();
 
-  // ── 1. Parallel Redis pool lookup — random pick from top 10 per category ──
-  const poolResults = await Promise.all(
+  // ── 0. Return stable cache if available (prevents reshuffling on reload) ──
+  if (rc && rc.status === "ready") {
+    try {
+      const cached = await rc.get(TOP_INDIA_CACHE_KEY);
+      if (cached) {
+        const products = JSON.parse(cached);
+        logger.info(
+          `top-india: stable cache HIT — ${products.length} products`,
+        );
+        return res.json({ success: true, products, cached: true });
+      }
+    } catch (e) {
+      /* non-fatal — fall through to rebuild */
+    }
+  }
+
+  // ── 1. Build per-category: Redis snapshot pool (if enabled) first,
+  //       then Postgres fallback for every category that is missing ──────
+  const products = [];
+
+  await Promise.all(
     CANONICAL_CATEGORIES.map(async (cat) => {
+      // Try Redis top50 pool first (populated by rankingSnapshotCron)
       try {
         const pool = await getTop50Products(cat);
         if (pool && pool.length > 0) {
-          // Sort descending by score, take top N, pick one at random
-          const top10 = pool
-            .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
-            .slice(0, TOP_INDIA_RANDOM_WINDOW);
-          const pick = top10[Math.floor(Math.random() * top10.length)];
-          return {
-            id: pick.id || pick.platformId,
-            name: pick.name,
-            brand: pick.brand || null,
-            category: cat,
-            emoji: CAT_EMOJI[cat] || "📦",
-            price: pick.currentPrice || pick.price || null,
-            imageUrl: pick.imageUrl || null,
-            aiScore: pick.aiScore || null,
-            url: pick.url || pick.affiliateUrl || null,
-            source: "redis",
-          };
+          // Always the #1 fully-analyzed product by aiScore — no randomness
+          // Require imageUrl so home page always shows product images
+          const fullPool = pool.filter(
+            (p) => p.imageUrl && p.aiScore && p.brand,
+          );
+          if (fullPool.length > 0) {
+            const pick = fullPool.sort(
+              (a, b) => (b.aiScore || 0) - (a.aiScore || 0),
+            )[0];
+            products.push(buildTopIndiaEntry(pick, cat, "redis"));
+            return;
+          }
         }
       } catch (_) {}
-      return null;
+
+      // Postgres fallback — query for the single best fully-analyzed product
+      try {
+        const rows = await pr.product.findMany({
+          where: {
+            category: cat,
+            inStock: true,
+            aiScore: { not: null },
+            imageUrl: { not: null },
+            brand: { not: null },
+            platform: "AMAZON",
+          },
+          orderBy: { aiScore: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            name: true,
+            brand: true,
+            category: true,
+            currentPrice: true,
+            imageUrl: true,
+            aiScore: true,
+            platformId: true,
+            affiliateUrl: true,
+            platformUrl: true,
+            platformRating: true,
+            reviewCount: true,
+            platform: true,
+          },
+        });
+        if (rows.length) {
+          const p = rows[0];
+          // Remap schema field platformRating → rating for buildTopIndiaEntry
+          products.push(
+            buildTopIndiaEntry(
+              { ...p, rating: p.platformRating, price: p.currentPrice },
+              cat,
+              "postgres",
+            ),
+          );
+        }
+      } catch (err) {
+        logger.warn(`top-india: Postgres failed for ${cat} — ${err.message}`);
+      }
     }),
   );
 
-  const fromRedis = poolResults.filter(Boolean);
-  const missingCats = CANONICAL_CATEGORIES.filter((_cat, i) => !poolResults[i]);
-
-  logger.info(
-    `top-india: Redis hit ${fromRedis.length}/${CANONICAL_CATEGORIES.length} categories`,
-  );
-
-  // ── 2. Postgres fallback — ONLY if ALL Redis pools are empty ─────────────
-  const fromPostgres = [];
-  if (fromRedis.length === 0 && missingCats.length > 0) {
-    logger.info(
-      `top-india: Redis empty — falling back to Postgres for ${missingCats.length} categories`,
-    );
-    const pgResults = await Promise.all(
-      missingCats.map(async (cat) => {
-        try {
-          // Fetch top 10 by score, then pick randomly
-          const rows = await pr.product.findMany({
-            where: { category: cat, aiScore: { not: null } },
-            orderBy: { aiScore: "desc" },
-            take: TOP_INDIA_RANDOM_WINDOW,
-            select: {
-              id: true,
-              name: true,
-              brand: true,
-              category: true,
-              currentPrice: true,
-              imageUrl: true,
-              aiScore: true,
-              platformId: true,
-              affiliateUrl: true,
-            },
-          });
-          if (!rows.length) return null;
-          const p = rows[Math.floor(Math.random() * rows.length)];
-          return {
-            id: p.platformId || p.id,
-            name: p.name,
-            brand: p.brand || null,
-            category: cat,
-            emoji: CAT_EMOJI[cat] || "📦",
-            price: p.currentPrice || null,
-            imageUrl: p.imageUrl || null,
-            aiScore: p.aiScore || null,
-            url: p.affiliateUrl || null,
-            source: "postgres",
-          };
-        } catch (err) {
-          logger.warn(`top-india: Postgres failed for ${cat} — ${err.message}`);
-          return null;
-        }
-      }),
-    );
-    fromPostgres.push(...pgResults.filter(Boolean));
-  }
-
-  // ── 3. Merge + preserve canonical category order ──────────────────────────
+  // ── 2. Preserve canonical category order ─────────────────────────────────
   const byCategory = {};
-  [...fromRedis, ...fromPostgres].forEach((p) => {
+  products.forEach((p) => {
     byCategory[p.category] = p;
   });
-  const products = CANONICAL_CATEGORIES.map((c) => byCategory[c]).filter(
+  const ordered = CANONICAL_CATEGORIES.map((c) => byCategory[c]).filter(
     Boolean,
   );
 
-  logger.info(`top-india: returning ${products.length} random products`);
-  res.json({ success: true, products });
+  // ── 3. Cache stable list for 6h so all users see the same products ────────
+  if (ordered.length > 0 && rc && rc.status === "ready") {
+    try {
+      await rc.set(
+        TOP_INDIA_CACHE_KEY,
+        JSON.stringify(ordered),
+        "EX",
+        TOP_INDIA_TTL,
+      );
+      logger.info(
+        `top-india: stable cache SET — ${ordered.length} products (TTL=${TOP_INDIA_TTL}s)`,
+      );
+    } catch (e) {
+      /* non-fatal */
+    }
+  }
+
+  logger.info(
+    `top-india: returning ${ordered.length} products (deterministic, source: postgres/redis)`,
+  );
+  res.json({ success: true, products: ordered });
 });
 
 // GET /api/products/top?category=headphones&limit=10
@@ -141,7 +219,13 @@ router.get("/top", async (req, res) => {
   const { category, limit = 10 } = req.query;
   try {
     const products = await prisma.product.findMany({
-      where: { ...(category && { category }), aiScore: { not: null } },
+      where: {
+        ...(category && { category }),
+        inStock: true,
+        aiScore: { not: null },
+        imageUrl: { not: null },
+        platform: "AMAZON",
+      },
       orderBy: { aiScore: "desc" },
       take: parseInt(limit),
       include: {
@@ -153,6 +237,249 @@ router.get("/top", async (req, res) => {
   } catch (err) {
     logger.error("Get top products error:", err);
     res.status(500).json({ error: "Failed to fetch products" });
+  }
+});
+
+// GET /api/products/category/:slug — fast category browse for home page
+// Returns top 10 fully-analyzed Amazon products for a category.
+// Best Amazon search query per category — used in Amazon live-fetch fallback
+const CATEGORY_SEED_QUERIES = {
+  mobile: "best smartphones india 2026",
+  laptop: "best laptops india 2026",
+  headphones: "best wireless headphones india",
+  televisions: "best smart tv 43 inch india",
+  appliances: "best home appliances india",
+  gaming: "best gaming laptop india",
+  camera: "best mirrorless camera india 2026",
+  smartwatch: "best smartwatch india 2026",
+  footwear: "best running shoes india",
+  skincare: "best face serum india",
+  fashion: "best casual shirts men india",
+  books: "best books india 2026",
+};
+
+const CATEGORY_CACHE_TTL = 21600; // 6h
+
+async function fetchFromAmazonAndCache(slug, pr, rc) {
+  const amazonService = require("../services/amazonService");
+  const { calculateAiScore } = require("../utils/scorer");
+
+  const query = CATEGORY_SEED_QUERIES[slug] || `best ${slug} india`;
+  logger.info(`[category/${slug}] DB empty → fetching from Amazon: "${query}"`);
+
+  const items = await amazonService.searchProducts(query, slug);
+  if (!items || items.length === 0) return [];
+
+  const avgPrice =
+    items
+      .map((p) => p.price)
+      .filter(Boolean)
+      .reduce((a, b, _, arr) => a + b / arr.length, 0) || null;
+
+  const saved = [];
+  for (const item of items) {
+    const asin = item.platformId;
+    if (!asin || !item.imageUrl || !item.brand) continue;
+
+    const r = item.rating || 0;
+    const positivePct =
+      r >= 4.5 ? 92 : r >= 4 ? 80 : r >= 3.5 ? 68 : r >= 3 ? 55 : 40;
+    const { score } = calculateAiScore(
+      {
+        avgRating: r,
+        totalReviews: item.reviewCount || 0,
+        positivePct,
+        lowestPrice: item.price || null,
+        lastUpdated: null,
+      },
+      avgPrice,
+    );
+
+    try {
+      const row = await pr.product.upsert({
+        where: {
+          platform_platformId: { platform: "AMAZON", platformId: asin },
+        },
+        update: {
+          name: item.name,
+          brand: item.brand,
+          category: slug,
+          currentPrice: item.price || 0,
+          imageUrl: item.imageUrl,
+          platformRating: item.rating || null,
+          reviewCount: item.reviewCount || 0,
+          aiScore: score,
+          affiliateUrl: item.affiliateUrl || item.url || null,
+          platformUrl: item.url || null,
+          lastScored: new Date(),
+          inStock: true,
+        },
+        create: {
+          name: item.name,
+          brand: item.brand,
+          category: slug,
+          platform: "AMAZON",
+          platformId: asin,
+          platformUrl: item.url || "",
+          affiliateUrl: item.affiliateUrl || item.url || null,
+          currentPrice: item.price || 0,
+          imageUrl: item.imageUrl,
+          platformRating: item.rating || null,
+          reviewCount: item.reviewCount || 0,
+          aiScore: score,
+          lastScored: new Date(),
+          inStock: true,
+        },
+      });
+      saved.push({ row, item, score, positivePct });
+    } catch (_) {}
+  }
+
+  if (saved.length === 0) return [];
+
+  const results = saved
+    .sort((a, b) => b.score - a.score)
+    .map(({ row, item, score }, i) => ({
+      id: row.id,
+      rank: i + 1,
+      name: row.name,
+      brand: row.brand,
+      category: slug,
+      imageUrl: row.imageUrl,
+      aiScore: score,
+      lowestPrice: row.currentPrice,
+      affiliateUrl: row.affiliateUrl || row.platformUrl || null,
+      platform: "AMAZON",
+      positivePct: null,
+    }));
+
+  // Cache in Redis for 6h
+  if (rc && rc.status === "ready") {
+    const snapshot = results.map((p) => ({
+      ...p,
+      affiliateLink: p.affiliateUrl,
+    }));
+    rc.set(
+      `top50:${slug}`,
+      JSON.stringify(snapshot),
+      "EX",
+      CATEGORY_CACHE_TTL,
+    ).catch(() => {});
+    logger.info(
+      `[category/${slug}] Cached ${snapshot.length} products in Redis`,
+    );
+  }
+
+  return results;
+}
+
+// Checks Redis top50:{category} first, falls back to Postgres, then Amazon.
+// Response shape matches what the home page card rail expects.
+router.get("/category/:slug", async (req, res) => {
+  const { slug } = req.params;
+  const pr = req.app.locals.prisma || prisma;
+  const rc = getRedisClient();
+  const limit = Math.min(parseInt(req.query.limit || "10"), 50);
+
+  // 1. Try Redis top50:{slug} — built by rankingSnapshotCron every 6h
+  if (rc && rc.status === "ready") {
+    try {
+      const raw = await rc.get(`top50:${slug}`);
+      if (raw) {
+        const pool = JSON.parse(raw);
+        const full = pool.filter((p) => p.imageUrl && p.aiScore && p.brand);
+        if (full.length >= 3) {
+          const results = full.slice(0, limit).map((p, i) => ({
+            id: p.id,
+            rank: p.rank || i + 1,
+            name: p.name,
+            brand: p.brand,
+            category: p.category || slug,
+            imageUrl: p.imageUrl,
+            aiScore: p.aiScore,
+            lowestPrice: p.price || p.lowestPrice || null,
+            affiliateUrl: p.affiliateLink || p.affiliateUrl || null,
+            platform: p.platform || "AMAZON",
+            positivePct: p.positivePct || null,
+          }));
+          return res.json({
+            success: true,
+            results,
+            source: "redis",
+            count: results.length,
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 2. Postgres fallback
+  try {
+    const rows = await pr.product.findMany({
+      where: {
+        category: slug,
+        inStock: true,
+        aiScore: { not: null },
+        imageUrl: { not: null },
+        brand: { not: null },
+        platform: "AMAZON",
+      },
+      orderBy: { aiScore: "desc" },
+      take: limit,
+      select: {
+        id: true,
+        name: true,
+        brand: true,
+        category: true,
+        currentPrice: true,
+        imageUrl: true,
+        aiScore: true,
+        affiliateUrl: true,
+        platformUrl: true,
+        platform: true,
+        reviews: { select: { positivePct: true }, take: 1 },
+      },
+    });
+
+    if (rows.length >= 3) {
+      const results = rows.map((p, i) => ({
+        id: p.id,
+        rank: i + 1,
+        name: p.name,
+        brand: p.brand,
+        category: p.category,
+        imageUrl: p.imageUrl,
+        aiScore: p.aiScore,
+        lowestPrice: p.currentPrice,
+        affiliateUrl: p.affiliateUrl || p.platformUrl || null,
+        platform: p.platform || "AMAZON",
+        positivePct: p.reviews?.[0]?.positivePct || null,
+      }));
+      return res.json({
+        success: true,
+        results,
+        source: "postgres",
+        count: results.length,
+      });
+    }
+  } catch (err) {
+    logger.error(`category route postgres: ${slug} — ${err.message}`);
+  }
+
+  // 3. Amazon live-fetch fallback — triggered when DB is empty (e.g. after data wipe)
+  try {
+    const results = await fetchFromAmazonAndCache(slug, pr, rc);
+    return res.json({
+      success: true,
+      results: results.slice(0, limit),
+      source: "amazon",
+      count: results.length,
+    });
+  } catch (err) {
+    logger.error(`category route amazon fallback: ${slug} — ${err.message}`);
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to fetch category products" });
   }
 });
 
@@ -304,6 +631,98 @@ router.get("/asin/:asin/price-stats", async (req, res) => {
 });
 
 // GET /api/products/:id  ← must stay LAST (catches all /:id patterns)
+// Trigger / refresh AI analysis for a specific product.
+// Called by the frontend when the detail page loads with no analysis data.
+// Accepts either a Postgres UUID or an Amazon ASIN as :id.
+// Falls back to query params (name, brand, category, price, rating) when
+// the product is not in Postgres (e.g. fresh live-search result).
+router.get("/:id/analyze", async (req, res) => {
+  try {
+    const rawId = req.params.id;
+    const pr = req.app.locals.prisma || prisma;
+    const { runAnalysisPipeline } = require("../pipeline/analysisPipeline");
+
+    // Try to find product in Postgres — handle both UUID and ASIN formats
+    let dbProduct = null;
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        rawId,
+      );
+    try {
+      if (isUuid) {
+        dbProduct = await pr.product.findUnique({ where: { id: rawId } });
+      }
+      if (!dbProduct) {
+        // rawId might be an ASIN — try platformId lookup
+        dbProduct = await pr.product.findFirst({
+          where: { platform: "AMAZON", platformId: rawId.toUpperCase() },
+        });
+      }
+    } catch (_) {
+      /* UUID format mismatch — swallow */
+    }
+
+    // Resolve product details: DB row > query params
+    const asin = dbProduct?.platformId || rawId.toUpperCase();
+    const name = dbProduct?.name || req.query.name || "Unknown Product";
+    const category = dbProduct?.category || req.query.category || "general";
+    const brand = dbProduct?.brand || req.query.brand || null;
+    const rating =
+      dbProduct?.platformRating != null
+        ? dbProduct.platformRating
+        : req.query.rating
+          ? parseFloat(req.query.rating)
+          : null;
+    const price =
+      dbProduct?.currentPrice != null
+        ? dbProduct.currentPrice
+        : req.query.price
+          ? parseFloat(req.query.price)
+          : null;
+
+    logger.info(
+      `[analyze] id=${rawId} asin=${asin} name="${name}" dbFound=${!!dbProduct}`,
+    );
+
+    const result = await runAnalysisPipeline(asin, name, category, {
+      brand,
+      rating,
+      price,
+      features: [],
+    });
+
+    if (!result) {
+      return res
+        .status(202)
+        .json({ success: false, error: "Analysis not ready yet" });
+    }
+
+    // Persist updated aiScore back to Postgres if we have a real DB row
+    if (dbProduct && result.aiScore && result.aiScore > 0) {
+      try {
+        await pr.product.update({
+          where: { id: dbProduct.id },
+          data: { aiScore: result.aiScore },
+        });
+      } catch (_) {}
+    }
+
+    res.json({
+      success: true,
+      analysis: {
+        buyRecommendation: result.buyRecommendation || null,
+        whatPeopleLove: result.whatPeopleLove || [],
+        commonComplaints: result.commonComplaints || [],
+        avoidIf: result.avoidIf || null,
+        aiScore: result.aiScore || null,
+      },
+    });
+  } catch (err) {
+    logger.error(`analyze /:id/analyze error: ${err.message}`);
+    res.status(500).json({ error: "Analysis failed" });
+  }
+});
+
 router.get("/:id", async (req, res) => {
   try {
     const product = await prisma.product.findUnique({

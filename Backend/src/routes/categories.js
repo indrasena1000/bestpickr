@@ -13,7 +13,6 @@ const CANONICAL_CATEGORIES = [
   { slug: "appliances", name: "Appliances", emoji: "🍳" },
   { slug: "gaming", name: "Gaming", emoji: "🎮" },
   { slug: "camera", name: "Cameras", emoji: "📷" },
-  { slug: "tablets", name: "Tablets", emoji: "📟" },
   { slug: "smartwatch", name: "Smartwatches", emoji: "⌚" },
   { slug: "footwear", name: "Footwear", emoji: "👟" },
   { slug: "skincare", name: "Skincare", emoji: "✨" },

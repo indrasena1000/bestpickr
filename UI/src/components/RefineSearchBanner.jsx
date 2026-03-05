@@ -218,13 +218,30 @@ function detectCategoryFromQuery(query) {
   return null
 }
 
+// ── Human-readable labels for category keys ────────────────────
+const CAT_DISPLAY_LABELS = {
+  mobile:     'smartphone',
+  laptop:     'laptop',
+  headphones: 'headphones',
+  tablets:    'tablet',
+  smartwatch: 'smartwatch',
+  camera:     'camera',
+  gaming:     'console',
+  appliances: 'appliance',
+  footwear:   'footwear',
+  skincare:   'skincare product',
+}
+
 // ── Generate hints based on intent + query + category ────────────
 // Returns { message, groups, appendMode }
 // appendMode=true → chips append to current query (e.g. for PRODUCT_SPECIFIC)
 // appendMode=false → chips replace query (e.g. for CATEGORY/GENERIC)
 function buildHints(intent, query, category, showVariants) {
-  const cat   = category?.toLowerCase() || detectCategoryFromQuery(query)
-  const brand = detectBrandFromQuery(query)
+  // Always detect from query text too — backend category can be wrong for
+  // brand+model queries (e.g. "Boat BassHeads" classified as mobile not headphones)
+  const queryCat = detectCategoryFromQuery(query)
+  const cat      = category?.toLowerCase() || queryCat
+  const brand    = detectBrandFromQuery(query)
 
   if (intent === 'LOW_CONFIDENCE' || intent === 'FALLBACK') return null
   if (!cat && !brand) return null
@@ -258,15 +275,18 @@ function buildHints(intent, query, category, showVariants) {
 
   // ── BRAND_CATEGORY: has brand + category → suggest series & budget ──
   if ((intent === 'BRAND_CATEGORY' || brand) && cat) {
-    const series  = BRAND_SERIES[brand]?.[cat]
-    const budgets = CAT_BUDGETS[cat] || []
+    // Prefer query-inferred category for chip lookups (more accurate than backend cat)
+    const chipCat = queryCat || cat
+    const series  = BRAND_SERIES[brand]?.[chipCat]
+    const budgets = CAT_BUDGETS[chipCat] || []
     if (series || budgets.length > 0) {
       const groups = []
       if (series)          groups.push({ label: 'Series / Model', chips: series })
       if (budgets.length)  groups.push({ label: 'Budget', chips: budgets })
-      const brandLabel = brand.charAt(0).toUpperCase() + brand.slice(1)
+      const brandLabel  = brand.charAt(0).toUpperCase() + brand.slice(1)
+      const catLabel    = CAT_DISPLAY_LABELS[chipCat] || chipCat
       return {
-        message: `Which ${brandLabel} ${cat} are you looking for?`,
+        message: `Which ${brandLabel} ${catLabel} are you looking for?`,
         groups,
         appendMode: false,
       }

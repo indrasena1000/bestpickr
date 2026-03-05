@@ -1147,9 +1147,377 @@ a {
 .review-section {
   margin-bottom: 16px;
 }
-.review-grid {
+
+/* ─── DetailReviews — modern redesign ────────────────────────── */
+.dr-reviews-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.dr-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.2px;
+}
+.dr-review-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink4);
+}
+
+/* ── Rating + Sentiment card ── */
+.dr-top-row {
   display: grid;
   grid-template-columns: 160px 1fr;
+  gap: 0;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  overflow: hidden;
+}
+.dr-rating-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 16px;
+  border-right: 1px solid var(--line);
+}
+.dr-stars-row {
+  display: flex;
+  gap: 2px;
+}
+.dr-platform-list {
+  width: 100%;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.dr-plt-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+}
+.dr-plt-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink3);
+  font-weight: 500;
+}
+.dr-plt-val {
+  font-family: "DM Mono", monospace;
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--ink2);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.dr-plt-star { color: #f59e0b }
+.dr-plt-count { color: var(--ink4); font-weight: 400 }
+.dr-no-rating {
+  font-size: 13px;
+  color: var(--ink4);
+  padding: 20px 0;
+}
+
+/* ── Right col: sentiment + highlights ── */
+.dr-right-col {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dr-col-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--ink4);
+  margin-bottom: 10px;
+}
+.dr-sentiment-wrap { flex-shrink: 0 }
+.dr-sent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+.dr-sent-lbl {
+  min-width: 80px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink2);
+}
+.dr-sent-track {
+  flex: 1;
+  height: 7px;
+  background: var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.dr-sent-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.6s ease;
+}
+.dr-sent-pct {
+  min-width: 34px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: "DM Mono", monospace;
+}
+.dr-no-sentiment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink4);
+  padding: 8px 0;
+}
+
+/* ── Review highlights ── */
+.dr-highlights-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.dr-hl-col {
+  border-radius: var(--r2);
+  padding: 11px 13px;
+  border: 1px solid;
+}
+.dr-hl-pos {
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.dr-hl-neg {
+  background: color-mix(in srgb, var(--accent2) 5%, var(--paper));
+  border-color: color-mix(in srgb, var(--accent2) 15%, transparent);
+}
+.dr-hl-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 8px;
+}
+.dr-hl-pos .dr-hl-title { color: var(--accent) }
+.dr-hl-neg .dr-hl-title { color: var(--accent2) }
+.dr-hl-item {
+  font-size: 12px;
+  color: var(--ink2);
+  line-height: 1.45;
+  padding: 3px 0;
+  border-bottom: 1px solid;
+  display: flex;
+  gap: 6px;
+}
+.dr-hl-pos .dr-hl-item { border-color: color-mix(in srgb, var(--accent) 10%, transparent) }
+.dr-hl-neg .dr-hl-item { border-color: color-mix(in srgb, var(--accent2) 8%, transparent) }
+.dr-hl-item:last-child { border-bottom: none }
+.dr-hl-item::before {
+  content: "·";
+  color: var(--ink4);
+  flex-shrink: 0;
+}
+
+/* ── AI card (spinner + verdict) ── */
+.dr-ai-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  overflow: hidden;
+}
+.dr-ai-header {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--accent) 10%, var(--paper)) 0%,
+    color-mix(in srgb, var(--accent) 4%, var(--paper)) 100%);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dr-ai-badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.dr-spec-chip {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--violet);
+  background: var(--violet-bg);
+  border-radius: 4px;
+  padding: 2px 7px;
+  margin-left: auto;
+}
+.dr-spinner-body {
+  padding: 32px 20px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.dr-verdict-box {
+  margin: 16px 16px 0;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--accent) 9%, var(--paper)),
+    color-mix(in srgb, var(--accent) 4%, var(--paper)));
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border-radius: var(--r2);
+  padding: 14px 16px;
+}
+.dr-verdict-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 5px;
+}
+.dr-verdict-text {
+  font-size: 13.5px;
+  color: var(--ink2);
+  line-height: 1.65;
+  font-weight: 500;
+}
+.dr-avoidif {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 10px 16px 0;
+  background: color-mix(in srgb, var(--accent2) 6%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--accent2) 14%, transparent);
+  border-radius: var(--r2);
+  padding: 10px 13px;
+  font-size: 12.5px;
+  color: var(--ink3);
+  line-height: 1.5;
+}
+.dr-avoidif-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--accent2);
+}
+.dr-insights-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 16px 0;
+}
+.dr-insight-col {
+  border-radius: var(--r2);
+  padding: 12px 14px;
+  border: 1px solid;
+}
+.dr-insight-pos {
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.dr-insight-neg {
+  background: color-mix(in srgb, var(--accent2) 5%, var(--paper));
+  border-color: color-mix(in srgb, var(--accent2) 14%, transparent);
+}
+.dr-insight-head {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.dr-insight-pos .dr-insight-head { color: var(--accent) }
+.dr-insight-neg .dr-insight-head { color: var(--accent2) }
+.dr-insight-icon { font-size: 9px }
+.dr-insight-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.dr-insight-list li {
+  font-size: 12px;
+  color: var(--ink2);
+  line-height: 1.4;
+  padding-left: 12px;
+  position: relative;
+}
+.dr-insight-list li::before {
+  content: "·";
+  position: absolute;
+  left: 2px;
+  color: var(--ink4);
+}
+.dr-spec-note {
+  font-size: 11px;
+  color: var(--ink4);
+  margin: 12px 16px 16px;
+  font-style: italic;
+}
+.dr-error-state {
+  padding: 32px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ink3);
+  text-align: center;
+}
+.dr-retry-btn {
+  margin-top: 4px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--r);
+  padding: 7px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.dr-retry-btn:hover { opacity: 0.85 }
+.dr-ai-pending {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--ink4);
+  padding: 4px 0;
+}
+.dr-ai-pending-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.4;
+  animation: dr-pendot 1.2s ease-in-out infinite;
+}
+@keyframes dr-pendot { 0%,80%,100%{transform:scale(1);opacity:.4} 40%{transform:scale(1.4);opacity:1} }
+
+
   gap: 20px;
   background: var(--paper);
   border: 1px solid var(--line);
@@ -1963,6 +2331,39 @@ footer {
   .rh-point {
     font-size: 11px;
   }
+
+  /* DR redesign — mobile */
+  .dr-top-row {
+    grid-template-columns: 1fr;
+  }
+  .dr-rating-col {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 16px;
+    gap: 12px;
+  }
+  .dr-platform-list {
+    width: 100%;
+    margin-top: 0;
+    border-top: none;
+    padding-top: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    justify-content: center;
+  }
+  .dr-plt-row { font-size: 11px }
+  .dr-right-col { padding: 14px }
+  .dr-highlights-grid,
+  .dr-insights-grid { grid-template-columns: 1fr }
+  .dr-ai-card .dr-insights-grid { margin: 10px 12px 0 }
+  .dr-ai-card .dr-verdict-box { margin: 12px 12px 0 }
+  .dr-ai-card .dr-avoidif { margin: 8px 12px 0 }
+  .dr-ai-card .dr-spec-note { margin: 10px 12px 12px }
+
 
   /* Buy card */
   .buy-card-header {

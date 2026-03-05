@@ -102,15 +102,17 @@ function applyFilters(products, { brand, price_min, price_max, features }) {
 // items scoring 0 are dropped entirely.
 function scoreRelevance(products, intentResult) {
   const { category, brand, cleanQuery, features } = intentResult;
-  const qTokens = (cleanQuery || '')
+  const qTokens = (cleanQuery || "")
     .toLowerCase()
     .split(/\s+/)
     .filter((t) => t.length >= 3);
 
   return products
     .map((p) => {
-      const text = `${p.name || ''} ${p.brand || ''} ${p.category || ''}`.toLowerCase();
+      const text =
+        `${p.name || ""} ${p.brand || ""} ${p.category || ""}`.toLowerCase();
       let score = 0;
+      let tokenMatchCount = 0;
 
       // Category match (strong signal)
       if (category && p.category === category) score += 40;
@@ -120,9 +122,19 @@ function scoreRelevance(products, intentResult) {
 
       // Query token matches (each token hit = 10 pts)
       for (const t of qTokens) {
-        if (text.includes(t)) score += 10;
+        if (text.includes(t)) {
+          score += 10;
+          tokenMatchCount++;
+        }
         // Stem plural: "conditioners" → "conditioner"
-        else if (t.endsWith('s') && t.length > 4 && text.includes(t.slice(0, -1))) score += 8;
+        else if (
+          t.endsWith("s") &&
+          t.length > 4 &&
+          text.includes(t.slice(0, -1))
+        ) {
+          score += 8;
+          tokenMatchCount++;
+        }
       }
 
       // Feature match
@@ -131,6 +143,12 @@ function scoreRelevance(products, intentResult) {
           if (text.includes(ft.toLowerCase())) score += 5;
         }
       }
+
+      // VETO: if the query had specific tokens (e.g. "air conditioner") but NONE
+      // of them appear in this product, reject it even if it matched the broad
+      // category (e.g. "appliances"). This prevents kitchen choppers from
+      // appearing when searching "air conditioner under 30000".
+      if (qTokens.length >= 2 && tokenMatchCount === 0) score = 0;
 
       return { ...p, _relevance: score };
     })
@@ -149,7 +167,10 @@ function dedup(products) {
     if (asinKey) seen.add(`id:${asinKey}`);
 
     // Secondary key: normalized name (first 60 chars lowercase, no spaces)
-    const nameKey = (p.name || '').toLowerCase().replace(/\s+/g, '').slice(0, 60);
+    const nameKey = (p.name || "")
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .slice(0, 60);
     if (nameKey && seen.has(`n:${nameKey}`)) return false;
     if (nameKey) seen.add(`n:${nameKey}`);
 
@@ -282,9 +303,11 @@ async function pathA(redis, query, intentResult, startTime) {
     redisResult.confidence >= partialThreshold
   ) {
     const primary = await enrichFromCache(redisResult.products[0]);
-    const suggestions = dedup(await enrichAll(redisResult.products.slice(1, 10), {
-      scrapeLimit: 0,
-    }));
+    const suggestions = dedup(
+      await enrichAll(redisResult.products.slice(1, 10), {
+        scrapeLimit: 0,
+      }),
+    );
 
     return makeResponse({
       intent: intentResult.intent,
@@ -343,15 +366,28 @@ async function pathA(redis, query, intentResult, startTime) {
 
 // ── PATH B: CATEGORY / BRAND_CATEGORY / GENERIC ───────────────────
 async function pathB(redis, intentResult, startTime, prisma, rawQuery) {
-  const { category, intent } = intentResult;
-  const products = await getTop50(redis, category);
+  const { category, subType, intent } = intentResult;
+
+  // Use the sub-type Redis pool first (e.g. top50:air_conditioner) so we don't
+  // serve generic "appliances" results for specific sub-category queries.
+  // Falls back to the broad category pool if the sub-type pool is empty.
+  let products = subType ? await getTop50(redis, subType) : [];
+  if (products.length === 0) products = await getTop50(redis, category);
+
   let filtered = applyFilters(products, intentResult);
 
   // DB fallback expansion if < 5 results
   if (filtered.length < 5 && prisma && category) {
     try {
       const dbProducts = await prisma.product.findMany({
-        where: { category, inStock: true },
+        where: {
+          category,
+          inStock: true,
+          aiScore: { not: null },
+          imageUrl: { not: null },
+          brand: { not: null },
+          platform: "AMAZON",
+        },
         orderBy: { aiScore: "desc" },
         take: 100,
         select: {
@@ -390,9 +426,15 @@ async function pathB(redis, intentResult, startTime, prisma, rawQuery) {
   // Only keep products that actually match the query; prevent kitchen
   // scales appearing for "air conditioner under 50k".
   let final = dedup(filtered);
-  if (intentResult.cleanQuery && intentResult.cleanQuery.split(/\s+/).length >= 2) {
+  if (
+    intentResult.cleanQuery &&
+    intentResult.cleanQuery.split(/\s+/).length >= 2
+  ) {
     const scored = scoreRelevance(final, intentResult);
-    if (scored.length > 0) final = scored;
+    // Always use scored result. If empty, the zero-results block below
+    // falls through to pathA live fetch — do NOT restore unscored products
+    // when none are relevant (e.g. kitchen choppers for "air conditioner").
+    final = scored;
   }
 
   // ── Fire background enrichment if results are thin ─────────────
