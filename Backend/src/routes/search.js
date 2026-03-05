@@ -96,21 +96,28 @@ const ANALYSIS_TIMEOUT_MS = 25000; // 25s per product (scrape + GPT)
 // ── Category filter map — ensures results strictly match the requested category
 // Prevents: stale cache returning wrong category, Amazon SearchIndex mismatch,
 // mock fallback returning off-topic products.
+// Keys MUST match canonical slugs from categoryKeyMap.js (mobile/laptop/camera etc.)
+// Aliases added for legacy slugs that may still appear from old cache entries.
 const CATEGORY_FILTER_MAP = {
-  headphones: [
-    "headphone",
-    "earphone",
-    "earbuds",
-    "earbud",
-    "headset",
-    "neckband",
-    "airpods",
-    "tws",
-    "audio",
-    "speaker",
-    "bluetooth headset",
+  // ── Mobile ──────────────────────────────────────────────────────
+  mobile: [
+    "phone",
+    "mobile",
+    "smartphone",
+    "iphone",
+    "android",
+    "redmi",
+    "realme",
+    "samsung",
+    "oneplus",
+    "vivo",
+    "oppo",
+    "pixel",
+    "5g",
+    "4g",
   ],
   smartphones: [
+    // legacy alias
     "phone",
     "mobile",
     "smartphone",
@@ -124,7 +131,92 @@ const CATEGORY_FILTER_MAP = {
     "oppo",
     "pixel",
   ],
-  laptops: ["laptop", "notebook", "macbook", "chromebook", "ultrabook"],
+
+  // ── Laptop ───────────────────────────────────────────────────────
+  laptop: ["laptop", "notebook", "macbook", "chromebook", "ultrabook"],
+  laptops: ["laptop", "notebook", "macbook", "chromebook", "ultrabook"], // legacy alias
+
+  // ── Headphones / Audio ────────────────────────────────────────────
+  headphones: [
+    "headphone",
+    "earphone",
+    "earbuds",
+    "earbud",
+    "headset",
+    "neckband",
+    "airpods",
+    "tws",
+    "audio",
+    "speaker",
+    "bluetooth headset",
+  ],
+
+  // ── Televisions (own category — NOT appliances) ───────────────────
+  televisions: [
+    "tv",
+    "television",
+    "smart tv",
+    "qled",
+    "oled",
+    "led tv",
+    "lcd tv",
+    "4k tv",
+    "bravia",
+    "android tv",
+    "fire tv",
+    "google tv",
+  ],
+
+  // ── Tablets ───────────────────────────────────────────────────────
+  tablets: [
+    "tablet",
+    "ipad",
+    "android tablet",
+    "tab",
+    "galaxy tab",
+    "fire tablet",
+  ],
+
+  // ── Smartwatch ────────────────────────────────────────────────────
+  smartwatch: [
+    "smartwatch",
+    "smart watch",
+    "watch",
+    "fitness band",
+    "fitbit",
+    "band",
+    "tracker",
+  ],
+
+  // ── Camera ────────────────────────────────────────────────────────
+  camera: [
+    "camera",
+    "dslr",
+    "mirrorless",
+    "lens",
+    "canon",
+    "nikon",
+    "fujifilm",
+    "olympus",
+    "gopro",
+    "action camera",
+    "point and shoot",
+    "webcam",
+  ],
+  cameras: [
+    // legacy alias
+    "camera",
+    "dslr",
+    "mirrorless",
+    "lens",
+    "canon",
+    "nikon",
+    "fujifilm",
+    "olympus",
+    "gopro",
+  ],
+
+  // ── Gaming ────────────────────────────────────────────────────────
   gaming: [
     "gaming",
     "controller",
@@ -133,9 +225,40 @@ const CATEGORY_FILTER_MAP = {
     "playstation",
     "xbox",
     "ps5",
+    "ps4",
     "nintendo",
     "game",
   ],
+
+  // ── Appliances (kitchen/home — excludes TVs) ──────────────────────
+  appliances: [
+    "mixer",
+    "grinder",
+    "microwave",
+    "oven",
+    "washing",
+    "refrigerator",
+    "fridge",
+    "vacuum",
+    "purifier",
+    "cooker",
+    "appliance",
+    "induction",
+    "juicer",
+    "fryer",
+    "air fryer",
+    "dishwasher",
+    "chimney",
+    "geyser",
+    "water heater",
+    "air conditioner",
+    "kettle",
+    "iron",
+    "stove",
+    "cooktop",
+  ],
+
+  // ── Footwear ──────────────────────────────────────────────────────
   footwear: [
     "footwear",
     "shoe",
@@ -153,6 +276,8 @@ const CATEGORY_FILTER_MAP = {
     "crocs",
     "running",
   ],
+
+  // ── Skincare ──────────────────────────────────────────────────────
   skincare: [
     "skincare",
     "serum",
@@ -167,6 +292,8 @@ const CATEGORY_FILTER_MAP = {
     "lotion",
     "skin",
   ],
+
+  // ── Fashion ───────────────────────────────────────────────────────
   fashion: [
     "shirt",
     "t-shirt",
@@ -181,35 +308,6 @@ const CATEGORY_FILTER_MAP = {
     "fashion",
     "clothing",
     "apparel",
-  ],
-  appliances: [
-    "mixer",
-    "grinder",
-    "microwave",
-    "oven",
-    "washing",
-    "refrigerator",
-    "fridge",
-    "vacuum",
-    "purifier",
-    "cooker",
-    "appliance",
-    "induction",
-    "juicer",
-  ],
-  cameras: [
-    "camera",
-    "dslr",
-    "mirrorless",
-    "lens",
-    "canon",
-    "nikon",
-    "sony",
-    "fujifilm",
-    "olympus",
-    "gopro",
-    "action camera",
-    "point and shoot",
   ],
 };
 
@@ -362,13 +460,13 @@ function filterByQueryRelevance(results, query) {
     return termArray.some((term) => text.includes(term));
   });
 
-  // Safety — never show fewer than 1 result due to over-filtering
-  const MIN_RESULTS = 1;
-  if (filtered.length < MIN_RESULTS) {
+  // No safety net — if ALL Amazon results are irrelevant (e.g. air fryer → induction cooktop)
+  // return empty so the UI shows "no results" instead of wrong products.
+  if (filtered.length === 0) {
     logger.warn(
-      `🔍 Query relevance: "${query}" would leave only ${filtered.length} — keeping all ${results.length}`,
+      `🔍 Query relevance: "${query}" — all ${results.length} results failed relevance check, returning empty`,
     );
-    return results;
+    return [];
   }
 
   if (filtered.length < results.length) {
@@ -3260,21 +3358,8 @@ async function handleSearch(req, res) {
     logger.error(`🔍 Search: Amazon PA-API failed — ${amazonErr.message}`);
   }
 
-  // If Amazon returned nothing (no credentials, API error, or 0 results),
-  // fall back to mock_products.json so the full pipeline still runs
-  if (amazonProducts.length === 0) {
-    logger.warn(
-      `🔍 Search: Amazon returned 0 products — falling back to mock data`,
-    );
-    amazonProducts = getMockProductsForSearch(query, effectiveCategory);
-    usingMockData = amazonProducts.length > 0;
-
-    if (usingMockData) {
-      logger.info(
-        `🔍 Search: mock fallback loaded ${amazonProducts.length} products for "${query}"`,
-      );
-    }
-  }
+  // Mock fallback disabled — run real Amazon fetch only.
+  // If Amazon returns 0, surface an empty result immediately.
 
   if (amazonProducts.length === 0) {
     logger.warn(`🔍 Search: no products from Amazon or mock for "${query}"`);

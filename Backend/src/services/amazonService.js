@@ -114,14 +114,26 @@ async function getAccessToken() {
 // CREATORS API — PRODUCT SEARCH
 // ═════════════════════════════════════════════════════════════════
 
+// Strip ranking/superlative noise words that confuse Amazon search
+function cleanAmazonQuery(q) {
+  return q
+    .replace(
+      /\b(best|top|cheap|cheapest|affordable|good|great|latest|new|popular|recommended|under|below|above|budget|premium|buy|review|compare|vs|versus)\b/gi,
+      "",
+    )
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 async function searchViaCreatorsAPI(query, category, retries = 2) {
   const token = await getAccessToken();
+  const keywords = cleanAmazonQuery(query) || query; // fallback to original if cleaned is empty
 
   const payload = {
-    keywords: query,
+    keywords,
+    limit: 10,
     marketplace: MARKETPLACE,
     partnerTag: ASSOCIATE_TAG,
-    limit: 10,
     resources: [
       "images.primary.large",
       "itemInfo.title",
@@ -137,7 +149,7 @@ async function searchViaCreatorsAPI(query, category, retries = 2) {
   if (browseNode) payload.browseNodeId = browseNode;
 
   logger.info(
-    `Amazon Creators API: searching "${query}" category="${category}"`,
+    `Amazon Creators API: searching "${keywords}" (raw: "${query}") category="${category}"`,
   );
 
   try {
@@ -509,6 +521,15 @@ function mapToBrowseNode(category) {
     smartphones: "1805560031", // Electronics > Smartphones
     laptops: "1375424031", // Computers > Laptops
     cameras: "1389175031", // Electronics > Cameras
+    // appliances: omitted — browse node is too broad (returns induction tops/blenders for "air fryer")
+    // keyword-only search is more accurate for appliance sub-types
+    tablets: "1375508031", // Computers > Tablets
+    televisions: "1389396031", // Electronics > Televisions
+    audio: "1388922031", // Electronics > Speaker / Audio
+    wearables: "1350387031", // Electronics > Wearable Technology
+    gaming: "976460031", // Video Games
+    skincare: "1355016031", // Beauty > Skin Care
+    footwear: "1983518031", // Shoes & Handbags
   };
   return map[category?.toLowerCase()] || null;
 }

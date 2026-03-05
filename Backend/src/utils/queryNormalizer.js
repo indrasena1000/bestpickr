@@ -492,6 +492,10 @@ function detectCategory(query) {
   // ── Stage 1: Multi-word phrase ────────────────────────────────
   const multiWord = [
     "air fryer",
+    "smart tv",
+    "led tv",
+    "lcd tv",
+    "4k tv",
     "washing machine",
     "air conditioner",
     "running shoes",
