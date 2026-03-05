@@ -73,10 +73,7 @@ const {
   waitForSearchCache,
 } = require("../utils/redis");
 const { normalize, buildSearchKey } = require("../utils/queryNormalizer");
-const {
-  getMockProductsForSearch,
-  buildMockAnalysis,
-} = require("../utils/mockData");
+const { buildMockAnalysis } = require("../utils/mockData"); // used only for legacy _mockSource products
 const logger = require("../utils/logger");
 const { classifyIntent, INTENT } = require("../services/searchIntentService");
 const { SUBTYPE_FILTER_KEYWORDS } = require("../utils/categoryKeyMap");
@@ -3248,7 +3245,6 @@ async function handleSearch(req, res) {
   );
 
   let amazonProducts = [];
-  let usingMockData = false;
 
   try {
     amazonProducts = await amazonService.searchProducts(
@@ -3260,20 +3256,9 @@ async function handleSearch(req, res) {
     logger.error(`🔍 Search: Amazon PA-API failed — ${amazonErr.message}`);
   }
 
-  // If Amazon returned nothing (no credentials, API error, or 0 results),
-  // fall back to mock_products.json so the full pipeline still runs
+  // If Amazon returned nothing, proceed to empty response below
   if (amazonProducts.length === 0) {
-    logger.warn(
-      `🔍 Search: Amazon returned 0 products — falling back to mock data`,
-    );
-    amazonProducts = getMockProductsForSearch(query, effectiveCategory);
-    usingMockData = amazonProducts.length > 0;
-
-    if (usingMockData) {
-      logger.info(
-        `🔍 Search: mock fallback loaded ${amazonProducts.length} products for "${query}"`,
-      );
-    }
+    logger.warn(`🔍 Search: Amazon returned 0 products for "${query}"`);
   }
 
   if (amazonProducts.length === 0) {
@@ -3356,8 +3341,6 @@ async function handleSearch(req, res) {
   // ── STEP 5.7: Brand guard — when user searched a specific brand ──
   // Ensure brand products appear first. If zero brand products found,
   // do a supplemental Amazon fetch so users see at least 1 on-brand result.
-  // Also fires when usingMockData (Amazon failed) — we try a brand-specific query
-  // as a second chance before showing unrelated mock products.
   if (detectedIntent?.brand) {
     const brandLow = detectedIntent.brand.toLowerCase();
     const brandMatched = enrichedProducts.filter((p) =>
@@ -3394,15 +3377,9 @@ async function handleSearch(req, res) {
             (p.brand || p.name || "").toLowerCase().includes(brandLow),
           );
           if (brandFiltered.length > 0) {
-            // If we were on mock data, replace entirely with real brand results
-            if (usingMockData) {
-              enrichedProducts = brandFiltered;
-              usingMockData = false; // now we have real data
-            } else {
-              enrichedProducts = [...brandFiltered, ...enrichedProducts];
-            }
+            enrichedProducts = [...brandFiltered, ...enrichedProducts];
             logger.info(
-              `🔍 Brand guard: supplemental fetch added ${brandFiltered.length} "${detectedIntent.brand}" products${usingMockData ? " (replaced mock)" : ""}`,
+              `🔍 Brand guard: supplemental fetch added ${brandFiltered.length} "${detectedIntent.brand}" products`,
             );
           }
         }
@@ -3467,8 +3444,8 @@ async function handleSearch(req, res) {
   );
 
   // Merge Amazon results into top50 pools — grows organically as users search.
-  // Deduplicates by id. Skip if mock data or no detected category.
-  if (effectiveCategory && ranked.length > 0 && !usingMockData) {
+  // Deduplicates by id. Skip if no detected category.
+  if (effectiveCategory && ranked.length > 0) {
     const incoming = ranked.map((p) =>
       enrichedToTop50Shape(p, effectiveCategory),
     );
@@ -3513,13 +3490,10 @@ async function handleSearch(req, res) {
 
   // ── STEP 8: Return Response ───────────────────────────────────
   const elapsed = Date.now() - requestStart;
-  req._searchLog.outcome = usingMockData ? "mock_fallback" : "live";
+  req._searchLog.outcome = "live";
   req._searchLog.resultCount = ranked.length;
 
-  logger.info(
-    `🔍 Search: complete — ${ranked.length} results in ${elapsed}ms` +
-      (usingMockData ? " (mock fallback)" : ""),
-  );
+  logger.info(`🔍 Search: complete — ${ranked.length} results in ${elapsed}ms`);
 
   return res.json({
     success: true,
@@ -3530,7 +3504,7 @@ async function handleSearch(req, res) {
     totalResults: ranked.length,
     cached: false,
     cacheSource: null,
-    source: usingMockData ? "mock_fallback" : "live",
+    source: "live",
     lastUpdated: new Date().toISOString(),
     elapsed_ms: elapsed,
     results: ranked,

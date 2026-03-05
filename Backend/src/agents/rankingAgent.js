@@ -326,7 +326,7 @@ const {
 } = require("../utils/redis");
 const { CATEGORIES } = require("../cron/categoryPreloader");
 const logger = require("../utils/logger");
-const { getMockResults } = require("../utils/mockData");
+// mockData import removed — no mock fallback
 
 // FIX 1: prisma is injected from server.js via setPrisma()
 // Never create new PrismaClient() here — use the shared instance
@@ -554,24 +554,9 @@ async function runSearchAgent(query, category = "") {
     `Agent: raw products: ${allProducts.length} (Amazon:${amazonProducts.length})`,
   );
 
-  // FIX 3: If ALL platforms return empty, fall back to mock_products.json
+  // If ALL platforms return empty, return no results (no mock fallback)
   if (allProducts.length === 0) {
     logger.warn(`Agent: ⚠️  ALL platforms returned 0 products for "${query}"`);
-    const mockResults = getMockResults(query, category);
-    if (mockResults.length > 0) {
-      logger.info(
-        `Agent: serving ${mockResults.length} mock products as fallback`,
-      );
-      // Cache mock results so subsequent searches hit Tier 1
-      cacheResults(query, category, mockResults).catch((err) =>
-        logger.warn(`Agent: mock→cache failed: ${err.message}`),
-      );
-      return {
-        results: mockResults,
-        fromCache: false,
-        source: "mock_fallback",
-      };
-    }
     return { results: [], fromCache: false, error: "no_products_found" };
   }
 
