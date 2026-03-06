@@ -211,6 +211,7 @@ function aggregateGroup(group, categoryAvgPrice) {
   return {
     name: group.name,
     brand: group.brand,
+    asin: group.asin || null,
     category: group.category,
     imageUrl: group.imageUrl,
     aiScore: score,

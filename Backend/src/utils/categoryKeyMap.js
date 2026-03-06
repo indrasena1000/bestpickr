@@ -17,6 +17,7 @@ const CANONICAL_CATEGORIES = [
   "footwear",
   "skincare",
   "fashion",
+  "bags",
   "books",
 ];
 
@@ -153,6 +154,7 @@ const KEYWORD_TO_CATEGORY = {
   dishwasher: "appliances",
   dryer: "appliances",
   geyser: "appliances",
+  geysers: "appliances",
   heater: "appliances",
   kettle: "appliances",
   fryer: "appliances",
@@ -223,6 +225,30 @@ const KEYWORD_TO_CATEGORY = {
   novel: "books",
   textbook: "books",
   fiction: "books",
+
+  // Bags & Luggage
+  bag: "bags",
+  bags: "bags",
+  luggage: "bags",
+  backpack: "bags",
+  backpacks: "bags",
+  handbag: "bags",
+  handbags: "bags",
+  purse: "bags",
+  suitcase: "bags",
+  suitcases: "bags",
+  trolley: "bags",
+  trolleys: "bags",
+  tote: "bags",
+  satchel: "bags",
+  duffel: "bags",
+  duffle: "bags",
+  clutch: "bags",
+  briefcase: "bags",
+  messenger: "bags",
+  schoolbag: "bags",
+  laptop_bag: "bags",
+  travel_bag: "bags",
 };
 
 /**
@@ -326,6 +352,11 @@ const SUBTYPE_AMAZON_QUERIES = {
   fashion: {
     tshirt: "best casual t-shirt men india",
   },
+  bags: {
+    backpack: "best backpack india",
+    luggage: "best trolley luggage india",
+    handbag: "best women handbag india",
+  },
 };
 
 // Keywords to filter a broad category pool down to a specific sub-type.
@@ -426,6 +457,10 @@ const SUBTYPE_FILTER_KEYWORDS = {
   laptop: ["laptop", "notebook", "macbook", "chromebook"],
   tablet: ["tablet", "ipad", "android tablet"],
   smartwatch: ["smartwatch", "smart watch", "fitness band"],
+  // bags
+  backpack: ["backpack", "rucksack", "school bag", "laptop bag"],
+  luggage: ["luggage", "trolley", "suitcase", "travel bag"],
+  handbag: ["handbag", "purse", "tote", "clutch", "satchel"],
 };
 
 // Flat list of all sub-types — used by 1 AM cron to iterate

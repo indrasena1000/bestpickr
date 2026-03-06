@@ -7,7 +7,11 @@ import { searchProducts, getSuggestions, getTrending } from "../services/api";
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
 // ── Session cache ─────────────────────────────────────────────────
-const cacheKey = (q) => `bp_search:${q.toLowerCase().trim()}`;
+// Bump this when response relevance rules change, so stale session entries
+// from older ranking/filter logic don't override fresh backend behavior.
+const SEARCH_CACHE_VERSION = "v2_strict_match";
+const cacheKey = (q) =>
+  `bp_search:${SEARCH_CACHE_VERSION}:${q.toLowerCase().trim()}`;
 function readCache(q) {
   try {
     const r = sessionStorage.getItem(cacheKey(q));

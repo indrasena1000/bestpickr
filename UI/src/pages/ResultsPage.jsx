@@ -145,7 +145,8 @@ const QUERY_STOP = new Set([
   "latest",
 ]);
 
-function queryRelevanceFilter(items, query) {
+function queryRelevanceFilter(items, query, opts = {}) {
+  const { allowFallback = true } = opts;
   const tokens = query
     .toLowerCase()
     .split(/[\s,]+/)
@@ -173,7 +174,9 @@ function queryRelevanceFilter(items, query) {
       ) || text.includes(joined)
     );
   });
-  // If the filter is too aggressive and removes everything, return all items
+  // In default mode, if the filter is too aggressive and removes everything,
+  // return all items to avoid blank pages. In strict mode, return true matches only.
+  if (!allowFallback) return filtered;
   return filtered.length > 0 ? filtered : items;
 }
 
@@ -947,39 +950,41 @@ export default function ResultsPage({
                   category={detectedCategory || category}
                   onSearch={onSearch}
                 />
-                {/* AI Summary bar for category results */}
+                {/* Relevance note for category-style results */}
                 {(() => {
                   const guardedItems = queryRelevanceFilter(sorted, query);
-                  // If relevance filter wiped everything out, show all sorted items as fallback
+                  const strictMatches = queryRelevanceFilter(sorted, query, {
+                    allowFallback: false,
+                  });
+                  const noExactMatch =
+                    sorted.length > 0 && strictMatches.length === 0;
                   const displayItems =
-                    guardedItems.length > 0 ? guardedItems : sorted;
+                    noExactMatch || guardedItems.length === 0
+                      ? sorted
+                      : guardedItems;
                   if (displayItems.length === 0) return null;
                   return (
                     <>
-                      {displayItems.length > 0 && top && (
+                      {noExactMatch && (
                         <div className="ai-summary">
-                          <div className="ai-summary-label">★ AI Summary</div>
+                          <div className="ai-summary-label">
+                            No Exact Match Found
+                          </div>
                           <div className="ai-summary-text">
-                            <strong>
-                              {displayItems[0].brand ||
-                                displayItems[0].name
-                                  ?.split(" ")
-                                  .slice(0, 3)
-                                  .join(" ")}
-                            </strong>{" "}
-                            leads with the highest combined score (
-                            {displayItems[0].aiScore}/10).{" "}
-                            {
-                              displayItems.filter((p) => p.positivePct >= 75)
-                                .length
-                            }{" "}
-                            of {displayItems.length} products have 75%+ positive
-                            reviews.
+                            We did not find an exact match for
+                            <strong> "{query}"</strong>. Try these similar
+                            products.
                           </div>
                         </div>
                       )}
                       <ResultCardList
+                        title={
+                          noExactMatch
+                            ? "Try these similar products"
+                            : undefined
+                        }
                         items={displayItems}
+                        showBestMatch={!noExactMatch}
                         onSelect={(p) => onViewProduct(p, baseList)}
                       />
                     </>
@@ -1117,18 +1122,43 @@ export default function ResultsPage({
               )}
               {sorted.length > 0 && (
                 <>
-                  {top && (
-                    <div className="ai-summary">
-                      <div className="ai-summary-label">★ AI Summary</div>
-                      <div className="ai-summary-text">
-                        <strong>{top.name}</strong> leads with the highest
-                        combined score ({top.aiScore}/10) across all platforms.{" "}
-                        {results.filter((p) => p.positivePct >= 75).length} of{" "}
-                        {results.length} products have 75%+ positive reviews.
-                      </div>
-                    </div>
-                  )}
+                  {(() => {
+                    const strictMatches = queryRelevanceFilter(sorted, query, {
+                      allowFallback: false,
+                    });
+                    const noExactMatch =
+                      sorted.length > 0 && strictMatches.length === 0;
+
+                    if (noExactMatch) {
+                      return (
+                        <div className="ai-summary">
+                          <div className="ai-summary-label">
+                            No Exact Match Found
+                          </div>
+                          <div className="ai-summary-text">
+                            We did not find an exact match for
+                            <strong> "{query}"</strong>. Try these similar
+                            products.
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })()}
                   <ResultCardList
+                    title={
+                      queryRelevanceFilter(sorted, query, {
+                        allowFallback: false,
+                      }).length === 0
+                        ? "Try these similar products"
+                        : undefined
+                    }
+                    showBestMatch={
+                      queryRelevanceFilter(sorted, query, {
+                        allowFallback: false,
+                      }).length > 0
+                    }
                     items={sorted}
                     onSelect={(p) => onViewProduct(p, results)}
                   />
@@ -1179,7 +1209,7 @@ export default function ResultsPage({
 }
 
 // ── RESULT CARD LIST — 1-per-row column, matches skeleton layout ──
-function ResultCardList({ items, title, onSelect }) {
+function ResultCardList({ items, title, onSelect, showBestMatch = true }) {
   if (!items || items.length === 0) return null;
   return (
     <div>
@@ -1205,6 +1235,7 @@ function ResultCardList({ items, title, onSelect }) {
             product={p}
             rank={i + 1}
             isTop={i === 0}
+            showBestMatch={showBestMatch}
             onClick={() => onSelect?.(p)}
           />
         ))}
@@ -1214,7 +1245,13 @@ function ResultCardList({ items, title, onSelect }) {
 }
 
 // ── RESULT CARD ────────────────────────────────────────────────────
-function ResultCard({ product: p, rank, isTop, onClick }) {
+function ResultCard({
+  product: p,
+  rank,
+  isTop,
+  onClick,
+  showBestMatch = true,
+}) {
   const fmt = (n) => (n ? `₹${Number(n).toLocaleString("en-IN")}` : "—");
 
   // BUG #10 FIX: Correct "you save" = highestPrice - lowestPrice
@@ -1278,7 +1315,9 @@ function ResultCard({ product: p, rank, isTop, onClick }) {
                 ★ {p.aiScore}/10
               </span>
             </AITooltip>
-            {isTop && <span className="tag tag-g">Best Match</span>}
+            {isTop && showBestMatch && (
+              <span className="tag tag-g">Best Match</span>
+            )}
             {hasRealSentiment && p.positivePct >= 80 && (
               <span className="tag tag-b">Highly Praised</span>
             )}

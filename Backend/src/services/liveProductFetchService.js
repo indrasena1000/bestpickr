@@ -14,6 +14,8 @@ const { acquireLock, releaseLock } = require("../utils/redisLock");
 const { checkAndIncrement } = require("../utils/dailyCap");
 const { getRelated } = require("./relatedProductService");
 const { updateJob } = require("./jobStatusService");
+const { normalizeQuery } = require("../utils/queryNormalizer");
+const { addDynamicBrand } = require("../utils/productNameNormalizer");
 
 let prisma = null;
 function setPrisma(client) {
@@ -199,6 +201,21 @@ async function startLiveFetch(redis, jobId, query, intentResult) {
         executionTimeMs: Date.now() - startTime,
       });
 
+      // ── Persist learned brand+category mapping ────────────────────
+      // Allows future identical searches to resolve via DB instead of Amazon.
+      const learnedBrand = primary?.brand || intentResult.brand || null;
+      const learnedCategory = analysedCategory || intentResult.category || null;
+      if (learnedBrand) {
+        // Immediately register brand in runtime memory so detect works within the
+        // same process without waiting for the next 6h setDynamicBrands() refresh.
+        addDynamicBrand(learnedBrand);
+      }
+      if (prisma && (learnedBrand || learnedCategory)) {
+        saveQueryMapping(query, learnedBrand, learnedCategory).catch((err) =>
+          logger.warn(`LiveFetch: QueryMapping save failed: ${err.message}`),
+        );
+      }
+
       logger.info(
         `LiveFetch: job ${jobId} ready in ${Date.now() - startTime}ms`,
       );
@@ -239,7 +256,12 @@ async function saveToDb(product, category) {
       const platformEnum = plt.name?.toUpperCase();
       if (!["AMAZON", "FLIPKART", "MYNTRA"].includes(platformEnum)) continue;
 
-      const platformId = `${product.name.slice(0, 80)}-${plt.name}`;
+      // For Amazon use the real ASIN — a name-based ID causes Redis/MongoDB
+      // analysis cache misses and re-runs GPT every time the product is opened.
+      const platformId =
+        platformEnum === "AMAZON" && product.asin
+          ? product.asin
+          : `${product.name.slice(0, 80)}-${plt.name}`;
 
       const saved = await prisma.product.upsert({
         where: { platform_platformId: { platform: platformEnum, platformId } },
@@ -280,6 +302,40 @@ async function saveToDb(product, category) {
         `LiveFetch DB: "${product.name}" on ${plt.name}: ${e.message}`,
       );
     }
+  }
+}
+
+/**
+ * saveQueryMapping(rawQuery, brand, category)
+ *
+ * Persists a learned brand+category association for a raw search query.
+ * On conflict (same normalizedQuery), increments hitCount and updates brand/category.
+ */
+async function saveQueryMapping(rawQuery, brand, category) {
+  if (!prisma || (!brand && !category)) return;
+  const normalizedKey = normalizeQuery(rawQuery);
+  if (!normalizedKey) return;
+
+  try {
+    await prisma.searchQueryMapping.upsert({
+      where: { normalizedQuery: normalizedKey },
+      update: {
+        brand: brand || undefined,
+        category: category || undefined,
+        hitCount: { increment: 1 },
+      },
+      create: {
+        normalizedQuery: normalizedKey,
+        brand: brand || null,
+        category: category || null,
+        learnedFrom: "amazon_api",
+      },
+    });
+    logger.info(
+      `LiveFetch: learned mapping "${normalizedKey}" → brand="${brand}" category="${category}"`,
+    );
+  } catch (err) {
+    logger.warn(`LiveFetch: saveQueryMapping error: ${err.message}`);
   }
 }
 

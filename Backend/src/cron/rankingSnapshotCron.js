@@ -228,7 +228,7 @@ async function runSnapshot() {
 // JOB 2 — 1 AM SUB-TYPE SEED CRON
 // Fetches fresh products from Amazon for each sub-type once per day.
 // Principle: pay the Amazon API cost once at 1 AM, serve all day free.
-// Re-analysis: only for new products or those with stale analysis (>7 days).
+// Analysis mode: this cron never triggers GPT. It reuses existing analysis only.
 // ═════════════════════════════════════════════════════════════════
 
 const ANALYSIS_STALE_DAYS = 7; // Re-analyze if older than this (aligned with 7-day weekly cycle)
@@ -236,7 +236,6 @@ const ANALYSIS_STALE_DAYS = 7; // Re-analyze if older than this (aligned with 7-
 // Lazy-load to avoid circular deps and startup cost on unused services
 let _amazonService = null;
 let _ProductAnalysis = null;
-let _queueAnalysis = null;
 
 function getAmazonService() {
   if (!_amazonService) _amazonService = require("../services/amazonService");
@@ -252,12 +251,6 @@ function getProductAnalysis() {
     }
   }
   return _ProductAnalysis;
-}
-
-function getQueueAnalysis() {
-  if (!_queueAnalysis)
-    _queueAnalysis = require("../services/backgroundAnalysis").queueAnalysis;
-  return _queueAnalysis;
 }
 
 /**
@@ -289,7 +282,6 @@ async function snapshotSubType(category, subType, searchQuery) {
   }
 
   const ProductAnalysis = getProductAnalysis();
-  const queueAnalysis = getQueueAnalysis();
   const snapshot = [];
 
   for (const p of amazonProducts.slice(0, 10)) {
@@ -316,12 +308,7 @@ async function snapshotSubType(category, subType, searchQuery) {
       }
     }
 
-    // 3. Queue background analysis only for new/stale products
-    if (!hasFullAnalysis && queueAnalysis) {
-      queueAnalysis(asin, p.name || p.title, category, p.brand).catch(() => {});
-    }
-
-    // 4. Build snapshot entry — analyzed products get real aiScore,
+    // 3. Build snapshot entry — analyzed products get real aiScore,
     //    unanalyzed get a temporary estimate from Amazon rating
     snapshot.push({
       id: asin,

@@ -8,9 +8,9 @@
 //   3. MongoDB SearchCache check → if HIT & fresh: return + repopulate Redis
 //   4. Cache MISS → fetch 15 products from Amazon PA-API
 //   5. For each product in parallel:
-//        - runAnalysisPipeline() → AI analysis (GPT-4o-mini)
+//        - lookupAnalysis()      → cache-only (Redis/MongoDB, no GPT)
 //        - getAffiliateLinks()   → Flipkart/Myntra via Cuelinks
-//        - buildProductResponse() → assemble final shape
+//        - formatProductResult()  → assemble final shape
 //   6. Sort by aiScore DESC → take top 10
 //   7. Persist to MongoDB SearchCache + Redis (non-blocking)
 //   8. Return structured JSON response
@@ -27,7 +27,8 @@
 //   │  THIS FILE (routes/search.js)                                │
 //   │    validate → cache check → Amazon PA-API                    │
 //   │         ↓                                                    │
-//   │  analysisPipeline.js   ← Amazon reviews → GPT-4o-mini       │
+//   │  analysisPipeline.js   ← cache-only lookup during search     │
+//   │  /products/:id/analyze ← first detail-open triggers GPT      │
 //   │  cuelinksService.js    ← Flipkart/Myntra affiliate links     │
 //   │         ↓                                                    │
 //   │  Redis + MongoDB SearchCache  (non-blocking saves)           │
@@ -35,11 +36,11 @@
 //
 // KEY DEPENDENCIES (all match existing codebase patterns):
 //   amazonService.js      → searchProducts(query, category)
-//   analysisPipeline.js   → runAnalysisPipeline(), buildProductResponse()
+//   analysisPipeline.js   → lookupAnalysis() during search
 //   cuelinksService.js    → getAffiliateLinks(asin, name, brand, category)
 //   models/index.js       → SearchCache, ProductListing (Mongoose)
 //   utils/redis.js        → getCachedResults(), cacheResults()
-//   utils/queryNormalizer → normalize(), buildSearchKey()
+//   utils/queryNormalizer → normalize()
 //   utils/logger.js       → Winston logger (matches all other routes)
 // ─────────────────────────────────────────────────────────────────
 "use strict";
@@ -52,10 +53,7 @@ const router = express.Router();
 // ── Internal services (match exact paths from codebase file tree)
 const amazonService = require("../services/amazonService");
 const { getAffiliateLinks } = require("../services/cuelinkService");
-const {
-  runAnalysisPipeline,
-  buildProductResponse,
-} = require("../pipeline/analysisPipeline");
+const { lookupAnalysis } = require("../pipeline/analysisPipeline");
 const { SearchCache, ProductListing, ProductAnalysis } = require("../models");
 const {
   getCachedResults,
@@ -72,7 +70,8 @@ const {
   releaseSearchLock,
   waitForSearchCache,
 } = require("../utils/redis");
-const { normalize, buildSearchKey } = require("../utils/queryNormalizer");
+const { normalize } = require("../utils/queryNormalizer");
+const { addDynamicBrand } = require("../utils/productNameNormalizer");
 const {
   getMockProductsForSearch,
   buildMockAnalysis,
@@ -80,7 +79,6 @@ const {
 const logger = require("../utils/logger");
 const { classifyIntent, INTENT } = require("../services/searchIntentService");
 const { SUBTYPE_FILTER_KEYWORDS } = require("../utils/categoryKeyMap");
-const { queueAnalysis } = require("../services/backgroundAnalysis");
 const {
   weightedSearch,
   CONFIDENCE,
@@ -91,7 +89,6 @@ const CACHE_TTL_MS = (parseInt(process.env.CACHE_TTL_SECONDS) || 21600) * 1000; 
 const MAX_AMAZON_RESULTS = 10; // fetch 10, rank to top 10
 const MAX_RESPONSE_RESULTS = 10; // return top 10
 const PARALLEL_CONCURRENCY = 5; // max products enriched simultaneously
-const ANALYSIS_TIMEOUT_MS = 25000; // 25s per product (scrape + GPT)
 
 // ── Category filter map — ensures results strictly match the requested category
 // Prevents: stale cache returning wrong category, Amazon SearchIndex mismatch,
@@ -375,11 +372,16 @@ const QUERY_STOP_WORDS = new Set([
 
 // Synonym expansions — ensures "machine" matches "washer", "washing", etc.
 const PRODUCT_SYNONYM_MAP = {
+  mobile: ["mobile", "phone", "smartphone", "5g", "android", "iphone"],
+  mobiles: ["mobile", "phone", "smartphone", "5g", "android", "iphone"],
+  phone: ["phone", "mobile", "smartphone", "5g", "android", "iphone"],
+  phones: ["phone", "mobile", "smartphone", "5g", "android", "iphone"],
   machine: ["machine", "washer", "washing machine"],
   machines: ["machine", "washer", "washing machine"],
   washer: ["washer", "washing"],
   washing: ["washing", "washer"],
   purifier: ["purifier", "purification", " ro "],
+  purifiers: ["purifier", "purifiers", "water purifier", "ro purifier"],
   refrigerator: ["refrigerator", "fridge"],
   fridge: ["fridge", "refrigerator"],
   geyser: [
@@ -389,7 +391,15 @@ const PRODUCT_SYNONYM_MAP = {
     "storage geyser",
     "geysir",
   ],
+  geysers: [
+    "geyser",
+    "water heater",
+    "instant heater",
+    "storage geyser",
+    "geysers",
+  ],
   heater: ["heater", "geyser", "water heater", "instant geyser"],
+  heaters: ["heater", "geyser", "water heater", "instant geyser"],
   iron: ["steam iron", "garment", "ironing", "steam generator"],
   ironing: ["iron", "ironing", "steam"],
   vacuum: ["vacuum", "robovac", "robot cleaner"],
@@ -485,6 +495,89 @@ function filterByQueryRelevance(results, query) {
     );
   }
   return filtered;
+}
+
+function getComparablePrice(product) {
+  if (!product) return null;
+
+  const toNumber = (v) => {
+    if (v === null || v === undefined) return null;
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    const cleaned = String(v).replace(/[^\d.]/g, "");
+    if (!cleaned) return null;
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const prices = [
+    product.lowestPrice,
+    product.price,
+    product.currentPrice,
+    product.amazonPrice,
+    product.bestDeal?.price,
+  ]
+    .map(toNumber)
+    .filter((n) => n && n > 0);
+
+  if (Array.isArray(product.platforms)) {
+    for (const platform of product.platforms) {
+      const p = toNumber(platform?.price);
+      if (p && p > 0) prices.push(p);
+    }
+  }
+
+  if (prices.length === 0) return null;
+  return Math.min(...prices);
+}
+
+function applyIntentConstraints(candidates, intent, query) {
+  let out = candidates || [];
+  if (!out.length) return out;
+
+  const subType = intent?.subType;
+  if (subType) {
+    const keywords = SUBTYPE_FILTER_KEYWORDS[subType] || [];
+    if (keywords.length > 0) {
+      out = out.filter((p) => {
+        const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
+        return keywords.some((kw) => text.includes(kw));
+      });
+    }
+  }
+
+  if (intent?.price_min !== null || intent?.price_max !== null) {
+    out = out.filter((p) => {
+      const price = getComparablePrice(p);
+      if (!price) return false;
+      if (intent.price_min !== null && price < intent.price_min) return false;
+      if (intent.price_max !== null && price > intent.price_max) return false;
+      return true;
+    });
+  }
+
+  out = filterByQueryRelevance(out, query);
+  return out;
+}
+
+function withAiScoreFallback(results) {
+  return (results || []).map((p) => {
+    if (p?.aiScore !== null && p?.aiScore !== undefined) return p;
+
+    const avgRating = p?.avgRating;
+    const platformRating = Array.isArray(p?.platforms)
+      ? p.platforms.find((pl) => pl?.rating)?.rating
+      : null;
+    const positivePct = p?.positivePct;
+
+    const ratingBase = avgRating || platformRating;
+    const aiScore = ratingBase
+      ? +(Number(ratingBase) * 2).toFixed(1)
+      : positivePct
+        ? +(Number(positivePct) / 10).toFixed(1)
+        : 5.0;
+
+    return { ...p, aiScore };
+  });
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -723,10 +816,19 @@ async function checkMongoCache(normalizedQuery, category) {
 
     if (!listings.length) return null;
 
+    const analyses = await ProductAnalysis.find({ asin: { $in: asins } })
+      .lean()
+      .exec();
+
     // Map ASINs back to their listings (preserve ordering)
     const listingMap = {};
     for (const l of listings) {
       listingMap[l.asin] = l;
+    }
+
+    const analysisMap = {};
+    for (const a of analyses) {
+      analysisMap[String(a.asin || "").toUpperCase()] = a;
     }
 
     // For now: return the listings directly
@@ -734,7 +836,12 @@ async function checkMongoCache(normalizedQuery, category) {
     const results = asins
       .map((asin) => listingMap[asin])
       .filter(Boolean)
-      .map((listing, idx) => formatProductResult(listing, null, idx + 1))
+      .map((listing, idx) => {
+        const key = String(
+          listing.asin || listing.platformId || "",
+        ).toUpperCase();
+        return formatProductResult(listing, analysisMap[key] || null, idx + 1);
+      })
       .filter(Boolean);
 
     return results.length > 0 ? results : null;
@@ -771,6 +878,84 @@ async function saveToMongoCache(query, normalizedQuery, category, asins) {
     // Non-fatal: next search will just re-fetch
     logger.warn(`🔍 MongoDB cache save failed: ${err.message}`);
   }
+}
+
+// ── Learned Query Mapping (Prisma) ──────────────────────────────
+// Stores dynamic brand/category memory for previously resolved unknown queries.
+async function findLearnedMapping(prismaClient, normalizedQuery) {
+  if (!prismaClient || !normalizedQuery) return null;
+  try {
+    return await prismaClient.searchQueryMapping.findUnique({
+      where: { normalizedQuery },
+      select: { brand: true, category: true, hitCount: true },
+    });
+  } catch (err) {
+    logger.warn(`🔍 LearnedMap: lookup failed — ${err.message}`);
+    return null;
+  }
+}
+
+async function bumpLearnedMappingHit(prismaClient, normalizedQuery) {
+  if (!prismaClient || !normalizedQuery) return;
+  try {
+    await prismaClient.searchQueryMapping.update({
+      where: { normalizedQuery },
+      data: { hitCount: { increment: 1 } },
+    });
+  } catch {
+    // Non-fatal: mapping remains readable even if counter increment fails.
+  }
+}
+
+async function saveLearnedMapping(
+  prismaClient,
+  normalizedQuery,
+  brand,
+  category,
+) {
+  if (!prismaClient || !normalizedQuery || (!brand && !category)) return;
+  try {
+    await prismaClient.searchQueryMapping.upsert({
+      where: { normalizedQuery },
+      update: {
+        brand: brand || undefined,
+        category: category || undefined,
+        hitCount: { increment: 1 },
+      },
+      create: {
+        normalizedQuery,
+        brand: brand || null,
+        category: category || null,
+        learnedFrom: "amazon_api",
+      },
+    });
+  } catch (err) {
+    logger.warn(`🔍 LearnedMap: save failed — ${err.message}`);
+  }
+}
+
+function applyLearnedMappingToIntent(intent, learned) {
+  if (!intent || !learned) return intent;
+  const next = { ...intent };
+
+  if (!next.category && learned.category) next.category = learned.category;
+  if (!next.brand && learned.brand) next.brand = learned.brand;
+
+  // Upgrade weak generic/fallback intents when learned mapping exists.
+  if (
+    next.intent !== INTENT.PRODUCT_SPECIFIC &&
+    next.brand &&
+    next.category &&
+    next.confidence < 0.7
+  ) {
+    next.intent = INTENT.BRAND_CATEGORY;
+    next.confidence = 0.7;
+  } else if (next.category && next.confidence < 0.55) {
+    next.intent = INTENT.CATEGORY;
+    next.confidence = 0.55;
+  }
+
+  return next;
 }
 
 // ── Save/update ProductListing in MongoDB ─────────────────────────
@@ -874,7 +1059,7 @@ async function saveToMongoAnalysis(
 // PRODUCT ENRICHMENT — runs per-product in parallel
 // ═════════════════════════════════════════════════════════════════
 // For each Amazon product:
-//   1. Run AI analysis pipeline (review scrape + GPT)
+//   1. Read cached AI analysis only (Redis/Mongo; no GPT)
 //   2. Get Cuelinks affiliate links (Flipkart + Myntra)
 //   3. Build final formatted response object
 //   4. Upsert to ProductListing (non-blocking)
@@ -883,7 +1068,6 @@ async function enrichProduct(amazonProduct, category) {
   const asin = amazonProduct.platformId || amazonProduct.asin;
   const productName = amazonProduct.name || amazonProduct.title;
   const brand = amazonProduct.brand;
-  const reviewCount = amazonProduct.reviewCount || 0;
   const isMock = amazonProduct._mockSource === true;
 
   if (!asin) {
@@ -935,19 +1119,14 @@ async function enrichProduct(amazonProduct, category) {
       `🔍 Enrichment: mock analysis built for ${asin} — aiScore=${analysis.aiScore}`,
     );
   } else {
-    // ── REAL PATH: full analysis pipeline + Cuelinks in parallel ──
+    // ── REAL PATH: cache-only analysis lookup + Cuelinks in parallel ──
+    // GPT analysis is intentionally deferred to /api/products/:id/analyze
+    // so token usage is pay-per-detail-open, not pay-per-search-result.
     const [analysisResult, cuelinksResult] = await Promise.allSettled([
-      // Analysis pipeline: MongoDB check → spec-based GPT → save (no Rainforest)
       withTimeout(
-        runAnalysisPipeline(asin, productName, category || "general", {
-          currentReviewCount: reviewCount,
-          brand,
-          rating: amazonProduct.rating || null,
-          price: amazonProduct.price || null,
-          features: amazonProduct.features || [],
-        }),
-        ANALYSIS_TIMEOUT_MS,
-        `Analysis timeout for ${asin}`,
+        lookupAnalysis(asin),
+        5000,
+        `Analysis lookup timeout for ${asin}`,
       ),
 
       // Cuelinks: search Flipkart/Myntra, match product, get affiliate URLs
@@ -965,7 +1144,11 @@ async function enrichProduct(amazonProduct, category) {
 
     if (analysisResult.status === "rejected") {
       logger.warn(
-        `🔍 Enrichment: analysis failed for ${asin} — ${analysisResult.reason?.message}`,
+        `🔍 Enrichment: analysis lookup failed for ${asin} — ${analysisResult.reason?.message}`,
+      );
+    } else if (!analysis) {
+      logger.info(
+        `🔍 Enrichment: no cached analysis for ${asin} — will run on first detail view`,
       );
     }
     if (cuelinksResult.status === "rejected") {
@@ -1048,8 +1231,18 @@ function formatProductResult(product, analysis, rank) {
   const asin = p.asin || p.platformId || null;
   if (!asin) return null;
 
-  // ── AI Score: from analysis, or mock's pre-computed score as fallback ──
-  const aiScore = a?.aiScore ?? p._mockAiScore ?? null;
+  // ── AI Score: prefer analysis, then persisted rank fields, then rating-derived fallback ──
+  const derivedAiScore =
+    p.rating || p.amazonRating
+      ? +((p.rating || p.amazonRating) * 2).toFixed(1)
+      : null;
+  const aiScore =
+    a?.aiScore ??
+    p.aiScore ??
+    p._mockAiScore ??
+    p.rankingScore ??
+    derivedAiScore ??
+    5.0;
 
   // ── Prices ──────────────────────────────────────────────────
   const amazonPrice = p.price || p.amazonPrice || null;
@@ -1384,7 +1577,8 @@ function formatTop50AsResult(p, rank) {
   const price = p.price || p.lowestPrice || null;
   const rating = p.rating || null;
   const reviewCount = p.reviewCount || 0;
-  const aiScore = p.aiScore || p.rankingScore || null;
+  const aiScore =
+    p.aiScore ?? p.rankingScore ?? (rating ? +(rating * 2).toFixed(1) : 5.0);
   const affiliateUrl = p.affiliateLink || null;
   const platformName = p.platform || "Amazon";
 
@@ -1500,13 +1694,18 @@ async function serveFromTop50(intent, query) {
           const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
           return keywords.some((kw) => text.includes(kw));
         });
-        // Only apply filter if it leaves meaningful results
-        if (filtered.length >= 3) {
-          pool = filtered;
+        // Strict mode: if sub-type was detected but no products match,
+        // do not show unrelated category items.
+        if (filtered.length === 0) {
           logger.info(
-            `🔍 Top50: sub-type filter "${subType}" → ${pool.length} products`,
+            `🔍 Top50: sub-type filter "${subType}" found 0 products in "${cat}" pool`,
           );
+          return null;
         }
+        pool = filtered;
+        logger.info(
+          `🔍 Top50: sub-type filter "${subType}" → ${pool.length} products`,
+        );
       }
     }
   }
@@ -1554,7 +1753,13 @@ async function serveFromTop50(intent, query) {
       if (intent.price_max && price > intent.price_max) return false;
       return true;
     });
-    if (priceMatches.length >= 2) pool = priceMatches;
+    if (priceMatches.length === 0) {
+      logger.info(
+        `🔍 Top50: price filter found 0 products (min=${intent.price_min || "*"}, max=${intent.price_max || "*"})`,
+      );
+      return null;
+    }
+    pool = priceMatches;
   }
 
   // ── Step 5: Feature filter ────────────────────────────────────
@@ -1563,20 +1768,41 @@ async function serveFromTop50(intent, query) {
       const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
       return intent.features.some((f) => text.includes(f.toLowerCase()));
     });
-    if (featMatches.length >= 3) pool = featMatches;
+    if (featMatches.length === 0) {
+      logger.info(`🔍 Top50: feature filter found 0 products`);
+      return null;
+    }
+    pool = featMatches;
   }
 
   // ── Step 6: Query keyword filter ─────────────────────────────
   const queryWords = (query || "")
     .toLowerCase()
     .split(/\s+/)
-    .filter((w) => !QUERY_STOP_WORDS.has(w) && w.length > 2);
+    .filter(
+      (w) =>
+        !QUERY_STOP_WORDS.has(w) &&
+        w.length > 2 &&
+        !/^\d+([.,]\d+)?k?$/i.test(w),
+    );
   if (queryWords.length > 0) {
     const kwMatches = pool.filter((p) => {
       const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
-      return queryWords.some((w) => text.includes(w));
+      return queryWords.some((w) => {
+        const singular =
+          w.endsWith("es") && w.length > 4
+            ? w.slice(0, -2)
+            : w.endsWith("s") && w.length > 3
+              ? w.slice(0, -1)
+              : null;
+        return text.includes(w) || (singular ? text.includes(singular) : false);
+      });
     });
-    if (kwMatches.length >= 3) pool = kwMatches;
+    if (kwMatches.length === 0) {
+      logger.info(`🔍 Top50: query keyword filter found 0 products`);
+      return null;
+    }
+    pool = kwMatches;
   }
 
   if (pool.length === 0) return null;
@@ -1655,9 +1881,8 @@ async function serveBrandBlend(
       );
       if (!result) return null;
 
-      // Cache product + queue background GPT analysis (non-blocking)
+      // Cache product only; analysis is on-demand from detail view.
       setProductCache(asin, result).catch(() => {});
-      queueAnalysis(asin, p.name, cat, p.brand).catch(() => {});
       return result;
     }),
   );
@@ -1701,6 +1926,18 @@ async function serveBrandBlend(
     normalizedQuery,
     cat,
     allResults.map((r) => r.asin).filter(Boolean),
+  ).catch(() => {});
+
+  const prismaClient = req.app?.locals?.prisma || null;
+  const learnedBrand =
+    brandResults.find((p) => p?.brand)?.brand || intent.brand;
+  const learnedCategory = cat || intent.category || null;
+  if (learnedBrand) addDynamicBrand(learnedBrand);
+  saveLearnedMapping(
+    prismaClient,
+    normalizedQuery,
+    learnedBrand || null,
+    learnedCategory,
   ).catch(() => {});
 
   req._searchLog.outcome = "amazon_brand_blend";
@@ -1758,7 +1995,8 @@ async function serveGeneric(intent, query) {
           const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
           return keywords.some((kw) => text.includes(kw));
         });
-        if (filtered.length >= 2) pool = filtered;
+        if (filtered.length === 0) return null;
+        pool = filtered;
       }
     }
   }
@@ -1767,14 +2005,20 @@ async function serveGeneric(intent, query) {
   const queryWords = (query || "")
     .toLowerCase()
     .split(/\s+/)
-    .filter((w) => !QUERY_STOP_WORDS.has(w) && w.length > 2);
+    .filter(
+      (w) =>
+        !QUERY_STOP_WORDS.has(w) &&
+        w.length > 2 &&
+        !/^\d+([.,]\d+)?k?$/i.test(w),
+    );
 
   if (queryWords.length > 0) {
     const kwMatches = pool.filter((p) => {
       const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
       return queryWords.some((w) => text.includes(w));
     });
-    if (kwMatches.length >= 2) pool = kwMatches;
+    if (kwMatches.length === 0) return null;
+    pool = kwMatches;
   }
 
   const ranked = pool
@@ -1802,7 +2046,12 @@ async function searchAcrossAllCategories(query, optionalIntent = null) {
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((w) => w.length >= 3 && !QUERY_STOP_WORDS.has(w));
+    .filter(
+      (w) =>
+        w.length >= 3 &&
+        !QUERY_STOP_WORDS.has(w) &&
+        !/^\d+([.,]\d+)?k?$/i.test(w),
+    );
 
   if (qWords.length === 0) return null;
 
@@ -2729,12 +2978,6 @@ async function serveProductSpecific(
     if (!primaryResult) return null;
 
     setProductCache(topAsin, primaryResult).catch(() => {});
-    queueAnalysis(
-      topAsin,
-      topProduct.name,
-      inferredCat,
-      topProduct.brand,
-    ).catch(() => {});
   }
   primaryResult = { ...primaryResult, rank: 1 };
 
@@ -2800,6 +3043,18 @@ async function serveProductSpecific(
     allResults.map((p) => p.asin).filter(Boolean),
   ).catch(() => {});
 
+  const prismaClient = req.app?.locals?.prisma || null;
+  const learnedBrand =
+    topProduct.brand || primaryResult.brand || intent.brand || null;
+  const learnedCategory = resolvedCat || cat || intent.category || null;
+  if (learnedBrand) addDynamicBrand(learnedBrand);
+  saveLearnedMapping(
+    prismaClient,
+    normalizedQuery,
+    learnedBrand,
+    learnedCategory,
+  ).catch(() => {});
+
   req._searchLog.outcome = "amazon_live_product";
   req._searchLog.resultCount = allResults.length;
 
@@ -2826,6 +3081,7 @@ async function serveProductSpecific(
 
 async function handleSearch(req, res) {
   const requestStart = Date.now();
+  const prismaClient = req.app?.locals?.prisma || null;
 
   // ── STEP 1: Validate + Sanitize ──────────────────────────────
   const rawQuery = req.query.q || req.query.query || "";
@@ -2845,8 +3101,23 @@ async function handleSearch(req, res) {
   }
 
   const { query, category, normalizedQuery } = validation;
+
+  // Learned mapping from prior live Amazon resolutions (persistent in Prisma).
+  const learned = await findLearnedMapping(prismaClient, normalizedQuery);
+  const learnedCategory = learned?.category || null;
+  const learnedBrand = learned?.brand || null;
+  const categoryHint = category || learnedCategory || "";
+
+  if (learnedBrand) addDynamicBrand(learnedBrand);
+  if (learned) {
+    bumpLearnedMappingHit(prismaClient, normalizedQuery).catch(() => {});
+    logger.info(
+      `🔍 LearnedMap: hit "${normalizedQuery}" -> brand="${learnedBrand || "-"}" category="${learnedCategory || "-"}"`,
+    );
+  }
+
   req._searchLog.query = query;
-  req._searchLog.category = category;
+  req._searchLog.category = categoryHint;
 
   logger.info(
     `🔍 Search: validated q="${query}" → normalized="${normalizedQuery}" category="${category}"`,
@@ -2862,10 +3133,13 @@ async function handleSearch(req, res) {
   const earlyCat = (() => {
     if (category) return category; // explicit param always wins
     try {
-      const ei = classifyIntent(query, null);
-      return ei.category || null;
+      const ei = applyLearnedMappingToIntent(
+        classifyIntent(query, categoryHint || null),
+        learned,
+      );
+      return ei.category || learnedCategory || null;
     } catch {
-      return null;
+      return learnedCategory || null;
     }
   })();
 
@@ -2897,32 +3171,45 @@ async function handleSearch(req, res) {
       } else {
         const catMatched =
           redisFiltered.length > 0 ? redisFiltered : redisResults;
-        // Apply query relevance — prevents e.g. all appliances when searching "washing machines"
-        // Then re-rank so most-keyword-matched product is always first (fixes stale cache order)
-        const finalRedis = rankByQueryScore(
-          filterByQueryRelevance(catMatched, query),
+        const scoredRedis = withAiScoreFallback(catMatched);
+        const redisIntent = applyLearnedMappingToIntent(
+          classifyIntent(query, categoryHint),
+          learned,
+        );
+        const constrainedRedis = applyIntentConstraints(
+          scoredRedis,
+          redisIntent,
           query,
         );
-        console.log(
-          `[CACHE] ✅ REDIS HIT → returning ${finalRedis.length} results. Top: "${finalRedis[0]?.name?.slice(0, 50)}"`,
-        );
-        req._searchLog.outcome = "redis_hit";
-        const redisIntent = classifyIntent(query, category);
-        return res.json({
-          success: true,
-          query: rawQuery,
-          normalized: normalizedQuery,
-          category: category || null,
-          intent: redisIntent.intent || "GENERIC",
-          totalResults: Math.min(finalRedis.length, MAX_RESPONSE_RESULTS),
-          cached: true,
-          cacheSource: "redis",
-          fromCache: true,
-          lastUpdated: new Date().toISOString(),
-          elapsed_ms: Date.now() - requestStart,
-          results: addRanks(finalRedis.slice(0, MAX_RESPONSE_RESULTS)),
-          suggestions: addRanks(finalRedis.slice(0, MAX_RESPONSE_RESULTS)),
-        });
+        if (constrainedRedis.length === 0) {
+          logger.info(
+            `🔍 Cache Redis: candidates failed strict intent constraints for "${query}" — treating as miss`,
+          );
+          // Fall through to MongoDB / live fetch
+        } else {
+          // Apply query relevance — prevents e.g. all appliances when searching "washing machines"
+          // Then re-rank so most-keyword-matched product is always first (fixes stale cache order)
+          const finalRedis = rankByQueryScore(constrainedRedis, query);
+          console.log(
+            `[CACHE] ✅ REDIS HIT → returning ${finalRedis.length} results. Top: "${finalRedis[0]?.name?.slice(0, 50)}"`,
+          );
+          req._searchLog.outcome = "redis_hit";
+          return res.json({
+            success: true,
+            query: rawQuery,
+            normalized: normalizedQuery,
+            category: category || null,
+            intent: redisIntent.intent || "GENERIC",
+            totalResults: Math.min(finalRedis.length, MAX_RESPONSE_RESULTS),
+            cached: true,
+            cacheSource: "redis",
+            fromCache: true,
+            lastUpdated: new Date().toISOString(),
+            elapsed_ms: Date.now() - requestStart,
+            results: addRanks(finalRedis.slice(0, MAX_RESPONSE_RESULTS)),
+            suggestions: addRanks(finalRedis.slice(0, MAX_RESPONSE_RESULTS)),
+          });
+        }
       }
     }
   } catch (cacheErr) {
@@ -2950,34 +3237,47 @@ async function handleSearch(req, res) {
       } else {
         const catMatchedMongo =
           mongoFiltered.length > 0 ? mongoFiltered : mongoResults;
-        // Apply query relevance, then re-rank by keyword match score (fixes stale cache order)
-        const finalMongo = rankByQueryScore(
-          filterByQueryRelevance(catMatchedMongo, query),
+        const scoredMongo = withAiScoreFallback(catMatchedMongo);
+        const mongoIntent = applyLearnedMappingToIntent(
+          classifyIntent(query, categoryHint),
+          learned,
+        );
+        const constrainedMongo = applyIntentConstraints(
+          scoredMongo,
+          mongoIntent,
           query,
         );
-        req._searchLog.outcome = "mongo_hit";
+        if (constrainedMongo.length === 0) {
+          logger.info(
+            `🔍 Cache Mongo: candidates failed strict intent constraints for "${query}" — treating as miss`,
+          );
+          // Fall through to live fetch
+        } else {
+          // Apply query relevance, then re-rank by keyword match score (fixes stale cache order)
+          const finalMongo = rankByQueryScore(constrainedMongo, query);
+          req._searchLog.outcome = "mongo_hit";
 
-        // Repopulate Redis while we respond (non-blocking)
-        cacheResults(query, earlyCat || category, finalMongo).catch((err) =>
-          logger.warn(`🔍 Search: Redis repopulate failed — ${err.message}`),
-        );
+          // Repopulate Redis while we respond (non-blocking)
+          cacheResults(query, earlyCat || category, finalMongo).catch((err) =>
+            logger.warn(`🔍 Search: Redis repopulate failed — ${err.message}`),
+          );
 
-        const mongoIntent = classifyIntent(query, category);
-        return res.json({
-          success: true,
-          query: rawQuery,
-          normalized: normalizedQuery,
-          category: earlyCat || category || null,
-          intent: mongoIntent.intent || "GENERIC",
-          totalResults: Math.min(finalMongo.length, MAX_RESPONSE_RESULTS),
-          cached: true,
-          cacheSource: "mongodb",
-          fromCache: true,
-          lastUpdated: new Date().toISOString(),
-          elapsed_ms: Date.now() - requestStart,
-          results: addRanks(finalMongo.slice(0, MAX_RESPONSE_RESULTS)),
-          suggestions: addRanks(finalMongo.slice(0, MAX_RESPONSE_RESULTS)),
-        });
+          return res.json({
+            success: true,
+            query: rawQuery,
+            normalized: normalizedQuery,
+            category: earlyCat || category || null,
+            intent: mongoIntent.intent || "GENERIC",
+            totalResults: Math.min(finalMongo.length, MAX_RESPONSE_RESULTS),
+            cached: true,
+            cacheSource: "mongodb",
+            fromCache: true,
+            lastUpdated: new Date().toISOString(),
+            elapsed_ms: Date.now() - requestStart,
+            results: addRanks(finalMongo.slice(0, MAX_RESPONSE_RESULTS)),
+            suggestions: addRanks(finalMongo.slice(0, MAX_RESPONSE_RESULTS)),
+          });
+        }
       }
     }
   } catch (mongoErr) {
@@ -2986,13 +3286,16 @@ async function handleSearch(req, res) {
 
   // ── STEP 3.5: Intent-based Redis-first routing ───────────────
   console.log(`[CACHE] Redis MISS and Mongo MISS → classifying intent...`);
-  let effectiveCategory = category || null;
+  let effectiveCategory = category || learnedCategory || null;
   let detectedIntent = null;
 
   try {
-    const intent = classifyIntent(query, category);
+    const intent = applyLearnedMappingToIntent(
+      classifyIntent(query, categoryHint),
+      learned,
+    );
     detectedIntent = intent;
-    effectiveCategory = category || intent.category || null;
+    effectiveCategory = category || intent.category || learnedCategory || null;
     console.log(
       `[INTENT] ${intent.intent} | brand="${intent.brand || "-"}" | model="${intent.model || "-"}" | cat="${effectiveCategory || "-"}"`,
     );
@@ -3064,24 +3367,30 @@ async function handleSearch(req, res) {
       const top50Results = await serveFromTop50(intent, query);
       if (top50Results && top50Results.length > 0) {
         const filtered = filterByQueryRelevance(top50Results, query);
-        const final = filtered.length >= 3 ? filtered : top50Results;
-        cacheResults(query, effectiveCategory, final).catch(() => {});
-        req._searchLog.outcome = "redis_top50";
-        req._searchLog.resultCount = final.length;
-        return res.json({
-          success: true,
-          query: rawQuery,
-          normalized: normalizedQuery,
-          category: effectiveCategory || null,
-          intent: intent.intent,
-          totalResults: final.length,
-          cached: false,
-          source: "redis_top50",
-          lastUpdated: new Date().toISOString(),
-          elapsed_ms: Date.now() - requestStart,
-          results: addRanks(final),
-          suggestions: addRanks(final),
-        });
+        if (!filtered || filtered.length === 0) {
+          logger.info(
+            `🔍 Top50: all candidates failed query relevance for "${query}" — continuing to deeper fallbacks`,
+          );
+        } else {
+          const final = filtered;
+          cacheResults(query, effectiveCategory, final).catch(() => {});
+          req._searchLog.outcome = "redis_top50";
+          req._searchLog.resultCount = final.length;
+          return res.json({
+            success: true,
+            query: rawQuery,
+            normalized: normalizedQuery,
+            category: effectiveCategory || null,
+            intent: intent.intent,
+            totalResults: final.length,
+            cached: false,
+            source: "redis_top50",
+            lastUpdated: new Date().toISOString(),
+            elapsed_ms: Date.now() - requestStart,
+            results: addRanks(final),
+            suggestions: addRanks(final),
+          });
+        }
       }
 
       // ── Brand not in pool → targeted Amazon fetch + sub-type blend (1 call) ──
@@ -3100,28 +3409,30 @@ async function handleSearch(req, res) {
       }
 
       // ── Sub-type pool completely empty → try cross-category ──
-      logger.info(
-        `🔍 Intent: pool miss for "${effectiveCategory}:${intent.subType || "-"}" — trying cross-category`,
-      );
-      const crossFallback = await searchAcrossAllCategories(query, intent);
-      if (crossFallback && crossFallback.length > 0) {
-        cacheResults(query, effectiveCategory, crossFallback).catch(() => {});
-        req._searchLog.outcome = "redis_cross_category";
-        req._searchLog.resultCount = crossFallback.length;
-        return res.json({
-          success: true,
-          query: rawQuery,
-          normalized: normalizedQuery,
-          category: effectiveCategory || null,
-          intent: intent.intent,
-          totalResults: crossFallback.length,
-          cached: false,
-          source: "redis_top50",
-          lastUpdated: new Date().toISOString(),
-          elapsed_ms: Date.now() - requestStart,
-          results: addRanks(crossFallback),
-          suggestions: addRanks(crossFallback),
-        });
+      if (!effectiveCategory) {
+        logger.info(
+          `🔍 Intent: pool miss with unknown category — trying cross-category`,
+        );
+        const crossFallback = await searchAcrossAllCategories(query, intent);
+        if (crossFallback && crossFallback.length > 0) {
+          cacheResults(query, effectiveCategory, crossFallback).catch(() => {});
+          req._searchLog.outcome = "redis_cross_category";
+          req._searchLog.resultCount = crossFallback.length;
+          return res.json({
+            success: true,
+            query: rawQuery,
+            normalized: normalizedQuery,
+            category: effectiveCategory || null,
+            intent: intent.intent,
+            totalResults: crossFallback.length,
+            cached: false,
+            source: "redis_top50",
+            lastUpdated: new Date().toISOString(),
+            elapsed_ms: Date.now() - requestStart,
+            results: addRanks(crossFallback),
+            suggestions: addRanks(crossFallback),
+          });
+        }
       }
       // ── Postgres category fallback ────────────────────────────────
       // Handles "best laptops", "gaming laptops", "budget smartphones", etc.
@@ -3143,23 +3454,38 @@ async function handleSearch(req, res) {
             const dbProducts = dbCatResult.products
               .map(postgresProductToTop50Shape)
               .map((p, i) => formatTop50AsResult(p, i + 1));
-            cacheResults(query, effectiveCategory, dbProducts).catch(() => {});
-            req._searchLog.outcome = "postgres_category";
-            req._searchLog.resultCount = dbProducts.length;
-            return res.json({
-              success: true,
-              query: rawQuery,
-              normalized: normalizedQuery,
-              category: effectiveCategory,
-              intent: intent.intent,
-              totalResults: dbProducts.length,
-              cached: false,
-              source: "postgres_db",
-              lastUpdated: new Date().toISOString(),
-              elapsed_ms: Date.now() - requestStart,
-              results: dbProducts,
-              suggestions: dbProducts,
-            });
+            const constrainedDbProducts = applyIntentConstraints(
+              dbProducts,
+              intent,
+              query,
+            );
+            if (constrainedDbProducts.length > 0) {
+              cacheResults(
+                query,
+                effectiveCategory,
+                constrainedDbProducts,
+              ).catch(() => {});
+              req._searchLog.outcome = "postgres_category";
+              req._searchLog.resultCount = constrainedDbProducts.length;
+              return res.json({
+                success: true,
+                query: rawQuery,
+                normalized: normalizedQuery,
+                category: effectiveCategory,
+                intent: intent.intent,
+                totalResults: constrainedDbProducts.length,
+                cached: false,
+                source: "postgres_db",
+                lastUpdated: new Date().toISOString(),
+                elapsed_ms: Date.now() - requestStart,
+                results: constrainedDbProducts,
+                suggestions: constrainedDbProducts,
+              });
+            }
+
+            logger.info(
+              `🔍 Intent: Postgres category fallback candidates failed intent constraints for "${query}"`,
+            );
           }
         } catch (dbCatErr) {
           logger.warn(
@@ -3273,48 +3599,64 @@ async function handleSearch(req, res) {
             const dbGenProducts = dbGenResult.products
               .map(postgresProductToTop50Shape)
               .map((p, i) => formatTop50AsResult(p, i + 1));
-            cacheResults(query, intent.category, dbGenProducts).catch(() => {});
+            const constrainedDbGenProducts = applyIntentConstraints(
+              dbGenProducts,
+              intent,
+              query,
+            );
 
-            // Brand match from DB → lazy-load primary from Amazon
-            if (intent.brand) {
-              const liveUrl = `/api/search/live?q=${encodeURIComponent(query)}`;
-              req._searchLog.outcome = "lazy_brand_postgres";
-              req._searchLog.resultCount = dbGenProducts.length;
+            if (constrainedDbGenProducts.length === 0) {
+              logger.info(
+                `🔍 Intent: Postgres generic fallback candidates failed intent constraints for "${query}"`,
+              );
+            } else {
+              cacheResults(
+                query,
+                intent.category,
+                constrainedDbGenProducts,
+              ).catch(() => {});
+
+              // Brand match from DB → lazy-load primary from Amazon
+              if (intent.brand) {
+                const liveUrl = `/api/search/live?q=${encodeURIComponent(query)}`;
+                req._searchLog.outcome = "lazy_brand_postgres";
+                req._searchLog.resultCount = constrainedDbGenProducts.length;
+                return res.json({
+                  success: true,
+                  query: rawQuery,
+                  normalized: normalizedQuery,
+                  category: intent.category || null,
+                  intent: "PRODUCT_SPECIFIC",
+                  primaryProduct: null,
+                  primaryPending: true,
+                  liveFetchUrl: liveUrl,
+                  totalResults: constrainedDbGenProducts.length,
+                  cached: false,
+                  source: "lazy_brand_postgres",
+                  lastUpdated: new Date().toISOString(),
+                  elapsed_ms: Date.now() - requestStart,
+                  results: constrainedDbGenProducts,
+                  suggestions: constrainedDbGenProducts,
+                });
+              }
+
+              req._searchLog.outcome = "postgres_generic";
+              req._searchLog.resultCount = constrainedDbGenProducts.length;
               return res.json({
                 success: true,
                 query: rawQuery,
                 normalized: normalizedQuery,
                 category: intent.category || null,
-                intent: "PRODUCT_SPECIFIC",
-                primaryProduct: null,
-                primaryPending: true,
-                liveFetchUrl: liveUrl,
-                totalResults: dbGenProducts.length,
+                intent: intent.intent,
+                totalResults: constrainedDbGenProducts.length,
                 cached: false,
-                source: "lazy_brand_postgres",
+                source: "postgres_db",
                 lastUpdated: new Date().toISOString(),
                 elapsed_ms: Date.now() - requestStart,
-                results: dbGenProducts,
-                suggestions: dbGenProducts,
+                results: constrainedDbGenProducts,
+                suggestions: constrainedDbGenProducts,
               });
             }
-
-            req._searchLog.outcome = "postgres_generic";
-            req._searchLog.resultCount = dbGenProducts.length;
-            return res.json({
-              success: true,
-              query: rawQuery,
-              normalized: normalizedQuery,
-              category: intent.category || null,
-              intent: intent.intent,
-              totalResults: dbGenProducts.length,
-              cached: false,
-              source: "postgres_db",
-              lastUpdated: new Date().toISOString(),
-              elapsed_ms: Date.now() - requestStart,
-              results: dbGenProducts,
-              suggestions: dbGenProducts,
-            });
           }
         } catch (dbGenErr) {
           logger.warn(
@@ -3395,6 +3737,7 @@ async function handleSearch(req, res) {
     logger.warn(`🔍 Search: no products from Amazon or mock for "${query}"`);
     // Log as a miss so the weekly auto-seed cron can retry this query
     trackMiss(query);
+    releaseSearchLock(query, effectiveCategory).catch(() => {});
     // Graceful empty — never a 404 that makes Axios throw and breaks the UI.
     return res.json({
       success: true,
@@ -3428,6 +3771,7 @@ async function handleSearch(req, res) {
 
   if (enrichedProducts.length === 0) {
     logger.warn(`🔍 Search: all products failed enrichment for "${query}"`);
+    releaseSearchLock(query, effectiveCategory).catch(() => {});
     // Graceful empty — never a 500 that crashes the frontend.
     return res.json({
       success: true,
@@ -3457,9 +3801,22 @@ async function handleSearch(req, res) {
       enrichedProducts = catFiltered;
     } else {
       logger.warn(
-        `🔍 Category filter: all ${enrichedProducts.length} live results failed category="${effectiveCategory}" filter — skipping filter`,
+        `🔍 Category filter: all ${enrichedProducts.length} live results failed category="${effectiveCategory}" filter`,
       );
-      // Don't return 404 — just skip the filter and show what we have
+      trackMiss(query);
+      releaseSearchLock(query, effectiveCategory).catch(() => {});
+      return res.json({
+        success: true,
+        query: rawQuery,
+        normalized: normalizedQuery,
+        category: effectiveCategory || null,
+        totalResults: 0,
+        results: [],
+        suggestions: [],
+        message:
+          "No close match found for this category. Try adding a brand, model, or capacity.",
+        elapsed_ms: Date.now() - requestStart,
+      });
     }
   }
 
@@ -3467,6 +3824,26 @@ async function handleSearch(req, res) {
   // Within the matched category, ensure products match the specific query.
   // e.g. "washing machines" → only washing machines, not fridges + irons.
   enrichedProducts = filterByQueryRelevance(enrichedProducts, query);
+
+  if (enrichedProducts.length === 0) {
+    logger.warn(
+      `🔍 Search: no live products passed query relevance for "${query}"`,
+    );
+    trackMiss(query);
+    releaseSearchLock(query, effectiveCategory).catch(() => {});
+    return res.json({
+      success: true,
+      query: rawQuery,
+      normalized: normalizedQuery,
+      category: effectiveCategory || null,
+      totalResults: 0,
+      results: [],
+      suggestions: [],
+      message:
+        "No close match found. Try a more specific query with brand, model, or capacity.",
+      elapsed_ms: Date.now() - requestStart,
+    });
+  }
 
   // ── STEP 5.7: Brand guard — when user searched a specific brand ──
   // Ensure brand products appear first. If zero brand products found,
@@ -3535,8 +3912,13 @@ async function handleSearch(req, res) {
   const sortBrand = detectedIntent?.brand
     ? detectedIntent.brand.toLowerCase()
     : null;
-  const ranked = enrichedProducts
-    .filter((p) => p !== null)
+  const constrainedEnriched = applyIntentConstraints(
+    enrichedProducts.filter((p) => p !== null),
+    detectedIntent,
+    query,
+  );
+
+  const ranked = constrainedEnriched
     .sort((a, b) => {
       // Brand pin: if searching a specific brand, brand-matched products always rank above non-brand
       if (sortBrand) {
@@ -3628,6 +4010,20 @@ async function handleSearch(req, res) {
 
   // ── STEP 8: Return Response ───────────────────────────────────
   const elapsed = Date.now() - requestStart;
+
+  // Persist learned mapping so future unknown queries can route from memory.
+  const learnedBrandFromResult =
+    ranked.find((p) => p?.brand)?.brand || detectedIntent?.brand || null;
+  const learnedCategoryFromResult =
+    effectiveCategory || detectedIntent?.category || null;
+  if (learnedBrandFromResult) addDynamicBrand(learnedBrandFromResult);
+  saveLearnedMapping(
+    prismaClient,
+    normalizedQuery,
+    learnedBrandFromResult,
+    learnedCategoryFromResult,
+  ).catch(() => {});
+
   req._searchLog.outcome = usingMockData ? "mock_fallback" : "live";
   req._searchLog.resultCount = ranked.length;
 
@@ -3847,6 +4243,8 @@ async function handleLiveSearch(req, res) {
 
   const query = rawQuery.slice(0, 200);
   const cat = rawCat || null;
+  const normalizedQuery = normalize(query);
+  const prismaClient = req.app?.locals?.prisma || null;
 
   // ── Check Redis product-name cache (keyed by query, 6h TTL) ─────────────
   const liveKey = `live:${query.toLowerCase()}`;
@@ -3935,9 +4333,6 @@ async function handleLiveSearch(req, res) {
     }
 
     setProductCache(topAsin, primaryResult).catch(() => {});
-    queueAnalysis(topAsin, topProduct.name, cat, topProduct.brand).catch(
-      () => {},
-    );
   }
 
   primaryResult = { ...primaryResult, rank: 1 };
@@ -3954,6 +4349,15 @@ async function handleLiveSearch(req, res) {
 
   // ── Grow top50 pool so next search for this product = 0 API cost ────────
   const resolvedCat = cat || topProduct.category || null;
+  const learnedBrand = topProduct.brand || primaryResult?.brand || null;
+  if (learnedBrand) addDynamicBrand(learnedBrand);
+  saveLearnedMapping(
+    prismaClient,
+    normalizedQuery,
+    learnedBrand,
+    resolvedCat,
+  ).catch(() => {});
+
   if (resolvedCat) {
     try {
       const incoming = [enrichedToTop50Shape(primaryResult, resolvedCat)];

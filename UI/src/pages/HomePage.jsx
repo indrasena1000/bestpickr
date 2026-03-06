@@ -8,7 +8,7 @@
 // BUG #9  FIX: Amazon buy button opens in _blank properly (was blank page)
 // Affiliate URLs: Cleaned to dp/ASIN?tag= format
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   getCategories,
   searchProducts,
@@ -37,7 +37,21 @@ import { PlatformPill } from "../components/PlatformLogo.jsx";
 // re-fetching or showing any shimmer. Cleared only on full page refresh.
 let _catsCache = null; // categories list
 let _topIndiaCache = null; // top-india grid products
+let _topIndiaCacheTs = 0; // top-india cache timestamp
 const _catProdsCache = new Map(); // category slug → product list
+
+const TOP_INDIA_CLIENT_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+function getFreshTopIndiaCache() {
+  if (!_topIndiaCache) return null;
+  const isFresh = Date.now() - _topIndiaCacheTs < TOP_INDIA_CLIENT_CACHE_TTL_MS;
+  if (!isFresh) {
+    _topIndiaCache = null;
+    _topIndiaCacheTs = 0;
+    return null;
+  }
+  return _topIndiaCache;
+}
 
 // ── HOVER TOOLTIP (BUG #18) ────────────────────────────────────────
 function AITooltip({ reason, children }) {
@@ -105,6 +119,7 @@ function AITooltip({ reason, children }) {
 export default function HomePage({ onSearch, onViewProduct, onNav }) {
   const [q, setQ] = useState("");
   const sugg = useSuggestions();
+  const initialTopIndiaCache = getFreshTopIndiaCache();
 
   // Initialise from module-level cache — no shimmer on back-navigation
   const _firstSlug = _catsCache?.[0]?.slug || null;
@@ -113,14 +128,28 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
   const [activeCat, setActive] = useState(_firstSlug);
   const [products, setProds] = useState(_catProdsCache.get(_firstSlug) || []);
   const [loadingProds, setLoad] = useState(false);
-  const [topIndia, setTopIndia] = useState(_topIndiaCache || []);
+  const [topIndia, setTopIndia] = useState(initialTopIndiaCache || []);
   const [loadingTopIndia, setLoadingTopIndia] = useState(false);
   // top-india section is visible immediately if we already have cached data
-  const [topIndiaVisible, setTopIndiaVisible] = useState(!!_topIndiaCache);
+  const [topIndiaVisible, setTopIndiaVisible] =
+    useState(!!initialTopIndiaCache);
   // BUG #19 FIX: scroll to top visibility
   const [showScroll, setShowScroll] = useState(false);
   const inputRef = useRef(null);
   const topIndiaSentinelRef = useRef(null);
+
+  const fetchAndCacheTopIndia = useCallback(() => {
+    setLoadingTopIndia(true);
+    return getTopIndiaProducts()
+      .then((d) => {
+        const prods = d.products || [];
+        _topIndiaCache = prods;
+        _topIndiaCacheTs = Date.now();
+        setTopIndia(prods);
+      })
+      .catch(() => setTopIndia([]))
+      .finally(() => setLoadingTopIndia(false));
+  }, []);
 
   // ── Fetch categories (skipped if already cached) ─────────────────
   useEffect(() => {
@@ -135,11 +164,11 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
       })
       .catch(() => {})
       .finally(() => setLoadingCats(false));
-  }, []);
+  }, [fetchAndCacheTopIndia]);
 
   // ── Lazy-load top-india (skipped if already cached) ──────────────
   useEffect(() => {
-    if (_topIndiaCache) return; // already have data — skip observer entirely
+    if (getFreshTopIndiaCache()) return; // already have fresh data — skip observer entirely
     const sentinel = topIndiaSentinelRef.current;
     if (!sentinel) return;
 
@@ -148,21 +177,28 @@ export default function HomePage({ onSearch, onViewProduct, onNav }) {
         if (!entry.isIntersecting) return;
         observer.disconnect();
         setTopIndiaVisible(true);
-        setLoadingTopIndia(true);
-        getTopIndiaProducts()
-          .then((d) => {
-            const prods = d.products || [];
-            _topIndiaCache = prods; // store in module cache
-            setTopIndia(prods);
-          })
-          .catch(() => setTopIndia([]))
-          .finally(() => setLoadingTopIndia(false));
+        fetchAndCacheTopIndia();
       },
       { rootMargin: "200px" },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, []);
+
+  // Keep toplists fresh in long-lived tabs: refetch when 6h cache expires.
+  useEffect(() => {
+    if (!topIndiaVisible) return;
+    const timer = window.setInterval(
+      () => {
+        if (loadingTopIndia) return;
+        if (getFreshTopIndiaCache()) return;
+        fetchAndCacheTopIndia();
+      },
+      5 * 60 * 1000,
+    );
+
+    return () => window.clearInterval(timer);
+  }, [topIndiaVisible, loadingTopIndia, fetchAndCacheTopIndia]);
 
   // ── Fetch category products (skipped if already cached for that slug) ──
   useEffect(() => {

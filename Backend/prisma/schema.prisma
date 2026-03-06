@@ -143,6 +143,24 @@ model PageView {
   @@index([eventType])
 }
 
+// ── SEARCH QUERY MAPPING ──────────────────────────────────────────
+// Learned brand+category associations from live Amazon fetches.
+// When an unknown query (e.g. "safari bags") hits Amazon and returns results,
+// we store the derived brand+category so future searches skip Amazon entirely.
+model SearchQueryMapping {
+  id              String   @id @default(uuid())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  normalizedQuery String   @unique   // normalized form, e.g. "bag safari"
+  brand           String?            // e.g. "safari"
+  category        String?            // e.g. "fashion"
+  hitCount        Int      @default(1)
+  learnedFrom     String   @default("amazon_api")
+
+  @@index([normalizedQuery])
+}
+
 // ── SITE CONFIG ───────────────────────────────────────────────────
 // Persistent key-value store for admin settings (maintenance mode etc.)
 model SiteConfig {
