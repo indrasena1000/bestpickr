@@ -526,8 +526,12 @@ function detectCategory(query) {
     "true wireless",
   ];
   for (const kw of multiWord) {
-    if (q.includes(kw))
-      return getCategory(kw) || getCategory(kw.split(" ")[0]) || null;
+    if (q.includes(kw)) {
+      // Only return if we actually resolve a category — otherwise fall through
+      // to stage 2 so "noise cancelling earbuds" still finds "earbuds" → headphones
+      const cat = getCategory(kw) || getCategory(kw.split(" ")[0]);
+      if (cat) return cat;
+    }
   }
 
   // ── Stage 2: Exact word match ─────────────────────────────────

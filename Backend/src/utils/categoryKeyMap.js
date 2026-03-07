@@ -36,6 +36,13 @@ const KEYWORD_TO_CATEGORY = {
   vivo: "mobile",
   oppo: "mobile",
   pixel: "mobile",
+  galaxy: "mobile",
+  "galaxy s": "mobile",
+  poco: "mobile",
+  iqoo: "mobile",
+  moto: "mobile",
+  motorola: "mobile",
+  nokia: "mobile",
 
   // Laptop
   laptop: "laptop",
@@ -63,6 +70,10 @@ const KEYWORD_TO_CATEGORY = {
   buds: "headphones",
   soundbar: "headphones",
   woofer: "headphones",
+  "noise cancelling": "headphones",
+  "noise canceling": "headphones",
+  "true wireless": "headphones",
+  wireless: "headphones",
 
   // Tablets
   tablet: "tablets",
@@ -190,6 +201,11 @@ const KEYWORD_TO_CATEGORY = {
   loafers: "footwear",
   chappal: "footwear",
   chappals: "footwear",
+  running: "footwear",
+  "running shoe": "footwear",
+  "running shoes": "footwear",
+  sports: "footwear",
+  athletic: "footwear",
 
   // Skincare / Beauty
   skincare: "skincare",
