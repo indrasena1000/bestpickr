@@ -72,9 +72,15 @@ const KEYWORD_TO_CATEGORY = {
   // Smartwatch
   smartwatch: "smartwatch",
   smartwatches: "smartwatch",
+  "smart watch": "smartwatch",
+  "smart watches": "smartwatch",
   watch: "smartwatch",
+  watches: "smartwatch",
   fitnessband: "smartwatch",
+  "fitness band": "smartwatch",
   fitbit: "smartwatch",
+  wearable: "smartwatch",
+  wearables: "smartwatch",
 
   // Camera
   camera: "camera",

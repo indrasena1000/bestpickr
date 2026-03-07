@@ -520,6 +520,8 @@ function detectCategory(query) {
     "mechanical keyboard",
     "robot vacuum",
     "smart watch",
+    "smart watches",
+    "fitness band",
     "noise cancelling",
     "true wireless",
   ];
