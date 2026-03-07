@@ -144,9 +144,11 @@ function cleanAmazonQuery(q) {
   );
 }
 
-async function searchViaCreatorsAPI(query, category, retries = 2) {
+async function searchViaCreatorsAPI(query, category, retries = 2, overrides = {}) {
   const token = await getAccessToken();
-  const keywords = cleanAmazonQuery(query) || query; // fallback to original if cleaned is empty
+  // Use override keywords from amazonQueryBuilder if provided;
+  // otherwise fall back to cleanAmazonQuery on the raw query.
+  const keywords = overrides.keywords || cleanAmazonQuery(query) || query;
 
   const payload = {
     keywords,
@@ -163,8 +165,8 @@ async function searchViaCreatorsAPI(query, category, retries = 2) {
     ],
   };
 
-  // Optional: map category to a browse node for more relevant results
-  const browseNode = mapToBrowseNode(category);
+  // Use override browse node first, fall back to internal mapToBrowseNode
+  const browseNode = overrides.browseNode || mapToBrowseNode(category);
   if (browseNode) payload.browseNodeId = browseNode;
 
   logger.info(
@@ -203,7 +205,7 @@ async function searchViaCreatorsAPI(query, category, retries = 2) {
         `Amazon Creators API: 429 rate limited — retrying in ${retryAfter}s (${retries} retries left)`,
       );
       await new Promise((r) => setTimeout(r, retryAfter * 1000));
-      return searchViaCreatorsAPI(query, category, retries - 1);
+      return searchViaCreatorsAPI(query, category, retries - 1, overrides);
     }
     throw err;
   }
@@ -257,12 +259,12 @@ function getSignatureKey(secretKey, dateStamp, region, service) {
   );
 }
 
-async function searchViaPaApi(query, category) {
+async function searchViaPaApi(query, category, overrides = {}) {
   const TARGET = "com.amazon.paapi5.v1.ProductAdvertisingAPIv1.SearchItems";
 
   const payload = {
-    Keywords: query,
-    SearchIndex: mapToAmazonIndex(category),
+    Keywords: overrides.keywords || query,
+    SearchIndex: overrides.searchIndex || mapToAmazonIndex(category),
     Resources: [
       "ItemInfo.Title",
       "ItemInfo.ByLineInfo",
@@ -484,11 +486,11 @@ async function fetchRatingsForAsins(asins) {
 // MAIN EXPORT — searchProducts()
 // ═════════════════════════════════════════════════════════════════
 
-async function searchProducts(query, category = "All") {
+async function searchProducts(query, category = "All", overrides = {}) {
   // Path 1: Creators API (OAuth2) — primary when credentials are present
   if (CLIENT_ID && CLIENT_SECRET && TOKEN_ENDPOINT) {
     try {
-      const results = await searchViaCreatorsAPI(query, category);
+      const results = await searchViaCreatorsAPI(query, category, 2, overrides);
 
       // Creators API does not return rating/reviewCount — enrich via PA-API GetItems
       // This is a single batch call for all ASINs. Non-fatal if it fails.
@@ -520,7 +522,7 @@ async function searchProducts(query, category = "All") {
   // Path 2: PA-API v5 (SigV4) — legacy fallback when AMAZON_ACCESS_KEY is set
   if (AMAZON_ACCESS_KEY && AMAZON_SECRET_KEY) {
     try {
-      return await searchViaPaApi(query, category);
+      return await searchViaPaApi(query, category, overrides);
     } catch (err) {
       const status = err.response?.status;
       logger.error(
@@ -543,38 +545,58 @@ async function searchProducts(query, category = "All") {
 // ═════════════════════════════════════════════════════════════════
 
 // Browse node IDs for Creators API (Amazon India category nodes)
+// Maps BOTH canonical slug names AND legacy plural/variant names for compatibility.
 function mapToBrowseNode(category) {
   const map = {
-    headphones: "1388921031", // Electronics > Headphones
-    smartphones: "1805560031", // Electronics > Smartphones
-    laptops: "1375424031", // Computers > Laptops
-    cameras: "1389175031", // Electronics > Cameras
-    // appliances: omitted — browse node is too broad (returns induction tops/blenders for "air fryer")
-    // keyword-only search is more accurate for appliance sub-types
-    tablets: "1375508031", // Computers > Tablets
+    // Canonical slugs (from categoryKeyMap.js)
+    smartwatch:  "1350387031", // Electronics > Wearable Technology
+    mobile:      "1805560031", // Electronics > Smartphones
+    laptop:      "1375424031", // Computers > Laptops
+    headphones:  "1388921031", // Electronics > Headphones
     televisions: "1389396031", // Electronics > Televisions
-    audio: "1388922031", // Electronics > Speaker / Audio
-    wearables: "1350387031", // Electronics > Wearable Technology
-    gaming: "976460031", // Video Games
-    skincare: "1355016031", // Beauty > Skin Care
-    footwear: "1983518031", // Shoes & Handbags
+    camera:      "1389175031", // Electronics > Cameras
+    tablets:     "1375508031", // Computers > Tablets
+    skincare:    "1355016031", // Beauty > Skin Care
+    footwear:    "1983518031", // Shoes & Handbags
+    // appliances: omitted — browse node too broad, keyword search is more accurate
+    // gaming: omitted — VideoGames misses PC peripherals; keyword-only is better
+    // Legacy/plural variants for backward compatibility
+    smartphone:  "1805560031",
+    smartphones: "1805560031",
+    phone:       "1805560031",
+    laptops:     "1375424031",
+    cameras:     "1389175031",
+    wearables:   "1350387031",
+    wearable:    "1350387031",
+    audio:       "1388922031", // Electronics > Speaker / Audio
   };
   return map[category?.toLowerCase()] || null;
 }
 
-// SearchIndex for PA-API v5 (legacy)
+// SearchIndex for PA-API v5 (legacy fallback path)
+// Maps BOTH canonical slug names AND legacy variants.
 function mapToAmazonIndex(category) {
   const map = {
-    headphones: "Electronics",
+    // Canonical slugs
+    smartwatch:  "Electronics",
+    mobile:      "Electronics",
+    laptop:      "Computers",
+    headphones:  "Electronics",
+    televisions: "Electronics",
+    gaming:      "VideoGames",
+    camera:      "Electronics",
+    tablets:     "Computers",
+    footwear:    "Shoes",
+    skincare:    "Beauty",
+    fashion:     "Apparel",
+    books:       "Books",
+    appliances:  "Kitchen",
+    // Legacy variants
     smartphones: "Electronics",
-    laptops: "Computers",
-    gaming: "VideoGames",
-    footwear: "Shoes",
-    skincare: "Beauty",
-    fashion: "Apparel",
-    books: "Books",
-    appliances: "Kitchen",
-    cameras: "Electronics",
+    smartphone:  "Electronics",
+    phone:       "Electronics",
+    laptops:     "Computers",
+    cameras:     "Electronics",
   };
   return map[category?.toLowerCase()] || "All";
 }

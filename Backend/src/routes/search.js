@@ -80,6 +80,11 @@ const {
 const logger = require("../utils/logger");
 const { classifyIntent, INTENT } = require("../services/searchIntentService");
 const { SUBTYPE_FILTER_KEYWORDS } = require("../utils/categoryKeyMap");
+const {
+  buildAmazonQuery,
+  filterAmazonResults,
+  rankAmazonResults,
+} = require("../utils/amazonQueryBuilder");
 const { queueAnalysis } = require("../services/backgroundAnalysis");
 const {
   weightedSearch,
@@ -1615,9 +1620,11 @@ async function serveBrandBlend(
   // 1. Fetch brand-specific from Amazon (targeted, 1 call)
   let brandProducts = [];
   try {
-    brandProducts = await amazonService.searchProducts(query, cat);
+    const aqOverrides = buildAmazonQuery(intent, query);
+    brandProducts = await amazonService.searchProducts(query, cat, aqOverrides);
+    brandProducts = filterAmazonResults(brandProducts, intent);
     logger.info(
-      `🔍 BrandBlend: Amazon returned ${brandProducts.length} for "${query}"`,
+      `🔍 BrandBlend: Amazon returned ${brandProducts.length} for "${query}" (keywords="${aqOverrides.keywords}")`,
     );
   } catch (err) {
     logger.error(`🔍 BrandBlend: Amazon failed — ${err.message}`);
@@ -2637,9 +2644,11 @@ async function serveProductSpecific(
 
   let amazonProducts = [];
   try {
-    amazonProducts = await amazonService.searchProducts(query, category);
+    const aqOverrides2 = buildAmazonQuery(intent, query);
+    amazonProducts = await amazonService.searchProducts(query, category, aqOverrides2);
+    amazonProducts = filterAmazonResults(amazonProducts, intent);
     logger.info(
-      `🔍 ProductSpecific: Amazon returned ${amazonProducts.length} products`,
+      `🔍 ProductSpecific: Amazon returned ${amazonProducts.length} products (keywords="${aqOverrides2.keywords}")`,
     );
   } catch (err) {
     logger.error(`🔍 ProductSpecific: Amazon failed — ${err.message}`);
@@ -3379,11 +3388,16 @@ async function handleSearch(req, res) {
   let usingMockData = false;
 
   try {
+    const aqOverrides3 = buildAmazonQuery(detectedIntent || {}, rawQuery);
     amazonProducts = await amazonService.searchProducts(
       query,
       effectiveCategory,
+      aqOverrides3,
     );
-    logger.info(`🔍 Search: Amazon returned ${amazonProducts.length} products`);
+    amazonProducts = filterAmazonResults(amazonProducts, detectedIntent || {});
+    logger.info(
+      `🔍 Search: Amazon returned ${amazonProducts.length} products (keywords="${aqOverrides3.keywords}")`,
+    );
   } catch (amazonErr) {
     logger.error(`🔍 Search: Amazon PA-API failed — ${amazonErr.message}`);
   }
@@ -3496,9 +3510,11 @@ async function handleSearch(req, res) {
       try {
         const brandQuery =
           `${detectedIntent.brand} ${effectiveCategory || ""}`.trim();
+        const aqOverrides4 = buildAmazonQuery(detectedIntent, brandQuery);
         const brandProducts = await amazonService.searchProducts(
           brandQuery,
           effectiveCategory,
+          aqOverrides4,
         );
         if (brandProducts.length > 0) {
           const brandEnriched = await enrichProductsBatched(
@@ -3869,9 +3885,12 @@ async function handleLiveSearch(req, res) {
   // ── Fetch top 1 from Amazon ──────────────────────────────────────────────
   let amazonProducts = [];
   try {
-    amazonProducts = await amazonService.searchProducts(query, cat);
+    const liveIntent = classifyIntent(query, cat);
+    const aqOverrides5 = buildAmazonQuery(liveIntent, query);
+    amazonProducts = await amazonService.searchProducts(query, cat, aqOverrides5);
+    amazonProducts = filterAmazonResults(amazonProducts, liveIntent);
     logger.info(
-      `🔍 LiveSearch: Amazon returned ${amazonProducts.length} products for "${query}"`,
+      `🔍 LiveSearch: Amazon returned ${amazonProducts.length} products for "${query}" (keywords="${aqOverrides5.keywords}")`,
     );
   } catch (err) {
     logger.error(`🔍 LiveSearch: Amazon failed — ${err.message}`);
