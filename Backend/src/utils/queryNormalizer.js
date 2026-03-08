@@ -372,6 +372,8 @@ const KEYWORD_TO_SUBTYPE = {
   "face wash": "face_wash",
   "action camera": "action_camera",
   // Appliances — single word
+  // "ton" = AC capacity marker (1 ton, 1.5 ton, 2 ton) — always an air conditioner
+  ton: "air_conditioner",
   washing: "washing_machine",
   washer: "washing_machine",
   refrigerator: "refrigerator",

@@ -58,6 +58,7 @@ const { SearchCache, ProductListing, ProductAnalysis } = require("../models");
 const {
   getCachedResults,
   cacheResults,
+  invalidateCache,
   getClient: getRedis,
   getTop50Products,
   setTop50Products,
@@ -78,7 +79,10 @@ const {
 } = require("../utils/mockData");
 const logger = require("../utils/logger");
 const { classifyIntent, INTENT } = require("../services/searchIntentService");
-const { SUBTYPE_FILTER_KEYWORDS } = require("../utils/categoryKeyMap");
+const {
+  SUBTYPE_FILTER_KEYWORDS,
+  SUBTYPE_AMAZON_QUERIES,
+} = require("../utils/categoryKeyMap");
 const {
   weightedSearch,
   CONFIDENCE,
@@ -228,31 +232,60 @@ const CATEGORY_FILTER_MAP = {
   ],
 
   // ── Appliances (kitchen/home — excludes TVs) ──────────────────────
+  // NOTE: "appliance" removed intentionally — too generic (furniture movers,
+  // accessories etc. all mention "appliance" in their titles and pass falsely).
+  // Every appliance sub-type has at least one specific keyword below.
   appliances: [
+    "washing machine",
+    "front load",
+    "top load",
+    "fully automatic",
+    "semi automatic",
+    "washing",
+    "washer",
+    "mixer grinder",
     "mixer",
     "grinder",
     "microwave",
+    "microwave oven",
     "oven",
-    "washing",
     "refrigerator",
     "fridge",
-    "vacuum",
-    "purifier",
-    "cooker",
-    "appliance",
+    "double door",
+    "single door",
+    "frost free",
+    "vacuum cleaner",
+    "robovac",
+    "water purifier",
+    "ro purifier",
+    "pressure cooker",
+    "electric cooker",
+    "induction cooktop",
+    "induction stove",
     "induction",
     "juicer",
-    "fryer",
     "air fryer",
+    "airfryer",
     "dishwasher",
+    "kitchen chimney",
     "chimney",
     "geyser",
     "water heater",
+    "instant geyser",
     "air conditioner",
+    "split ac",
+    "inverter ac",
+    "window ac",
     "kettle",
-    "iron",
-    "stove",
+    "steam iron",
+    "dry iron",
+    "clothes iron",
+    "gas stove",
+    "glass top stove",
     "cooktop",
+    "room heater",
+    "tower fan",
+    "ceiling fan",
   ],
 
   // ── Footwear ──────────────────────────────────────────────────────
@@ -370,58 +403,254 @@ const QUERY_STOP_WORDS = new Set([
   "2026",
 ]);
 
-// Synonym expansions — ensures "machine" matches "washer", "washing", etc.
+// Synonym expansions — ensures multi-word product types are matched.
+// IMPORTANT: never include bare generic words (e.g. "machine", "iron", "cooler")
+// — they match completely unrelated products ("blood pressure machine",
+// "curling iron", "Cooler Master keyboard", etc.).
+// Always use the FULL specific product-type phrase as the match term.
 const PRODUCT_SYNONYM_MAP = {
-  mobile: ["mobile", "phone", "smartphone", "5g", "android", "iphone"],
-  mobiles: ["mobile", "phone", "smartphone", "5g", "android", "iphone"],
-  phone: ["phone", "mobile", "smartphone", "5g", "android", "iphone"],
-  phones: ["phone", "mobile", "smartphone", "5g", "android", "iphone"],
-  machine: ["machine", "washer", "washing machine"],
-  machines: ["machine", "washer", "washing machine"],
-  washer: ["washer", "washing"],
-  washing: ["washing", "washer"],
-  purifier: ["purifier", "purification", " ro "],
-  purifiers: ["purifier", "purifiers", "water purifier", "ro purifier"],
-  refrigerator: ["refrigerator", "fridge"],
-  fridge: ["fridge", "refrigerator"],
-  geyser: [
-    "geyser",
-    "water heater",
-    "instant heater",
-    "storage geyser",
-    "geysir",
+  mobile: ["mobile phone", "smartphone", "android phone", "5g phone", "iphone"],
+  mobiles: ["mobile phone", "smartphone", "android phone", "5g phone"],
+  phone: ["mobile phone", "smartphone", "android phone", "5g phone", "iphone"],
+  phones: ["mobile phone", "smartphone", "android phone", "5g phone"],
+  // washing machine — MUST NOT match bare "machine" (hits BP monitors, sewing machines, etc.)
+  machine: [
+    "washing machine",
+    "washer",
+    "front load",
+    "top load",
+    "fully automatic",
   ],
-  geysers: [
-    "geyser",
-    "water heater",
-    "instant heater",
-    "storage geyser",
-    "geysers",
+  machines: [
+    "washing machine",
+    "washer",
+    "front load",
+    "top load",
+    "fully automatic",
   ],
-  heater: ["heater", "geyser", "water heater", "instant geyser"],
-  heaters: ["heater", "geyser", "water heater", "instant geyser"],
-  iron: ["steam iron", "garment", "ironing", "steam generator"],
-  ironing: ["iron", "ironing", "steam"],
-  vacuum: ["vacuum", "robovac", "robot cleaner"],
-  microwave: ["microwave"],
-  television: ["television", "tv", "smart tv", "qled", "oled"],
-  tv: ["tv", "television", "smart tv", "qled", "oled"],
-  fryer: ["fryer", "air fryer"],
-  airfryer: ["airfryer", "air fryer"],
-  cooker: ["cooker", "pressure cooker", "rice cooker"],
-  trimmer: ["trimmer", "shaver"],
-  shaver: ["shaver", "trimmer", "razor"],
-  juicer: ["juicer", "mixer", "blender"],
-  blender: ["blender", "mixer", "juicer"],
+  washer: ["washing machine", "washer", "front load", "top load"],
+  washing: [
+    "washing machine",
+    "washer",
+    "front load",
+    "top load",
+    "fully automatic",
+  ],
+  purifier: ["water purifier", "ro purifier", "uv purifier", "ro uv purifier"],
+  purifiers: ["water purifier", "ro purifier", "uv purifier", "ro uv purifier"],
+  refrigerator: [
+    "refrigerator",
+    "fridge",
+    "double door",
+    "single door",
+    "frost free",
+  ],
+  fridge: ["fridge", "refrigerator", "double door", "single door"],
+  geyser: ["geyser", "water heater", "instant geyser", "storage geyser"],
+  geysers: ["geyser", "water heater", "instant geyser", "storage geyser"],
+  heater: ["water heater", "geyser", "instant geyser", "storage geyser"],
+  heaters: ["water heater", "geyser", "instant geyser"],
+  // "iron" alone matches "curling iron", "cast iron", "iron supplement" — use specific terms
+  iron: ["steam iron", "dry iron", "clothes iron", "steam generator"],
+  ironing: ["steam iron", "dry iron", "clothes iron"],
+  vacuum: ["vacuum cleaner", "robovac", "robot vacuum", "wet dry vacuum"],
+  microwave: [
+    "microwave",
+    "microwave oven",
+    "convection microwave",
+    "solo microwave",
+  ],
+  television: ["smart tv", "led tv", "android tv", "qled tv", "oled tv"],
+  tv: ["smart tv", "led tv", "android tv", "qled tv", "oled tv"],
+  fryer: ["air fryer", "airfryer", "digital air fryer"],
+  airfryer: ["air fryer", "airfryer", "digital air fryer"],
+  cooker: ["pressure cooker", "electric cooker", "rice cooker", "instant pot"],
+  trimmer: ["beard trimmer", "hair trimmer", "nose trimmer"],
+  shaver: ["electric shaver", "trimmer", "beard trimmer"],
+  juicer: [
+    "juicer mixer",
+    "mixer grinder",
+    "centrifugal juicer",
+    "cold press juicer",
+  ],
+  blender: ["blender", "mixer grinder", "hand blender", "immersion blender"],
+  ac: ["air conditioner", "split ac", "inverter ac", "window ac"],
+  conditioner: ["air conditioner", "split ac", "inverter ac", "window ac"],
+  conditioners: ["air conditioner", "split ac", "inverter ac", "window ac"],
+  soundbar: ["soundbar", "sound bar"],
+  soundbars: ["soundbar", "sound bar"],
+  woofer: ["soundbar", "woofer", "subwoofer", "sound bar"],
 };
 
+// ── Dynamic synonym learning ────────────────────────────────────────────────
+// 10s after startup: load previously-learned synonyms from Redis (written by
+// learnProductSynonyms() at the end of every successful live search) and merge
+// them into PRODUCT_SYNONYM_MAP so filterByQueryRelevance benefits immediately.
+setTimeout(() => {
+  const r = getRedis();
+  if (!r || r.status !== "ready") return;
+  r.hgetall("bestpickr:learned_synonyms")
+    .then((raw) => {
+      if (!raw) return;
+      let count = 0;
+      for (const [word, val] of Object.entries(raw)) {
+        if (!PRODUCT_SYNONYM_MAP[word]) {
+          try {
+            PRODUCT_SYNONYM_MAP[word] = JSON.parse(val);
+            count++;
+          } catch {
+            /* skip */
+          }
+        }
+      }
+      if (count > 0)
+        logger.info(`Synonyms: loaded ${count} learned entries from Redis`);
+    })
+    .catch(() => {});
+}, 10000);
+
 /**
- * Filter results by query relevance — ensures "washing machines" only returns
- * washing machines, not fridges/irons that are also in the appliances category.
- *
- * SAFE: if filtering would leave fewer than MIN_RESULTS products, returns
- * the unfiltered set (never causes an empty page due to over-filtering).
+ * Learn product synonyms from a successful live search result set.
+ * For each query word not yet in PRODUCT_SYNONYM_MAP, extracts the most
+ * frequent meaningful words from the product titles returned by Amazon and
+ * stores them as synonyms in memory + Redis so future searches use them.
+ * Fire-and-forget — never blocks the response.
  */
+function learnProductSynonyms(queryWords, products) {
+  if (
+    !products ||
+    products.length === 0 ||
+    !queryWords ||
+    queryWords.length === 0
+  )
+    return;
+
+  const unknownWords = queryWords.filter((w) => !PRODUCT_SYNONYM_MAP[w]);
+  if (unknownWords.length === 0) return;
+
+  // Common words in product titles that carry no product-type signal
+  const titleStop = new Set([
+    "the",
+    "and",
+    "or",
+    "for",
+    "with",
+    "of",
+    "in",
+    "a",
+    "an",
+    "by",
+    "from",
+    "to",
+    "is",
+    "are",
+    "be",
+    "it",
+    "its",
+    "on",
+    "at",
+    "as",
+    "up",
+    "all",
+    "new",
+    "buy",
+    "best",
+    "top",
+    "great",
+    "good",
+    "inc",
+    "ltd",
+    "pvt",
+    "set",
+    "pack",
+    "piece",
+    "size",
+    "color",
+    "colour",
+    "model",
+    "type",
+    "series",
+    "edition",
+    "grade",
+    "gen",
+    "capacity",
+    "speed",
+    "power",
+    "india",
+    "online",
+    "price",
+    "deal",
+    "offer",
+    "black",
+    "white",
+    "silver",
+    "blue",
+    "red",
+    "grey",
+    "gray",
+    "gold",
+    "rose",
+    "compatible",
+    "designed",
+    "suitable",
+    "made",
+    "high",
+    "low",
+    "premium",
+    "pro",
+    "energy",
+    "star",
+    "rating",
+    "year",
+    "warranty",
+    "free",
+    "delivery",
+    "combo",
+  ]);
+
+  // Count how many products each title word appears in
+  const wordFreq = {};
+  for (const product of products) {
+    const title = (product.name || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ");
+    const words = title.split(/\s+/).filter(
+      (w) =>
+        w.length >= 3 &&
+        !titleStop.has(w) &&
+        !/^\d+$/.test(w) &&
+        !/^\d+[a-z]{1,3}$/.test(w), // strip units: 25l, 80cm, 10kg, 750w
+    );
+    const seen = new Set(words); // count each word once per product
+    for (const w of seen) wordFreq[w] = (wordFreq[w] || 0) + 1;
+  }
+
+  // Keep words appearing in >= 40% of results (handles small result sets too)
+  const threshold = Math.max(1, Math.ceil(products.length * 0.4));
+  const commonTerms = Object.entries(wordFreq)
+    .filter(([, freq]) => freq >= threshold)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([word]) => word);
+
+  if (commonTerms.length === 0) return;
+
+  const r = getRedis();
+  for (const word of unknownWords) {
+    PRODUCT_SYNONYM_MAP[word] = commonTerms;
+    logger.info(
+      `Synonyms: learned "${word}" → [${commonTerms.slice(0, 5).join(", ")}]`,
+    );
+    if (r && r.status === "ready") {
+      r.hset(
+        "bestpickr:learned_synonyms",
+        word,
+        JSON.stringify(commonTerms),
+      ).catch(() => {});
+    }
+  }
+}
+
 /**
  * Re-rank results so the product with the most query-word overlap appears first.
  * Used after cache hits to fix stale ordering (e.g. old cache had K13x first when
@@ -461,28 +690,66 @@ function filterByQueryRelevance(results, query) {
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter(
-      (w) => w.length >= 3 && !QUERY_STOP_WORDS.has(w) && !/^\d+$/.test(w),
-    ); // strip pure numbers (prices like 20000)
+      (w) =>
+        !QUERY_STOP_WORDS.has(w) &&
+        !/^\d+$/.test(w) && // strip pure numbers (prices like 20000)
+        !/^\d+[kmb]$/i.test(w) && // strip price shortcuts like 10k, 20k, 50k, 1m
+        (w.length >= 3 || PRODUCT_SYNONYM_MAP[w]), // allow short words with known synonyms (tv, ac)
+    );
 
   if (words.length === 0) return results;
 
-  // Build expanded set of match terms via synonyms
+  // Build expanded set of match terms via synonyms.
+  // For words not in the map, also add de-pluralized forms so unknown words like
+  // "ovens" match product titles that say "Oven", "laptops"→"laptop", etc.
   const matchTerms = new Set();
   for (const word of words) {
     const syns = PRODUCT_SYNONYM_MAP[word];
-    if (syns) syns.forEach((s) => matchTerms.add(s));
-    else matchTerms.add(word);
+    if (syns) {
+      syns.forEach((s) => matchTerms.add(s));
+    } else {
+      matchTerms.add(word);
+      // Pluralization fallback for unknown words
+      if (word.endsWith("ies") && word.length > 4) {
+        matchTerms.add(word.slice(0, -3) + "y"); // batteries → battery
+      } else if (
+        word.endsWith("s") &&
+        word.length > 3 &&
+        !word.endsWith("ss")
+      ) {
+        matchTerms.add(word.slice(0, -1)); // ovens → oven, laptops → laptop
+      }
+    }
   }
   const termArray = Array.from(matchTerms);
 
+  // For multi-word queries (2+ meaningful terms) require at least 2 matches.
+  // Prevents single-coincidence pollution: e.g. earbuds with "Sound Quality" in
+  // their name passing a "sony sound bars" search just because "sound" matches.
+  // Also catches 2-word queries like "jbl soundbars" — both words must match.
+  const minMatches = termArray.length >= 2 ? 2 : 1;
+
   const filtered = results.filter((p) => {
     const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
-    return termArray.some((term) => text.includes(term));
+    const matchCount = termArray.filter((term) => text.includes(term)).length;
+    return matchCount >= minMatches;
   });
 
   // No safety net — if ALL Amazon results are irrelevant (e.g. air fryer → induction cooktop)
   // return empty so the UI shows "no results" instead of wrong products.
   if (filtered.length === 0) {
+    // Relax to 1 match before giving up entirely (avoids wrongly rejecting all results
+    // when synonyms expand terms beyond what the product literally says)
+    const relaxed = results.filter((p) => {
+      const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
+      return termArray.some((term) => text.includes(term));
+    });
+    if (relaxed.length > 0) {
+      logger.info(
+        `🔍 Query relevance: "${query}" — relaxed to 1 match, kept ${relaxed.length}/${results.length}`,
+      );
+      return relaxed;
+    }
     logger.warn(
       `🔍 Query relevance: "${query}" — all ${results.length} results failed relevance check, returning empty`,
     );
@@ -556,6 +823,22 @@ function applyIntentConstraints(candidates, intent, query) {
   }
 
   out = filterByQueryRelevance(out, query);
+
+  // Brand filter: when the query specifies a brand, keep only products from
+  // that brand. Returns empty when no brand products exist so callers fall
+  // through to a live Amazon fetch rather than serving wrong-brand results
+  // (e.g. "boat earphones" cache hit with GOBOULT products must be rejected).
+  if (intent?.brand && out.length > 0) {
+    const brandLow = intent.brand.toLowerCase();
+    const branded = out.filter((p) =>
+      (p.brand || p.name || "").toLowerCase().includes(brandLow),
+    );
+    // Only apply if it narrows results — avoids false-empty when brand word
+    // appears in a category name but not actually identifying the brand.
+    if (branded.length > 0) out = branded;
+    else out = []; // force fall-through to live Amazon fetch
+  }
+
   return out;
 }
 
@@ -574,7 +857,7 @@ function withAiScoreFallback(results) {
       ? +(Number(ratingBase) * 2).toFixed(1)
       : positivePct
         ? +(Number(positivePct) / 10).toFixed(1)
-        : 5.0;
+        : 7.0; // Default 7.0 — assume decent when no data available
 
     return { ...p, aiScore };
   });
@@ -1242,7 +1525,7 @@ function formatProductResult(product, analysis, rank) {
     p._mockAiScore ??
     p.rankingScore ??
     derivedAiScore ??
-    5.0;
+    7.0; // Default 7.0 = "good but unverified" — unanalyzed Amazon results are generally decent
 
   // ── Prices ──────────────────────────────────────────────────
   const amazonPrice = p.price || p.amazonPrice || null;
@@ -1578,7 +1861,7 @@ function formatTop50AsResult(p, rank) {
   const rating = p.rating || null;
   const reviewCount = p.reviewCount || 0;
   const aiScore =
-    p.aiScore ?? p.rankingScore ?? (rating ? +(rating * 2).toFixed(1) : 5.0);
+    p.aiScore ?? p.rankingScore ?? (rating ? +(rating * 2).toFixed(1) : 7.0); // 7.0 default — unanalyzed but Amazon-listed products are generally decent
   const affiliateUrl = p.affiliateLink || null;
   const platformName = p.platform || "Amazon";
 
@@ -1851,8 +2134,27 @@ async function serveBrandBlend(
 
   if (brandProducts.length === 0) return null; // fall through to full pipeline
 
-  // 2. Process top 3 brand products — fast path (affiliate links only, GPT queued in bg)
-  const toProcess = brandProducts.slice(0, 3);
+  // Filter to only brand-matching products before processing.
+  // Amazon sometimes returns non-brand results even when brand is in the query
+  // (e.g. "samsung tv under 30000" → returns VW/TIVORA TVs).
+  const brandLow = intent.brand ? intent.brand.toLowerCase() : null;
+  const strictBrandProducts = brandLow
+    ? brandProducts.filter((p) =>
+        (p.brand || p.name || "").toLowerCase().includes(brandLow),
+      )
+    : brandProducts;
+
+  if (strictBrandProducts.length === 0) {
+    logger.warn(
+      `🔍 BrandBlend: Amazon returned ${brandProducts.length} products but none match brand="${intent.brand}" — falling through to full pipeline`,
+    );
+    return null; // trigger full pipeline which will do supplemental brand fetch
+  }
+
+  // 2. Process top 5 brand products — fast path (affiliate links only, GPT queued in bg)
+  // Using 5 instead of 3 so the Redis cache stores enough brand products for a
+  // good result even when the brand filter on subsequent cache hits removes fill products.
+  const toProcess = strictBrandProducts.slice(0, 5);
   const processed = await Promise.allSettled(
     toProcess.map(async (p) => {
       const asin = p.asin || p.platformId;
@@ -2787,6 +3089,12 @@ async function serveProductSpecific(
     }
   }
 
+  // Safety net: filter fill pool to query-relevant products before using as alternatives.
+  // When category is unknown (e.g. "Hitachi 1.5 Ton"), the Postgres fill has no category
+  // guard and can return completely unrelated products (skincare, gaming mice, clothing).
+  // filterByQueryRelevance ensures only products matching query keywords appear as alternatives.
+  fillPool = filterByQueryRelevance(fillPool, query);
+
   const fillResults = fillPool
     .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
     .slice(0, MAX_RESPONSE_RESULTS - 1)
@@ -3182,33 +3490,60 @@ async function handleSearch(req, res) {
           query,
         );
         if (constrainedRedis.length === 0) {
+          // If a brand was queried but the cache has ZERO brand-matching products,
+          // those cached products are wrong-brand pollution — invalidate so the
+          // next request fetches fresh brand-correct results from Amazon.
+          if (redisIntent?.brand) {
+            const brandLow = redisIntent.brand.toLowerCase();
+            const hasBrandInCache = scoredRedis.some((p) =>
+              (p.brand || p.name || "").toLowerCase().includes(brandLow),
+            );
+            if (!hasBrandInCache) {
+              logger.warn(
+                `🔍 Cache Redis: cached results have no "${redisIntent.brand}" products — invalidating stale cache`,
+              );
+              invalidateCache(query, earlyCat || category).catch(() => {});
+            }
+          }
           logger.info(
             `🔍 Cache Redis: candidates failed strict intent constraints for "${query}" — treating as miss`,
           );
           // Fall through to MongoDB / live fetch
         } else {
-          // Apply query relevance — prevents e.g. all appliances when searching "washing machines"
-          // Then re-rank so most-keyword-matched product is always first (fixes stale cache order)
-          const finalRedis = rankByQueryScore(constrainedRedis, query);
-          console.log(
-            `[CACHE] ✅ REDIS HIT → returning ${finalRedis.length} results. Top: "${finalRedis[0]?.name?.slice(0, 50)}"`,
+          // Validate relevance — prevents stale cache e.g. "washing machines" → BP monitor
+          const relevanceFiltered = filterByQueryRelevance(
+            constrainedRedis,
+            query,
           );
-          req._searchLog.outcome = "redis_hit";
-          return res.json({
-            success: true,
-            query: rawQuery,
-            normalized: normalizedQuery,
-            category: category || null,
-            intent: redisIntent.intent || "GENERIC",
-            totalResults: Math.min(finalRedis.length, MAX_RESPONSE_RESULTS),
-            cached: true,
-            cacheSource: "redis",
-            fromCache: true,
-            lastUpdated: new Date().toISOString(),
-            elapsed_ms: Date.now() - requestStart,
-            results: addRanks(finalRedis.slice(0, MAX_RESPONSE_RESULTS)),
-            suggestions: addRanks(finalRedis.slice(0, MAX_RESPONSE_RESULTS)),
-          });
+          if (relevanceFiltered.length === 0) {
+            logger.warn(
+              `🔍 Cache Redis: results failed relevance check for "${query}" — invalidating and re-fetching`,
+            );
+            invalidateCache(query, earlyCat || category).catch(() => {});
+            // Fall through to MongoDB / live fetch
+          } else {
+            // Re-rank so most-keyword-matched product is always first (fixes stale cache order)
+            const finalRedis = rankByQueryScore(relevanceFiltered, query);
+            console.log(
+              `[CACHE] ✅ REDIS HIT → returning ${finalRedis.length} results. Top: "${finalRedis[0]?.name?.slice(0, 50)}"`,
+            );
+            req._searchLog.outcome = "redis_hit";
+            return res.json({
+              success: true,
+              query: rawQuery,
+              normalized: normalizedQuery,
+              category: category || null,
+              intent: redisIntent.intent || "GENERIC",
+              totalResults: Math.min(finalRedis.length, MAX_RESPONSE_RESULTS),
+              cached: true,
+              cacheSource: "redis",
+              fromCache: true,
+              lastUpdated: new Date().toISOString(),
+              elapsed_ms: Date.now() - requestStart,
+              results: addRanks(finalRedis.slice(0, MAX_RESPONSE_RESULTS)),
+              suggestions: addRanks(finalRedis.slice(0, MAX_RESPONSE_RESULTS)),
+            });
+          }
         }
       }
     }
@@ -3253,30 +3588,44 @@ async function handleSearch(req, res) {
           );
           // Fall through to live fetch
         } else {
-          // Apply query relevance, then re-rank by keyword match score (fixes stale cache order)
-          const finalMongo = rankByQueryScore(constrainedMongo, query);
-          req._searchLog.outcome = "mongo_hit";
-
-          // Repopulate Redis while we respond (non-blocking)
-          cacheResults(query, earlyCat || category, finalMongo).catch((err) =>
-            logger.warn(`🔍 Search: Redis repopulate failed — ${err.message}`),
+          // Validate relevance — prevents stale mongo cache serving wrong products
+          const relevanceFilteredMongo = filterByQueryRelevance(
+            constrainedMongo,
+            query,
           );
+          if (relevanceFilteredMongo.length === 0) {
+            logger.warn(
+              `🔍 Cache Mongo: results failed relevance check for "${query}" — skipping cache, re-fetching`,
+            );
+            // Fall through to live fetch (MongoDB TTL will expire it naturally)
+          } else {
+            // Apply query relevance, then re-rank by keyword match score (fixes stale cache order)
+            const finalMongo = rankByQueryScore(relevanceFilteredMongo, query);
+            req._searchLog.outcome = "mongo_hit";
 
-          return res.json({
-            success: true,
-            query: rawQuery,
-            normalized: normalizedQuery,
-            category: earlyCat || category || null,
-            intent: mongoIntent.intent || "GENERIC",
-            totalResults: Math.min(finalMongo.length, MAX_RESPONSE_RESULTS),
-            cached: true,
-            cacheSource: "mongodb",
-            fromCache: true,
-            lastUpdated: new Date().toISOString(),
-            elapsed_ms: Date.now() - requestStart,
-            results: addRanks(finalMongo.slice(0, MAX_RESPONSE_RESULTS)),
-            suggestions: addRanks(finalMongo.slice(0, MAX_RESPONSE_RESULTS)),
-          });
+            // Repopulate Redis while we respond (non-blocking)
+            cacheResults(query, earlyCat || category, finalMongo).catch((err) =>
+              logger.warn(
+                `🔍 Search: Redis repopulate failed — ${err.message}`,
+              ),
+            );
+
+            return res.json({
+              success: true,
+              query: rawQuery,
+              normalized: normalizedQuery,
+              category: earlyCat || category || null,
+              intent: mongoIntent.intent || "GENERIC",
+              totalResults: Math.min(finalMongo.length, MAX_RESPONSE_RESULTS),
+              cached: true,
+              cacheSource: "mongodb",
+              fromCache: true,
+              lastUpdated: new Date().toISOString(),
+              elapsed_ms: Date.now() - requestStart,
+              results: addRanks(finalMongo.slice(0, MAX_RESPONSE_RESULTS)),
+              suggestions: addRanks(finalMongo.slice(0, MAX_RESPONSE_RESULTS)),
+            });
+          }
         }
       }
     }
@@ -3720,9 +4069,25 @@ async function handleSearch(req, res) {
   let amazonProducts = [];
   let usingMockData = false;
 
+  // Use a canonical subtype query when available — prevents "washing machines" search
+  // from returning accessories like BP monitors that mention "washing machine" in title.
+  // e.g. SUBTYPE_AMAZON_QUERIES.appliances.washing_machine = "best washing machine india"
+  const amazonQuery = (() => {
+    const subType = detectedIntent?.subType;
+    const cat = effectiveCategory;
+    if (subType && cat && SUBTYPE_AMAZON_QUERIES[cat]?.[subType]) {
+      const canonical = SUBTYPE_AMAZON_QUERIES[cat][subType];
+      logger.info(
+        `🔍 Amazon: using canonical subtype query "${canonical}" (subType="${subType}", was "${query}")`,
+      );
+      return canonical;
+    }
+    return query;
+  })();
+
   try {
     amazonProducts = await amazonService.searchProducts(
-      query,
+      amazonQuery,
       effectiveCategory,
     );
     logger.info(`🔍 Search: Amazon returned ${amazonProducts.length} products`);
@@ -3731,7 +4096,25 @@ async function handleSearch(req, res) {
   }
 
   // Mock fallback disabled — run real Amazon fetch only.
-  // If Amazon returns 0, surface an empty result immediately.
+  // If Amazon returns 0 AND a brand was detected, retry with brand+category query.
+  if (amazonProducts.length === 0 && detectedIntent?.brand) {
+    logger.warn(
+      `🔍 Search: Amazon returned 0 for "${amazonQuery}" — retrying with brand query for "${detectedIntent.brand}"`,
+    );
+    try {
+      const brandRetryQ =
+        `${detectedIntent.brand} ${effectiveCategory || ""}`.trim();
+      amazonProducts = await amazonService.searchProducts(
+        brandRetryQ,
+        effectiveCategory,
+      );
+      logger.info(
+        `🔍 Search: brand retry Amazon returned ${amazonProducts.length} products for "${brandRetryQ}"`,
+      );
+    } catch (retryErr) {
+      logger.warn(`🔍 Search: brand retry Amazon failed — ${retryErr.message}`);
+    }
+  }
 
   if (amazonProducts.length === 0) {
     logger.warn(`🔍 Search: no products from Amazon or mock for "${query}"`);
@@ -3787,6 +4170,34 @@ async function handleSearch(req, res) {
     });
   }
 
+  // ── STEP 5.45: Strict subtype post-filter ───────────────────
+  // When intent resolves to a specific sub-type (e.g. washing_machine, robot_vacuum),
+  // hard-filter Amazon results using SUBTYPE_FILTER_KEYWORDS so accessories or
+  // loosely-related products never surface.  Only applies when the filtered set is
+  // non-empty — if ALL results are rejected we fall through to the query-relevance
+  // step which will surface an empty response with a helpful message.
+  if (detectedIntent?.subType) {
+    const subKws = SUBTYPE_FILTER_KEYWORDS[detectedIntent.subType] || [];
+    if (subKws.length > 0) {
+      const subFiltered = enrichedProducts.filter((p) => {
+        const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
+        return subKws.some((kw) => text.includes(kw));
+      });
+      if (subFiltered.length > 0) {
+        if (subFiltered.length < enrichedProducts.length) {
+          logger.info(
+            `🔍 Subtype filter "${detectedIntent.subType}": kept ${subFiltered.length}/${enrichedProducts.length} products`,
+          );
+        }
+        enrichedProducts = subFiltered;
+      } else {
+        logger.warn(
+          `🔍 Subtype filter "${detectedIntent.subType}": all results failed — skipping subtype filter to let query-relevance handle`,
+        );
+      }
+    }
+  }
+
   // ── STEP 5.5: Strict category post-filter ────────────────────
   // Uses effectiveCategory (URL param OR intent-detected) so filtering works
   // even when the user didn't send a category URL param.
@@ -3824,6 +4235,42 @@ async function handleSearch(req, res) {
   // Within the matched category, ensure products match the specific query.
   // e.g. "washing machines" → only washing machines, not fridges + irons.
   enrichedProducts = filterByQueryRelevance(enrichedProducts, query);
+
+  // If relevance filter wiped everything BUT a brand was detected, retry Amazon
+  // with a brand+category query before giving up. This covers e.g.
+  // "samsung tv under 30000" where Amazon returned mixed results and all
+  // non-Samsung got filtered, leaving 0 — we try "samsung televisions" specifically.
+  if (enrichedProducts.length === 0 && detectedIntent?.brand) {
+    logger.warn(
+      `🔍 Search: relevance filter left 0 products — retrying Amazon with brand query "${detectedIntent.brand}"`,
+    );
+    try {
+      const brandRetryQ =
+        `${detectedIntent.brand} ${effectiveCategory || ""}`.trim();
+      const brandRetryProducts = await amazonService.searchProducts(
+        brandRetryQ,
+        effectiveCategory,
+      );
+      if (brandRetryProducts.length > 0) {
+        const brandEnriched = await enrichProductsBatched(
+          brandRetryProducts.slice(0, MAX_AMAZON_RESULTS),
+          effectiveCategory,
+        );
+        const brandLow = detectedIntent.brand.toLowerCase();
+        const brandMatched = brandEnriched.filter((p) =>
+          (p.brand || p.name || "").toLowerCase().includes(brandLow),
+        );
+        if (brandMatched.length > 0) {
+          enrichedProducts = brandMatched;
+          logger.info(
+            `🔍 Search: brand retry fetched ${brandMatched.length} "${detectedIntent.brand}" products`,
+          );
+        }
+      }
+    } catch (brandRetryErr) {
+      logger.warn(`🔍 Search: brand retry failed — ${brandRetryErr.message}`);
+    }
+  }
 
   if (enrichedProducts.length === 0) {
     logger.warn(
@@ -3944,6 +4391,47 @@ async function handleSearch(req, res) {
     `🔍 Search: ranked ${ranked.length} products. ` +
       `#1: "${ranked[0]?.name?.slice(0, 40)}" aiScore=${ranked[0]?.aiScore}`,
   );
+
+  // ── Guard: brand filter eliminated all products ───────────────────
+  // This can happen when the brand guard supplemental fetch also returns 0
+  // brand-matched products (e.g. Amazon returns non-Sony for "sony televisions").
+  // Don't cache empty — let the next search retry live Amazon.
+  if (ranked.length === 0) {
+    const brandHint = detectedIntent?.brand
+      ? ` Try a more specific model name (e.g. "${detectedIntent.brand} Bravia 43 inch").`
+      : "";
+    trackMiss(query);
+    releaseSearchLock(query, effectiveCategory).catch(() => {});
+    return res.json({
+      success: true,
+      query: rawQuery,
+      normalized: normalizedQuery,
+      category: effectiveCategory || null,
+      totalResults: 0,
+      results: [],
+      suggestions: [],
+      message: `No ${detectedIntent?.brand ? detectedIntent.brand.toUpperCase() + " " : ""}products found matching your search.${brandHint}`,
+      elapsed_ms: Date.now() - requestStart,
+    });
+  }
+
+  // ── Auto-learn synonyms from successful live results ─────────────
+  // Teaches PRODUCT_SYNONYM_MAP new query words from verified-relevant product
+  // titles so future searches with the same term filter correctly.
+  {
+    const learnWords = query
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter(
+        (w) =>
+          !QUERY_STOP_WORDS.has(w) &&
+          !/^\d+$/.test(w) &&
+          !/^\d+[kmb]$/i.test(w) &&
+          (w.length >= 3 || PRODUCT_SYNONYM_MAP[w]),
+      );
+    learnProductSynonyms(learnWords, ranked);
+  }
 
   // ── STEP 7: Save to Caches (non-blocking) ────────────────────
   const asinList = ranked.map((p) => p.asin).filter(Boolean);

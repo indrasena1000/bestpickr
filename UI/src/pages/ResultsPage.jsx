@@ -160,19 +160,23 @@ function queryRelevanceFilter(items, query, opts = {}) {
     (t) => /^[a-z][a-z0-9-]+$/.test(t) && t.length >= 3,
   );
   if (!hasModelToken) return items;
+  // For 2+ token queries require ≥2 matches to prevent single-word coincidences
+  // (e.g. earbuds with "Sound Quality" passing a "sony sound bars" search,
+  // or JBL headphones passing "jbl soundbars" because only "jbl" matches)
+  const minRequired = tokens.length >= 2 ? 2 : 1;
+
   const filtered = items.filter((p) => {
     const text =
       `${p.name || ""} ${p.brand || ""} ${p.category || ""}`.toLowerCase();
-    // Match individual tokens OR the joined form (handles "skull candy" → "skullcandy")
-    // Also stem plurals: "cameras" → "camera", "phones" → "phone"
-    return (
-      tokens.some(
-        (t) =>
-          text.includes(t) ||
-          (t.endsWith("es") && t.length > 3 && text.includes(t.slice(0, -2))) ||
-          (t.endsWith("s") && t.length > 3 && text.includes(t.slice(0, -1))),
-      ) || text.includes(joined)
-    );
+    if (text.includes(joined)) return true; // joined form match is strong
+    // Count how many tokens appear (with plural stemming)
+    const matchCount = tokens.filter(
+      (t) =>
+        text.includes(t) ||
+        (t.endsWith("es") && t.length > 3 && text.includes(t.slice(0, -2))) ||
+        (t.endsWith("s") && t.length > 3 && text.includes(t.slice(0, -1))),
+    ).length;
+    return matchCount >= minRequired;
   });
   // In default mode, if the filter is too aggressive and removes everything,
   // return all items to avoid blank pages. In strict mode, return true matches only.

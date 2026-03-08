@@ -53,6 +53,7 @@ const PAAPI_HOST = process.env.AMAZON_HOST || "webservices.amazon.in";
 const PAAPI_REGION = process.env.AMAZON_REGION || "eu-west-1";
 const PAAPI_SERVICE = "ProductAdvertisingAPI";
 const PAAPI_PATH = "/paapi5/searchitems";
+const PAAPI_GETITEMS_PATH = "/paapi5/getitems"; // GetItems uses a different endpoint than SearchItems
 
 // ═════════════════════════════════════════════════════════════════
 // CREATORS API — OAuth2 TOKEN CACHE WITH MUTEX
@@ -160,11 +161,29 @@ async function searchViaCreatorsAPI(query, category, retries = 2) {
       "itemInfo.features",
       "offersV2.listings.price",
       "offersV2.listings.availability",
+      "customerReviews.starRating", // available on some Creators API versions
+      "customerReviews.count",
     ],
   };
 
   // Optional: map category to a browse node for more relevant results
-  const browseNode = mapToBrowseNode(category);
+  // Special case: soundbar/speaker queries are categorised as "headphones" in our DB
+  // but must use the audio browse node — NOT the headphones node — to get correct results.
+  const queryLow = (query || "").toLowerCase();
+  const isSoundbarQuery =
+    queryLow.includes("soundbar") ||
+    queryLow.includes("sound bar") ||
+    queryLow.includes("woofer") ||
+    queryLow.includes("subwoofer");
+  const isSpeakerQuery =
+    !isSoundbarQuery &&
+    (queryLow.includes("bluetooth speaker") ||
+      queryLow.includes("portable speaker") ||
+      queryLow.includes("wireless speaker"));
+  const browseNode =
+    isSoundbarQuery || isSpeakerQuery
+      ? "1388922031" // Electronics > Speaker / Audio (not Headphones)
+      : mapToBrowseNode(category);
   if (browseNode) payload.browseNodeId = browseNode;
 
   logger.info(
@@ -220,6 +239,13 @@ function normalizeCreatorsItem(item) {
   const asin = item.asin;
   const affiliateUrl = item.detailPageURL; // already has tag=bestpickr-21
 
+  const creatorRating = item.customerReviews?.starRating?.value
+    ? parseFloat(item.customerReviews.starRating.value)
+    : null;
+  const creatorReviewCount = item.customerReviews?.count?.value
+    ? parseInt(item.customerReviews.count.value, 10)
+    : 0;
+
   return {
     platform: "Amazon",
     platformId: asin,
@@ -229,8 +255,8 @@ function normalizeCreatorsItem(item) {
     currency: "INR",
     mrp,
     discountPct: discount,
-    rating: null, // Creators API does not expose review ratings
-    reviewCount: 0,
+    rating: creatorRating, // populated if Creators API returns it; null otherwise
+    reviewCount: creatorReviewCount,
     imageUrl:
       item.images?.primary?.large?.url ||
       item.images?.primary?.medium?.url ||
@@ -425,7 +451,7 @@ async function fetchRatingsForAsins(asins) {
       .join(";");
     const canonicalReq = [
       "POST",
-      PAAPI_PATH,
+      PAAPI_GETITEMS_PATH, // GetItems uses /paapi5/getitems, NOT /paapi5/searchitems
       "",
       canonicalHeaders,
       signedHeaders,
@@ -445,7 +471,7 @@ async function fetchRatingsForAsins(asins) {
     const authHeader = `AWS4-HMAC-SHA256 Credential=${AMAZON_ACCESS_KEY}/${credScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
     const res = await axios.post(
-      `https://${PAAPI_HOST}${PAAPI_PATH}`,
+      `https://${PAAPI_HOST}${PAAPI_GETITEMS_PATH}`,
       payload,
       {
         headers: { ...headers, Authorization: authHeader },
@@ -553,13 +579,16 @@ function mapToBrowseNode(category) {
     // keyword-only search is more accurate for appliance sub-types
     tablets: "1375508031", // Computers > Tablets
     televisions: "1389396031", // Electronics > Televisions
-    audio: "1388922031", // Electronics > Speaker / Audio
+    audio: "1388922031", // Electronics > Speaker / Audio (soundbars live here)
     wearables: "1350387031", // Electronics > Wearable Technology
     gaming: "976460031", // Video Games
     skincare: "1355016031", // Beauty > Skin Care
     footwear: "1983518031", // Shoes & Handbags
   };
-  return map[category?.toLowerCase()] || null;
+  // Soundbar queries: use the audio browse node for better results
+  const cat = category?.toLowerCase();
+  if (cat === "soundbar" || cat === "soundbars") return map.audio;
+  return map[cat] || null;
 }
 
 // SearchIndex for PA-API v5 (legacy)

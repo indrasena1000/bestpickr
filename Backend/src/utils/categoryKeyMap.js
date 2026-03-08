@@ -62,8 +62,10 @@ const KEYWORD_TO_CATEGORY = {
   speakers: "headphones",
   audio: "headphones",
   buds: "headphones",
-  soundbar: "headphones",
+  soundbar: "headphones", // soundbars are filed under headphones/audio category
+  soundbars: "headphones",
   woofer: "headphones",
+  "sound bar": "headphones",
 
   // Tablets
   tablet: "tablets",
@@ -162,6 +164,8 @@ const KEYWORD_TO_CATEGORY = {
   iron: "appliances",
   inverter: "appliances",
   ac: "appliances",
+  // "ton" is the capacity unit for ACs (1 ton, 1.5 ton, 2 ton) — always → appliances
+  ton: "appliances",
   stove: "appliances",
   cooktop: "appliances",
   geyser: "appliances",

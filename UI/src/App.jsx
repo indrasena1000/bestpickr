@@ -33,6 +33,7 @@ import {
 import AffiliateDisclosurePage from "./components/AffiliateDisclosurePage.jsx";
 import BlogPage from "./pages/BlogPage.jsx";
 import BlogPostPage from "./pages/BlogPostPage.jsx";
+import TopListsPage from "./pages/TopListsPage.jsx";
 import { matchSeoRoute } from "./seoRoutes.js";
 import { trackPageView, trackSearch } from "./utils/analytics.js";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
@@ -177,6 +178,7 @@ function setHash(path, params = {}) {
 
 const PAGE_TITLES = {
   "/": "bestpickr — Best Rated Products in India | AI Comparison",
+  "top-lists": "Top Lists — Best Rated Products by Category | bestpickr",
   results: "Search Results — bestpickr",
   about: "About bestpickr — AI Product Comparison India",
   blog: "bestpickr blog — Expert Tech Insights for Indian Buyers",
@@ -445,7 +447,7 @@ export default function App() {
     "terms",
     "affiliate-disclosure",
   ];
-  const knownRoutes = ["/", "", "results", "detail", "admin"];
+  const knownRoutes = ["/", "", "results", "detail", "admin", "top-lists"];
   const is404 =
     !knownRoutes.includes(path) &&
     !staticPageKeys.includes(path) &&
@@ -459,6 +461,7 @@ export default function App() {
           currentQuery=""
           onSearch={handleSearch}
           onHome={() => navigate("home")}
+          onNav={navigate}
         />
         <NotFoundPage
           onSearch={handleSearch}
@@ -490,15 +493,14 @@ export default function App() {
     return (
       <>
         {maintenance.enabled ? (
-          <MaintenanceBlogNav
-            onBack={() => navigate("home")}
-          />
+          <MaintenanceBlogNav onBack={() => navigate("home")} />
         ) : (
           <Navbar
             currentPage="blog"
             currentQuery=""
             onSearch={handleSearch}
             onHome={() => navigate("home")}
+            onNav={navigate}
           />
         )}
         <BlogPage
@@ -521,15 +523,14 @@ export default function App() {
     return (
       <>
         {maintenance.enabled ? (
-          <MaintenanceBlogNav
-            onBack={() => navigate("blog")}
-          />
+          <MaintenanceBlogNav onBack={() => navigate("blog")} />
         ) : (
           <Navbar
             currentPage="blog"
             currentQuery=""
             onSearch={handleSearch}
             onHome={() => navigate("home")}
+            onNav={navigate}
           />
         )}
         <BlogPostPage
@@ -571,6 +572,7 @@ export default function App() {
           currentQuery=""
           onSearch={handleSearch}
           onHome={() => navigate("home")}
+          onNav={navigate}
         />
         {staticPages[path]}
         <Footer
@@ -589,6 +591,7 @@ export default function App() {
         currentQuery={params.q || activeSeoMeta?.query || ""}
         onSearch={handleSearch}
         onHome={() => navigate("home")}
+        onNav={navigate}
       />
 
       {/* SEO landing page banner — visible when arriving from Google */}
@@ -645,6 +648,13 @@ export default function App() {
           onSearch={handleSearch}
           onViewProduct={handleViewProduct}
           onNav={navigate}
+        />
+      )}
+
+      {path === "top-lists" && (
+        <TopListsPage
+          onSearch={handleSearch}
+          onViewProduct={handleViewProduct}
         />
       )}
 
