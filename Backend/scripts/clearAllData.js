@@ -143,6 +143,53 @@ async function clearPrisma() {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// 4. TYPESENSE — drop and recreate products + search_queries collections
+// ─────────────────────────────────────────────────────────────────
+async function clearTypesense() {
+  const apiKey = process.env.TYPESENSE_API_KEY;
+  if (!apiKey) {
+    console.log(yellow("  Typesense: TYPESENSE_API_KEY not set — skipping"));
+    return;
+  }
+
+  let Typesense;
+  try {
+    Typesense = require("typesense");
+  } catch {
+    console.log(yellow("  Typesense: package not installed — skipping"));
+    return;
+  }
+
+  const host = process.env.TYPESENSE_HOST || "localhost";
+  const port = parseInt(process.env.TYPESENSE_PORT || "8108", 10);
+  const protocol = process.env.TYPESENSE_PROTOCOL || "http";
+
+  const client = new Typesense.Client({
+    nodes: [{ host, port, protocol }],
+    apiKey,
+    connectionTimeoutSeconds: 5,
+    numRetries: 1,
+  });
+
+  for (const col of ["products", "search_queries"]) {
+    try {
+      const info = await client.collections(col).retrieve();
+      console.log(`  Typesense "${col}": ${bold(info.num_documents)} documents`);
+      if (!DRY_RUN) {
+        await client.collections(col).delete();
+        console.log(green(`  Typesense "${col}": dropped ✓`));
+      }
+    } catch (err) {
+      if (err.httpStatus === 404) {
+        console.log(`  Typesense "${col}": does not exist (skipping)`);
+      } else {
+        console.log(red(`  Typesense "${col}": error — ${err.message}`));
+      }
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────────
 async function main() {
@@ -186,6 +233,14 @@ async function main() {
     await clearPrisma();
   } catch (err) {
     console.log(red(`  Prisma: FAILED — ${err.message}`));
+  }
+
+  // ── Typesense ──
+  console.log(bold("\n4. Typesense"));
+  try {
+    await clearTypesense();
+  } catch (err) {
+    console.log(red(`  Typesense: FAILED — ${err.message}`));
   }
 
   console.log(bold("\n────────────────────────────────────────────────"));

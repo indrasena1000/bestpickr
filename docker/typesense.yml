@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  typesense:
+    image: typesense/typesense:27.1
+    container_name: bestpickr_typesense
+    restart: unless-stopped
+    ports:
+      - "8108:8108"
+    volumes:
+      - typesense_data:/data
+    environment:
+      TYPESENSE_DATA_DIR: /data
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:-bestpickr-typesense-key}
+      TYPESENSE_ENABLE_CORS: "true"
+      # Increase memory headroom for 100k+ product index
+      TYPESENSE_MEMORY_LIMIT_MB: 256
+    command: >
+      --data-dir /data
+      --api-key=${TYPESENSE_API_KEY:-bestpickr-typesense-key}
+      --enable-cors
+      --log-dir /data/logs
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8108/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  typesense_data:
+    driver: local

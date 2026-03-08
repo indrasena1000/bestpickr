@@ -14,6 +14,7 @@ import ProductGrid from "../components/ProductGrid.jsx";
 import DidYouMeanBanner from "../components/DidYouMeanBanner.jsx";
 import FallbackView from "../components/FallbackView.jsx";
 import RefineSearchBanner from "../components/RefineSearchBanner.jsx";
+import BestPick from "../components/BestPick.jsx";
 
 const RANK_CLASS = ["", "g", "s", "b", "n", "n", "n", "n", "n", "n", "n"];
 const fmt = (n) => (n ? `₹${Number(n).toLocaleString("en-IN")}` : "—");
@@ -443,6 +444,7 @@ export default function ResultsPage({
     primaryProduct,
     suggestions,
     status,
+    source,
     matchType,
     wasSpellingCorrected,
     correctedQuery,
@@ -830,10 +832,34 @@ export default function ResultsPage({
             </div>
           )}
 
+          {/* PATH TS — TYPESENSE: Best Pick + Alternatives layout */}
+          {!loading &&
+            !error &&
+            source === "typesense" &&
+            (primaryProduct || (suggestions && suggestions.length > 0)) && (
+              <BestPick
+                primaryProduct={primaryProduct}
+                suggestions={suggestions || []}
+                query={query}
+                source={source}
+                onBuy={(p) => {
+                  const url = p.bestDeal?.url || p.affiliateUrl;
+                  if (url) window.open(url, "_blank");
+                }}
+                onDetails={(asin) => {
+                  const p = [primaryProduct, ...(suggestions || [])].find(
+                    (x) => x?.asin === asin,
+                  );
+                  if (p) onViewProduct(p, suggestions || []);
+                }}
+              />
+            )}
+
           {/* PATH A — PRODUCT_SPECIFIC: primary card + alternatives grid */}
           {/* Also renders during lazy_pending: skeleton primary + instant suggestions */}
           {!loading &&
             !error &&
+            source !== "typesense" &&
             (intent === "PRODUCT_SPECIFIC" || status === "lazy_pending") && (
               <>
                 {/* Spelling correction banner */}
@@ -1006,11 +1032,13 @@ export default function ResultsPage({
                   Showing results for <strong>{correctedQuery}</strong>
                 </div>
               )}
+              {wasSpellingCorrected && (primaryProduct || suggestions?.[0]) && (
               <DidYouMeanBanner
                 product={primaryProduct || suggestions?.[0]}
                 confidence={confidence}
                 onConfirm={(p) => onViewProduct(p, suggestions || [])}
               />
+              )}
               {suggestions && suggestions.length > 0 ? (
                 <ResultCardList
                   title="You might be looking for…"

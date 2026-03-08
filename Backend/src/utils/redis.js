@@ -161,6 +161,12 @@ async function cacheResults(query, category, results) {
     return
   }
 
+  // Never cache empty result sets — a future request should retry the real pipeline
+  if (!results || results.length === 0) {
+    logger.warn(`Redis: skipping SET for "${query}" — 0 results, not caching empty response`)
+    return
+  }
+
   const key = buildSearchKey(query, category)
 
   try {

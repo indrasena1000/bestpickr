@@ -90,6 +90,7 @@ const {
   weightedSearch,
   CONFIDENCE,
 } = require("../services/productMatchService");
+const typesense = require("../services/typesenseService");
 
 // ── Config
 const CACHE_TTL_MS = (parseInt(process.env.CACHE_TTL_SECONDS) || 21600) * 1000; // 6h in ms
@@ -399,15 +400,22 @@ const PRODUCT_SYNONYM_MAP = {
   ironing: ["iron", "ironing", "steam"],
   vacuum: ["vacuum", "robovac", "robot cleaner"],
   microwave: ["microwave"],
+  oven: ["oven", "microwave"],
+  ovens: ["oven", "microwave"],
+  microwaves: ["microwave", "oven"],
   television: ["television", "tv", "smart tv", "qled", "oled"],
   tv: ["tv", "television", "smart tv", "qled", "oled"],
   fryer: ["fryer", "air fryer"],
+  fryers: ["fryer", "air fryer"],
   airfryer: ["airfryer", "air fryer"],
   cooker: ["cooker", "pressure cooker", "rice cooker"],
+  cookers: ["cooker", "pressure cooker", "rice cooker"],
   trimmer: ["trimmer", "shaver"],
   shaver: ["shaver", "trimmer", "razor"],
   juicer: ["juicer", "mixer", "blender"],
+  juicers: ["juicer", "mixer", "blender"],
   blender: ["blender", "mixer", "juicer"],
+  blenders: ["blender", "mixer", "juicer"],
 };
 
 /**
@@ -1029,6 +1037,11 @@ async function enrichProduct(amazonProduct, category) {
       `source=${isMock ? "mock" : "live"}`,
   );
 
+  // ── Index into Typesense (non-blocking) ──────────────────────
+  // This populates the Typesense index so future searches for this
+  // product category are served by Typesense (no Amazon API cost).
+  typesense.indexProduct(formatted).catch(() => {});
+
   return formatted;
 }
 
@@ -1511,6 +1524,13 @@ async function serveFromTop50(intent, query) {
           logger.info(
             `🔍 Top50: sub-type filter "${subType}" → ${pool.length} products`,
           );
+        } else if (filtered.length === 0) {
+          // Broad pool has zero products matching this subtype (e.g., no ovens in appliances pool).
+          // Return null to force an Amazon fetch instead of serving irrelevant products.
+          logger.info(
+            `🔍 Top50: sub-type filter "${subType}" → 0 matches in broad pool — triggering Amazon fetch`,
+          );
+          return null;
         }
       }
     }
@@ -2357,8 +2377,98 @@ async function serveProductSpecific(
     }
   }
 
+  // ── PATH A.3: Typesense lookup ─────────────────────────────────
+  // Product not in Redis top50 name-match — check Typesense before PostgreSQL.
+  // Typesense has typo tolerance + synonym expansion, so "sony wh1000xm5" finds
+  // "Sony WH-1000XM5" even with missing hyphens. PostgreSQL needs exact tokens.
+  // Cost: 0 Amazon calls, 0 GPT calls, ~10ms.
+  console.log(`[PATH A.3] Checking Typesense...`);
+  try {
+    const tsProductResults = await typesense.searchProducts(query, {
+      category: cat || undefined,
+      brand: intent.brand || undefined,
+      limit: MAX_RESPONSE_RESULTS,
+    });
+    if (tsProductResults && tsProductResults.length > 0) {
+      const tsFiltered = filterByQueryRelevance(tsProductResults, query);
+      if (tsFiltered.length > 0) {
+        console.log(`[PATH A.3] ✅ Typesense HIT — ${tsFiltered.length} results`);
+        logger.info(
+          `🔍 ProductSpecific: Typesense hit — "${tsFiltered[0].title?.slice(0, 50)}" for "${query}" (0 API calls)`,
+        );
+
+        const tsMapped = await Promise.all(
+          tsFiltered.map(async (doc, idx) => {
+            try {
+              const cached = await getProductCache(doc.id).catch(() => null);
+              if (cached) return { ...cached, rank: idx + 1 };
+            } catch (_) {}
+            const plats = [];
+            if (doc.price > 0) plats.push({ name: "Amazon", price: doc.price, url: doc.affiliateUrl || null, affiliateUrl: doc.affiliateUrl || null, rating: doc.rating || null, reviewCount: doc.reviewCount || 0, inStock: doc.inStock !== false });
+            if (doc.flipkartPrice > 0) plats.push({ name: "Flipkart", price: doc.flipkartPrice, url: doc.flipkartUrl || null, affiliateUrl: doc.flipkartUrl || null, inStock: true });
+            return {
+              rank: idx + 1, asin: doc.id, platformId: doc.id,
+              name: doc.title, brand: doc.brand || null, imageUrl: doc.image || null,
+              category: doc.category || cat || null, aiScore: doc.aiScore || null,
+              platforms: plats,
+              lowestPrice: doc.price > 0 ? doc.price : null,
+              highestPrice: doc.price > 0 ? doc.price : null,
+              totalReviews: doc.reviewCount || 0,
+              avgRating: doc.rating > 0 ? doc.rating : null,
+              positivePct: doc.rating ? Math.round(Math.max(50, Math.min(95, ((doc.rating - 1) / 4) * 90 + 10))) : null,
+              bestDeal: doc.price > 0 ? { platform: "amazon", price: doc.price, url: doc.affiliateUrl } : null,
+              affiliateUrl: doc.affiliateUrl || null,
+              source: "typesense",
+            };
+          }),
+        );
+        const tsValid = tsMapped.filter(Boolean);
+        if (tsValid.length > 0) {
+          const primaryProduct = tsValid[0];
+          const suggestions = tsValid.slice(1);
+
+          // Fill remaining suggestion slots from Redis pool
+          if (suggestions.length < MAX_RESPONSE_RESULTS - 1 && top50Pool && top50Pool.length > 0) {
+            const tsIds = new Set(tsValid.map((p) => p.asin).filter(Boolean));
+            const poolFill = top50Pool
+              .filter((p) => !tsIds.has(p.id))
+              .sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0))
+              .slice(0, MAX_RESPONSE_RESULTS - tsValid.length)
+              .map((p, i) => formatTop50AsResult(p, tsValid.length + i + 1));
+            tsValid.push(...poolFill);
+          }
+
+          const allResults = [primaryProduct, ...tsValid.slice(1)];
+          cacheResults(query, cat, allResults).catch(() => {});
+          saveToMongoCache(query, normalizedQuery, cat, allResults.map((r) => r.asin).filter(Boolean)).catch(() => {});
+
+          req._searchLog.outcome = "typesense_product";
+          req._searchLog.resultCount = allResults.length;
+          return res.json({
+            success: true,
+            query: rawQuery,
+            normalized: normalizedQuery,
+            category: cat || null,
+            intent: "PRODUCT_SPECIFIC",
+            primaryProduct,
+            totalResults: allResults.length,
+            cached: false,
+            source: "typesense",
+            lastUpdated: new Date().toISOString(),
+            elapsed_ms: Date.now() - requestStart,
+            results: allResults,
+            suggestions: suggestions.slice(0, MAX_RESPONSE_RESULTS - 1),
+          });
+        }
+      }
+    }
+    console.log(`[PATH A.3] Typesense MISS — falling to Postgres`);
+  } catch (tsProductErr) {
+    logger.warn(`🔍 ProductSpecific: Typesense failed — ${tsProductErr.message} — falling through`);
+  }
+
   // ── PATH A.5: PostgreSQL DB lookup ─────────────────────────────
-  // Product not in Redis top50 — check our DB before hitting Amazon.
+  // Product not in Redis top50 or Typesense — check our DB before hitting Amazon.
   // Works even with no category/brand (falls back to cleanQuery word match).
   // Cost: 0 Amazon calls, 0 GPT calls.
   console.log(`[PATH A.5] Checking Postgres DB (weightedSearch)...`);
@@ -3069,28 +3179,78 @@ async function handleSearch(req, res) {
         }
       }
 
+      // ── Typesense first: relevance-ranked before broad top50 pool ──────
+      // Without this, "ovens" → top50:appliances → returns kitchen cleaners.
+      // Typesense searches by title/category so only actual ovens come back.
+      if (!intent.brand) {
+        try {
+          const tsResults = await typesense.searchProducts(query, {
+            category: effectiveCategory || undefined,
+            limit: MAX_RESPONSE_RESULTS,
+          });
+          if (tsResults && tsResults.length > 0) {
+            const tsMapped = await Promise.all(
+              tsResults.map(async (doc, idx) => {
+                try { const c = await getProductCache(doc.id).catch(() => null); if (c) return { ...c, rank: idx + 1 }; } catch (_) {}
+                const plats = [];
+                if (doc.price > 0) plats.push({ name: 'Amazon', price: doc.price, url: doc.affiliateUrl || null, affiliateUrl: doc.affiliateUrl || null, inStock: doc.inStock !== false });
+                if (doc.flipkartPrice > 0) plats.push({ name: 'Flipkart', price: doc.flipkartPrice, url: doc.flipkartUrl || null, affiliateUrl: doc.flipkartUrl || null, inStock: true });
+                return { rank: idx + 1, asin: doc.id, platformId: doc.id, name: doc.title, brand: doc.brand || null, imageUrl: doc.image || null, category: doc.category || effectiveCategory, aiScore: doc.aiScore || null, platforms: plats, lowestPrice: doc.price > 0 ? doc.price : null, highestPrice: doc.price > 0 ? doc.price : null, totalReviews: doc.reviewCount || 0, avgRating: doc.rating > 0 ? doc.rating : null, positivePct: doc.rating ? Math.round(Math.max(50, Math.min(95, ((doc.rating - 1) / 4) * 90 + 10))) : null, bestDeal: doc.price > 0 ? { platform: 'amazon', price: doc.price, url: doc.affiliateUrl } : null, affiliateUrl: doc.affiliateUrl || null, source: 'typesense' };
+              }),
+            );
+            const tsValidRaw = tsMapped.filter(Boolean);
+            const tsValid = filterByQueryRelevance(tsValidRaw, query);
+            if (tsValid.length > 0) {
+              cacheResults(query, effectiveCategory, tsValid).catch(() => {});
+              req._searchLog.outcome = 'typesense_hit';
+              req._searchLog.resultCount = tsValid.length;
+              logger.info(`🔍 Typesense (category): ${tsValid.length} results for "${query}"`);
+              return res.json({ success: true, query: rawQuery, normalized: normalizedQuery, category: effectiveCategory || null, intent: intent.intent, totalResults: tsValid.length, cached: false, source: 'typesense', lastUpdated: new Date().toISOString(), elapsed_ms: Date.now() - requestStart, results: tsValid, suggestions: tsValid.slice(1), primaryProduct: tsValid[0] });
+            }
+          }
+        } catch (tsCatErr) {
+          logger.warn(`🔍 Typesense (category): ${tsCatErr.message} — falling through`);
+        }
+      }
+
       // ── Serve from Redis (sub-type pool → category pool → brand blend) ──
       const top50Results = await serveFromTop50(intent, query);
       if (top50Results && top50Results.length > 0) {
         const filtered = filterByQueryRelevance(top50Results, query);
-        const final = filtered.length >= 3 ? filtered : top50Results;
-        cacheResults(query, effectiveCategory, final).catch(() => {});
-        req._searchLog.outcome = "redis_top50";
-        req._searchLog.resultCount = final.length;
-        return res.json({
-          success: true,
-          query: rawQuery,
-          normalized: normalizedQuery,
-          category: effectiveCategory || null,
-          intent: intent.intent,
-          totalResults: final.length,
-          cached: false,
-          source: "redis_top50",
-          lastUpdated: new Date().toISOString(),
-          elapsed_ms: Date.now() - requestStart,
-          results: addRanks(final),
-          suggestions: addRanks(final),
-        });
+        // If a brand was requested, only return that brand's products.
+        // Without this, "Samsung tv" returns Onida (highest aiScore in pool).
+        let final;
+        if (intent.brand) {
+          const brandLower = intent.brand.toLowerCase();
+          const brandOnly = (filtered.length >= 3 ? filtered : top50Results)
+            .filter(p => p.brand && p.brand.toLowerCase().includes(brandLower));
+          final = brandOnly.length >= 1 ? brandOnly : null;
+          // No brand products in pool → fall through to serveBrandBlend (Amazon)
+          if (!final) {
+            logger.info(`🔍 Top50: brand "${intent.brand}" filtered out of results — triggering Amazon fetch`);
+          }
+        } else {
+          final = filtered.length >= 3 ? filtered : top50Results;
+        }
+        if (final && final.length > 0) {
+          cacheResults(query, effectiveCategory, final).catch(() => {});
+          req._searchLog.outcome = "redis_top50";
+          req._searchLog.resultCount = final.length;
+          return res.json({
+            success: true,
+            query: rawQuery,
+            normalized: normalizedQuery,
+            category: effectiveCategory || null,
+            intent: intent.intent,
+            totalResults: final.length,
+            cached: false,
+            source: "redis_top50",
+            lastUpdated: new Date().toISOString(),
+            elapsed_ms: Date.now() - requestStart,
+            results: addRanks(final),
+            suggestions: addRanks(final),
+          });
+        }
       }
 
       // ── Brand not in pool → targeted Amazon fetch + sub-type blend (1 call) ──
@@ -3149,9 +3309,33 @@ async function handleSearch(req, res) {
               `🔍 Intent: Postgres category fallback — ${dbCatResult.products.length} "${effectiveCategory}" products ` +
                 `(conf=${dbCatResult.confidence})`,
             );
-            const dbProducts = dbCatResult.products
+            let dbProducts = dbCatResult.products
               .map(postgresProductToTop50Shape)
               .map((p, i) => formatTop50AsResult(p, i + 1));
+
+            // If a subType is set (e.g. 'microwave' for "ovens"), filter DB results.
+            // Without this, Postgres returns all 'appliances' including power strips.
+            if (intent.subType) {
+              const stKeywords = SUBTYPE_FILTER_KEYWORDS[intent.subType] || [];
+              if (stKeywords.length > 0) {
+                const stFiltered = dbProducts.filter(p => {
+                  const text = `${p.name || ""} ${p.brand || ""}`.toLowerCase();
+                  return stKeywords.some(kw => text.includes(kw));
+                });
+                if (stFiltered.length === 0) {
+                  logger.info(
+                    `🔍 Intent: Postgres has 0 "${intent.subType}" products in "${effectiveCategory}" — falling to Amazon`,
+                  );
+                  // Skip this response entirely — let Amazon fetch real products
+                  throw new Error("subtype_filter_empty");
+                }
+                dbProducts = stFiltered;
+                logger.info(
+                  `🔍 Intent: Postgres subType filter "${intent.subType}" → ${dbProducts.length} products`,
+                );
+              }
+            }
+
             cacheResults(query, effectiveCategory, dbProducts).catch(() => {});
             req._searchLog.outcome = "postgres_category";
             req._searchLog.resultCount = dbProducts.length;
@@ -3171,9 +3355,11 @@ async function handleSearch(req, res) {
             });
           }
         } catch (dbCatErr) {
-          logger.warn(
-            `🔍 Intent: Postgres category fallback failed — ${dbCatErr.message}`,
-          );
+          if (dbCatErr.message !== "subtype_filter_empty") {
+            logger.warn(
+              `🔍 Intent: Postgres category fallback failed — ${dbCatErr.message}`,
+            );
+          }
         }
       }
 
@@ -3195,7 +3381,58 @@ async function handleSearch(req, res) {
       if (productResponse) return productResponse; // response already sent
       // Amazon failed — fall through to mock/error handling below
     } else {
-      // GENERIC / LOW_CONFIDENCE / FALLBACK — try keyword filter on top50
+      // GENERIC / LOW_CONFIDENCE / FALLBACK
+      // ── Try Typesense FIRST — relevance-ranked search beats broad top50 pool ──
+      // "air fryer" in appliances top50 returns kitchen cleaners; Typesense returns air fryers.
+      try {
+        const tsEarlyResults = await typesense.searchProducts(query, {
+          category: effectiveCategory || undefined,
+          limit: MAX_RESPONSE_RESULTS,
+        });
+        if (tsEarlyResults && tsEarlyResults.length > 0) {
+          const tsMapped = await Promise.all(
+            tsEarlyResults.map(async (doc, idx) => {
+              try {
+                const cached = await getProductCache(doc.id).catch(() => null);
+                if (cached) return { ...cached, rank: idx + 1 };
+              } catch (_) {}
+              const plats = [];
+              if (doc.price > 0) plats.push({ name: "Amazon", price: doc.price, url: doc.affiliateUrl || null, affiliateUrl: doc.affiliateUrl || null, inStock: doc.inStock !== false });
+              if (doc.flipkartPrice > 0) plats.push({ name: "Flipkart", price: doc.flipkartPrice, url: doc.flipkartUrl || null, affiliateUrl: doc.flipkartUrl || null, inStock: true });
+              return {
+                rank: idx + 1, asin: doc.id, platformId: doc.id,
+                name: doc.title, brand: doc.brand || null, imageUrl: doc.image || null,
+                category: doc.category || null, aiScore: doc.aiScore || null,
+                platforms: plats, lowestPrice: doc.price > 0 ? doc.price : null,
+                highestPrice: doc.price > 0 ? doc.price : null,
+                totalReviews: doc.reviewCount || 0, avgRating: doc.rating > 0 ? doc.rating : null,
+                positivePct: doc.rating ? Math.round(Math.max(50, Math.min(95, ((doc.rating - 1) / 4) * 90 + 10))) : null,
+                bestDeal: doc.price > 0 ? { platform: "amazon", price: doc.price, url: doc.affiliateUrl } : null,
+                affiliateUrl: doc.affiliateUrl || null, source: "typesense",
+              };
+            }),
+          );
+          const tsValidRaw2 = tsMapped.filter(Boolean);
+          const tsValid = filterByQueryRelevance(tsValidRaw2, query);
+          if (tsValid.length > 0) {
+            cacheResults(query, effectiveCategory, tsValid).catch(() => {});
+            req._searchLog.outcome = "typesense_hit";
+            req._searchLog.resultCount = tsValid.length;
+            logger.info(`🔍 Typesense (low-confidence): ${tsValid.length} results for "${query}"`);
+            return res.json({
+              success: true, query: rawQuery, normalized: normalizedQuery,
+              category: effectiveCategory || null, intent: intent.intent,
+              totalResults: tsValid.length, cached: false, source: "typesense",
+              lastUpdated: new Date().toISOString(), elapsed_ms: Date.now() - requestStart,
+              results: tsValid, suggestions: tsValid.slice(1), primaryProduct: tsValid[0],
+            });
+          }
+        }
+      } catch (tsEarlyErr) {
+        logger.warn(`🔍 Typesense (low-confidence): ${tsEarlyErr.message} — falling through`);
+      }
+
+      // ── Typesense empty/unavailable — fall back to keyword filter on top50 ──
       const genericResults = await serveGeneric(intent, query);
       if (genericResults && genericResults.length > 0) {
         cacheResults(query, category, genericResults).catch(() => {});
@@ -3338,6 +3575,127 @@ async function handleSearch(req, res) {
     logger.warn(
       `🔍 Intent routing error — ${intentErr.message} — falling through to Amazon`,
     );
+  }
+
+  // ── STEP 3.8: Typesense intelligent search ───────────────────────────────
+  // Tries Typesense BEFORE hitting the expensive Amazon PA-API.
+  // Typesense is populated from past Amazon fetches — first search for a category
+  // still goes to Amazon, subsequent searches are instant and relevance-ranked.
+  //
+  // Advantages over Redis top50:
+  //   - Typo tolerance: "smrt watch" → smartwatch
+  //   - Semantic synonyms: "fitness band" → smartwatch products
+  //   - Facet filtering: brand, category, price range
+  //   - Relevance ranking: exact title match scores highest
+  //   - No manual keyword mapping needed
+  {
+    try {
+      const tsResults = await typesense.searchProducts(query, {
+        category: effectiveCategory || undefined,
+        brand: detectedIntent?.brand || undefined,
+        priceMin: detectedIntent?.price_min || undefined,
+        priceMax: detectedIntent?.price_max || undefined,
+        limit: MAX_RESPONSE_RESULTS,
+      });
+
+      if (tsResults && tsResults.length > 0) {
+        // Map Typesense documents back to the full bestpickr response shape.
+        // Typesense docs are stored with id=ASIN — look up full cached products
+        // from Redis product cache; fall back to minimal shape from Typesense doc.
+        const mappedProducts = await Promise.all(
+          tsResults.map(async (doc, idx) => {
+            try {
+              const cached = await getProductCache(doc.id).catch(() => null);
+              if (cached) return { ...cached, rank: idx + 1 };
+            } catch (_) {}
+            // Minimal shape from Typesense document (no full analysis)
+            const platforms = [];
+            if (doc.price && doc.price > 0) {
+              platforms.push({
+                name: "Amazon",
+                price: doc.price,
+                url: doc.affiliateUrl || null,
+                affiliateUrl: doc.affiliateUrl || null,
+                rating: doc.rating || null,
+                reviewCount: doc.reviewCount || 0,
+                inStock: doc.inStock !== false,
+              });
+            }
+            if (doc.flipkartPrice && doc.flipkartPrice > 0) {
+              platforms.push({
+                name: "Flipkart",
+                price: doc.flipkartPrice,
+                url: doc.flipkartUrl || null,
+                affiliateUrl: doc.flipkartUrl || null,
+                rating: doc.rating || null,
+                reviewCount: 0,
+                inStock: true,
+              });
+            }
+            return {
+              rank: idx + 1,
+              asin: doc.id,
+              platformId: doc.id,
+              name: doc.title,
+              brand: doc.brand || null,
+              imageUrl: doc.image || null,
+              category: doc.category || null,
+              aiScore: doc.aiScore || null,
+              platforms,
+              lowestPrice: doc.price > 0 ? doc.price : null,
+              highestPrice: doc.price > 0 ? doc.price : null,
+              totalReviews: doc.reviewCount || 0,
+              avgRating: doc.rating > 0 ? doc.rating : null,
+              positivePct: doc.rating
+                ? Math.round(Math.max(50, Math.min(95, ((doc.rating - 1) / 4) * 90 + 10)))
+                : null,
+              bestDeal:
+                doc.price > 0
+                  ? { platform: "amazon", price: doc.price, url: doc.affiliateUrl }
+                  : null,
+              affiliateUrl: doc.affiliateUrl || null,
+              source: "typesense",
+            };
+          }),
+        );
+
+        const validProductsRaw = mappedProducts.filter(Boolean);
+        const validProducts = filterByQueryRelevance(validProductsRaw, query);
+
+        if (validProducts.length > 0) {
+          const primaryProduct = validProducts[0];
+          const suggestions = validProducts.slice(1);
+
+          logger.info(
+            `🔍 Typesense: serving ${validProducts.length} results for "${query}" ` +
+              `— top: "${primaryProduct.name?.slice(0, 50)}"`,
+          );
+
+          // Cache in Redis for next time (non-blocking)
+          cacheResults(query, effectiveCategory, validProducts).catch(() => {});
+
+          req._searchLog.outcome = "typesense_hit";
+          return res.json({
+            success: true,
+            query: rawQuery,
+            normalized: normalizedQuery,
+            category: effectiveCategory || null,
+            intent: detectedIntent?.intent || "GENERIC",
+            totalResults: validProducts.length,
+            cached: false,
+            source: "typesense",
+            lastUpdated: new Date().toISOString(),
+            elapsed_ms: Date.now() - requestStart,
+            results: validProducts,
+            suggestions,
+            primaryProduct,
+          });
+        }
+      }
+    } catch (tsErr) {
+      // Non-fatal — fall through to Amazon
+      logger.warn(`🔍 Typesense: search error — ${tsErr.message} — falling through to Amazon`);
+    }
   }
 
   // ── STEP 4: Cache MISS — Fetch from Amazon PA-API (or mock fallback) ──
@@ -3682,6 +4040,8 @@ function trackMiss(query) {
   redis.zincrby(key, 1, term).catch(() => {});
   // Trim to top 500 so the set stays bounded
   redis.zremrangebyrank(key, 0, -501).catch(() => {});
+  // Also track in Typesense miss analytics (30-day window)
+  typesense.trackMiss(query, redis);
 }
 
 // GET /api/search/misses?limit=20
@@ -3714,23 +4074,33 @@ async function handleMisses(req, res) {
 function trackTrending(query) {
   const redis = getRedis();
   if (!redis || redis.status !== "ready") return;
+  // Track in existing key (backward compat)
   const key = "bestpickr:trending";
   const term = query.toLowerCase().slice(0, 80);
   redis.zincrby(key, 1, term).catch(() => {});
-  // Trim to top 200 so the set stays bounded
   redis.zremrangebyrank(key, 0, -201).catch(() => {});
+  // Also track in Typesense analytics sorted set (enriched with 7-day TTL)
+  typesense.trackSearch(query, redis);
 }
 
 // GET /api/search/trending
-// Returns top 8 trending queries from Redis sorted set (no rate limit — very cheap)
+// Returns top 8 trending queries — combines Typesense analytics and legacy Redis key.
 async function handleTrending(req, res) {
   const redis = getRedis();
+
+  // Typesense analytics key (7-day window, richer)
+  const tsItems = await typesense.getTrending(redis, 8).catch(() => []);
+  if (tsItems.length > 0) {
+    return res.json({ trending: tsItems });
+  }
+
+  // Fall back to legacy key
   if (!redis || redis.status !== "ready") {
     return res.json({ trending: [] });
   }
   try {
     const items = await redis.zrevrange("bestpickr:trending", 0, 7);
-    return res.json({ trending: items });
+    return res.json({ trending: items || [] });
   } catch (_) {
     return res.json({ trending: [] });
   }
@@ -3748,8 +4118,15 @@ async function handleSuggestions(req, res) {
     return res.json({ suggestions: [] });
   }
 
-  // Try to serve from MongoDB SearchCache first (real search history)
-  let suggestions = [];
+  // ── Tier 1: Typesense autocomplete (prefix + typo-tolerant) ──
+  // Returns actual product title suggestions from the indexed collection.
+  const tsSuggestions = await typesense.getSuggestions(q, 6).catch(() => []);
+  if (tsSuggestions.length >= 3) {
+    return res.json({ suggestions: tsSuggestions });
+  }
+
+  // ── Tier 2: MongoDB SearchCache (real past queries) ────────────
+  let suggestions = [...tsSuggestions]; // may have 1-2 Typesense results
   try {
     if (mongoose.connection.readyState === 1) {
       const recentSearches = await SearchCache.find({
@@ -3761,14 +4138,19 @@ async function handleSuggestions(req, res) {
         .lean()
         .exec();
 
-      suggestions = recentSearches.map((s) => s.query).filter(Boolean);
+      const mongoSuggs = recentSearches.map((s) => s.query).filter(Boolean);
+      // Merge, dedupe
+      for (const s of mongoSuggs) {
+        if (!suggestions.includes(s)) suggestions.push(s);
+        if (suggestions.length >= 6) break;
+      }
     }
   } catch (err) {
     logger.warn(`🔍 Suggestions: MongoDB query failed — ${err.message}`);
   }
 
-  // Fall back to static list if MongoDB returned nothing
-  if (suggestions.length === 0) {
+  // ── Tier 3: Static fallback ────────────────────────────────────
+  if (suggestions.length < 3) {
     const STATIC_SUGGESTIONS = [
       "Sony WH-1000XM5 headphones",
       "iPhone 15 Pro",
@@ -3792,9 +4174,13 @@ async function handleSuggestions(req, res) {
       "Kindle Paperwhite",
     ];
 
-    suggestions = STATIC_SUGGESTIONS.filter((s) =>
+    const staticFiltered = STATIC_SUGGESTIONS.filter((s) =>
       s.toLowerCase().includes(q),
-    ).slice(0, 6);
+    );
+    for (const s of staticFiltered) {
+      if (!suggestions.includes(s)) suggestions.push(s);
+      if (suggestions.length >= 6) break;
+    }
   }
 
   return res.json({ suggestions: suggestions.slice(0, 6) });

@@ -57,8 +57,76 @@ function classifyIntent(rawQuery, categoryHint = '') {
   const attrs = extractAttributes(rawQuery)
 
   // Override category from hint if provided
-  const category = categoryHint || attrs.category
-  const { brand, model, capacity, rating, features,
+  // ── Brand → default category (for brand-only queries) ──────────
+  // When a user types just a brand name with no category keyword
+  // (e.g. "samsung", "apple", "boat"), we infer the most-searched
+  // category for that brand rather than returning a random mixed result.
+  // Only applied when attrs.category is null — explicit keywords always win.
+  const BRAND_DEFAULT_CATEGORY = {
+    // Mobile-first brands
+    samsung:    'mobile',   // samsung → phones (TVs/appliances need explicit keyword)
+    apple:      'mobile',   // apple → iPhones
+    oneplus:    'mobile',
+    redmi:      'mobile',
+    xiaomi:     'mobile',
+    realme:     'mobile',
+    vivo:       'mobile',
+    oppo:       'mobile',
+    poco:       'mobile',
+    iqoo:       'mobile',
+    motorola:   'mobile',
+    moto:       'mobile',
+    nokia:      'mobile',
+    google:     'mobile',   // google → pixel phones
+    nothing:    'mobile',   // nothing phone
+    // Laptop-first brands
+    dell:       'laptop',
+    hp:         'laptop',
+    lenovo:     'laptop',
+    asus:       'laptop',
+    acer:       'laptop',
+    msi:        'laptop',
+    // Audio-first brands
+    boat:       'headphones',
+    bose:       'headphones',
+    sony:       'headphones', // sony headphones >> sony TVs in search volume
+    jbl:        'headphones',
+    sennheiser: 'headphones',
+    skullcandy: 'headphones',
+    jabra:      'headphones',
+    anker:      'headphones',
+    ptron:      'headphones',
+    noise:      'headphones', // noise buds
+    // TV-first brands
+    lg:         'televisions', // LG → TVs more than appliances
+    tcl:        'televisions',
+    hisense:    'televisions',
+    vu:         'televisions',
+    // Smartwatch-first brands
+    fitbit:     'smartwatch',
+    garmin:     'smartwatch',
+    fossil:     'smartwatch',
+    // Camera-first brands
+    canon:      'camera',
+    nikon:      'camera',
+    fujifilm:   'camera',
+    gopro:      'camera',
+    // Footwear-first brands
+    nike:       'footwear',
+    adidas:     'footwear',
+    puma:       'footwear',
+    reebok:     'footwear',
+    skechers:   'footwear',
+    crocs:      'footwear',
+  }
+
+  const brand    = attrs.brand
+  const rawCat   = categoryHint || attrs.category
+  // Apply brand default ONLY when no category keyword was detected
+  const category = rawCat || (brand ? (BRAND_DEFAULT_CATEGORY[brand.toLowerCase()] || null) : null)
+  const _usedBrandDefault = !rawCat && !!category && category !== rawCat
+
+  const { model, capacity, rating, features,
           price_min, price_max, cleanQuery, subType,
           correctedQuery, wasSpellingCorrected } = attrs
 
@@ -91,7 +159,7 @@ function classifyIntent(rawQuery, categoryHint = '') {
     intent     = INTENT.PRODUCT_SPECIFIC
     matchType  = MATCH_TYPE.BRAND_CAP_TYPE
   } else if (brand && category) {
-    // "Samsung phone" or "Sony headphones"
+    // "Samsung phone", "Sony headphones", or brand-only "samsung" with inferred default category
     confidence = 0.70
     intent     = INTENT.BRAND_CATEGORY
     matchType  = MATCH_TYPE.BRAND_CATEGORY
@@ -110,7 +178,7 @@ function classifyIntent(rawQuery, categoryHint = '') {
     matchType  = MATCH_TYPE.CATEGORY_ONLY
     if (hasPrice) confidence += 0.05
   } else if (brand) {
-    // Just a brand name: "Sony"
+    // Brand name with no detectable category at all
     confidence = 0.45
     intent     = INTENT.GENERIC
     matchType  = MATCH_TYPE.GENERIC
@@ -131,10 +199,10 @@ function classifyIntent(rawQuery, categoryHint = '') {
   return {
     intent,
     matchType,
-    category:    category || null,
-    subType:     subType  || null,
-    brand:       brand    || null,
-    model:       model    || null,
+    category:          category || null,
+    subType:           subType  || null,
+    brand:             brand    || null,
+    model:             model    || null,
     capacity,
     rating,
     price_min,
@@ -144,6 +212,7 @@ function classifyIntent(rawQuery, categoryHint = '') {
     cleanQuery,
     correctedQuery,
     wasSpellingCorrected,
+    usedBrandDefaultCategory: _usedBrandDefault,
   }
 }
 

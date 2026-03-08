@@ -26,7 +26,7 @@ const QUERY_TO_SLUG = {
   smartphones: ['phone', 'phones', 'mobile', 'smartphone', 'smartphones', 'iphone', 'android', 'samsung galaxy', 'oneplus', 'pixel', 'redmi', 'realme', 'vivo', 'oppo'],
   laptops:     ['laptop', 'laptops', 'macbook', 'notebook', 'chromebook', 'ultrabook'],
   appliances:  ['appliance', 'appliances', 'mixer', 'grinder', 'microwave', 'oven', 'toaster', 'blender', 'juicer', 'washing', 'fridge', 'refrigerator', 'ac ', 'air conditioner', 'iron', 'vacuum', 'purifier', 'geyser', 'heater', 'cooker', 'induction'],
-  gaming:      ['gaming', 'game', 'gamer', 'controller', 'gamepad', 'console', 'playstation', 'xbox', 'ps5', 'ps4', 'nintendo', 'keyboard', 'mouse', 'monitor', 'mousepad', 'rgb keyboard', 'rgb mouse', 'logitech', 'razer', 'corsair', 'steelseries', 'hyperx'],
+  gaming:      ['gaming', 'game', 'gamer', 'controller', 'gamepad', 'console', 'playstation', 'xbox', 'ps5', 'ps4', 'nintendo', 'keyboard', 'mouse', 'mousepad', 'rgb keyboard', 'rgb mouse', 'logitech', 'razer', 'corsair', 'steelseries', 'hyperx'],
   footwear:    ['footwear', 'shoe', 'shoes', 'sneaker', 'sneakers', 'sandal', 'slipper', 'boot', 'boots', 'running shoe', 'trainer', 'trainers', 'clogs', 'loafer', 'nike', 'adidas', 'puma', 'reebok', 'skechers', 'crocs'],
   skincare:    ['skincare', 'skin care', 'beauty', 'cosmetic', 'serum', 'sunscreen', 'moisturizer', 'moisturiser', 'cleanser', 'face wash', 'facewash', 'toner', 'spf', 'mamaearth', 'ordinary', 'minimalist'],
   fashion:     ['fashion', 'clothing', 'clothes', 'apparel', 'wear', 'shirt', 'tshirt', 't-shirt', 'jeans', 'kurta', 'dress', 'jacket', 'hoodie', 'trouser', 'saree', 'lehenga', 'kurti', 'salwar'],

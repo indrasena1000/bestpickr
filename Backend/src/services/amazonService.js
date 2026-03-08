@@ -508,6 +508,24 @@ async function searchProducts(query, category = "All", overrides = {}) {
         }
       }
 
+      // ── Index raw Amazon products into Typesense (non-blocking) ──
+      // This pre-populates the Typesense index with category + brand so
+      // the next search for the same category returns instantly via Typesense.
+      if (results.length > 0) {
+        setImmediate(() => {
+          try {
+            const typesense = require("./typesenseService");
+            // Attach detected category for better Typesense indexing
+            const withCategory = results.map((r) => ({
+              ...r,
+              category: r.category || category || null,
+              asin: r.asin || r.platformId,
+            }));
+            typesense.indexBatch(withCategory).catch(() => {});
+          } catch (_) {}
+        });
+      }
+
       return results;
     } catch (err) {
       const status = err.response?.status;
@@ -522,7 +540,24 @@ async function searchProducts(query, category = "All", overrides = {}) {
   // Path 2: PA-API v5 (SigV4) — legacy fallback when AMAZON_ACCESS_KEY is set
   if (AMAZON_ACCESS_KEY && AMAZON_SECRET_KEY) {
     try {
-      return await searchViaPaApi(query, category, overrides);
+      const results = await searchViaPaApi(query, category, overrides);
+
+      // ── Index PA-API products into Typesense (non-blocking) ──
+      if (results.length > 0) {
+        setImmediate(() => {
+          try {
+            const typesense = require("./typesenseService");
+            const withCategory = results.map((r) => ({
+              ...r,
+              category: r.category || category || null,
+              asin: r.asin || r.platformId,
+            }));
+            typesense.indexBatch(withCategory).catch(() => {});
+          } catch (_) {}
+        });
+      }
+
+      return results;
     } catch (err) {
       const status = err.response?.status;
       logger.error(

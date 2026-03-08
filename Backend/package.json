@@ -33,6 +33,7 @@
     "openai": "^4.73.0",
     "p-limit": "^2.3.0",
     "playwright": "^1.40.1",
+    "typesense": "^3.0.2",
     "uuid": "^9.0.0",
     "winston": "^3.11.0"
   },
