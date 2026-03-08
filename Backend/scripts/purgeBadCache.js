@@ -11,6 +11,11 @@ const QUERIES_TO_PURGE = [
   "hp 15 13th gen intel core i3-1315u",
   "hp 15 13th gen i3 1315u",
   "hp 15 laptop",
+  // washing machine bad cache (BP monitor + furniture mover contamination)
+  "washing machines",
+  "washing machine",
+  "best washing machines in india",
+  "best washing machine in india",
 ];
 
 function normalise(q) {

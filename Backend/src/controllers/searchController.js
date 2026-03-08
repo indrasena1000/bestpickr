@@ -144,11 +144,11 @@ function scoreRelevance(products, intentResult) {
         }
       }
 
-      // VETO: if the query had specific tokens (e.g. "air conditioner") but NONE
-      // of them appear in this product, reject it even if it matched the broad
-      // category (e.g. "appliances"). This prevents kitchen choppers from
-      // appearing when searching "air conditioner under 30000".
-      if (qTokens.length >= 2 && tokenMatchCount === 0) score = 0;
+      // VETO: if the query had specific tokens (e.g. "geyser", "air conditioner") but
+      // NONE of them appear in this product, reject it — even if it matched the broad
+      // category (e.g. "appliances"). This prevents pressure cookers appearing when
+      // searching "geyser" and kitchen choppers for "air conditioner under 30000".
+      if (qTokens.length >= 1 && tokenMatchCount === 0) score = 0;
 
       return { ...p, _relevance: score };
     })
@@ -176,6 +176,21 @@ function dedup(products) {
 
     return true;
   });
+}
+
+// ── LEARNED QUERY MAPPING ─────────────────────────────────────────
+// Checks if we have a previously-learned brand+category for this normalized query.
+// Populated by liveProductFetchService after each Amazon live fetch.
+async function checkLearnedMapping(prisma, normalizedKey) {
+  if (!prisma || !normalizedKey) return null;
+  try {
+    return await prisma.searchQueryMapping.findUnique({
+      where: { normalizedQuery: normalizedKey },
+      select: { brand: true, category: true },
+    });
+  } catch (_) {
+    return null;
+  }
 }
 
 async function getTop50(redis, category) {
@@ -423,13 +438,10 @@ async function pathB(redis, intentResult, startTime, prisma, rawQuery) {
   }
 
   // ── Relevance scoring + dedup (Issue 1 + Issue 6) ───────────────
-  // Only keep products that actually match the query; prevent kitchen
-  // scales appearing for "air conditioner under 50k".
+  // Always filter products to those actually matching the query tokens —
+  // even single-word queries like "geyser" must veto unrelated appliances.
   let final = dedup(filtered);
-  if (
-    intentResult.cleanQuery &&
-    intentResult.cleanQuery.split(/\s+/).length >= 2
-  ) {
+  if (intentResult.cleanQuery) {
     const scored = scoreRelevance(final, intentResult);
     // Always use scored result. If empty, the zero-results block below
     // falls through to pathA live fetch — do NOT restore unscored products
@@ -504,7 +516,32 @@ async function search(req, res) {
   }
 
   // Step 2: Classify intent (now with structured attributes)
-  const intentResult = classifyIntent(rawQuery, rawCat);
+  let intentResult = classifyIntent(rawQuery, rawCat);
+
+  // Step 2b: Check learned query mappings (populated by past live fetches).
+  // If we have previously fetched "safari bags" and learned brand=safari,
+  // category=bags, upgrade the intent so pathB/pathA serve from cache
+  // instead of hitting Amazon again.
+  if (prismaClient && (!intentResult.brand || !intentResult.category)) {
+    const learned = await checkLearnedMapping(prismaClient, normalized);
+    if (learned) {
+      const boostedCategory = learned.category || intentResult.category;
+      const boostedBrand    = learned.brand    || intentResult.brand;
+      // Upgrade intent so the query routes through the right path instead of
+      // LOW_CONFIDENCE (which wastes resources running pathA + pathB in parallel)
+      let boostedIntent = intentResult.intent;
+      if (intentResult.intent === "LOW_CONFIDENCE" && boostedCategory) {
+        boostedIntent = boostedBrand ? "BRAND_CATEGORY" : "CATEGORY";
+      }
+      intentResult = {
+        ...intentResult,
+        brand:      boostedBrand    || null,
+        category:   boostedCategory || null,
+        intent:     boostedIntent,
+        confidence: intentResult.confidence < 0.55 ? 0.55 : intentResult.confidence,
+      };
+    }
+  }
   logger.info(
     `Search: "${rawQuery}" → ${intentResult.intent} ` +
       `conf=${intentResult.confidence} cat=${intentResult.category} ` +

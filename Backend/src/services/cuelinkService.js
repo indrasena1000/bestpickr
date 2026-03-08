@@ -29,37 +29,67 @@
 //   Redis key: bestpickr:cuelinks:{asin}
 //   TTL: 6 hours
 // ─────────────────────────────────────────────────────────────────
-'use strict';
+"use strict";
 
-const axios  = require('axios');
-const logger = require('../utils/logger');
-const { getClient: getRedis } = require('../utils/redis');
+const axios = require("axios");
+const logger = require("../utils/logger");
+const { getClient: getRedis } = require("../utils/redis");
+const flipkartService = require("./flipkartService");
 
 // ── CONFIG ────────────────────────────────────────────────────────
-// CUELINKS_WEBSITE_ID is the access token for the clnk.in API
-const ACCESS_TOKEN    = process.env.CUELINKS_WEBSITE_ID;
-const CHANNEL_ID      = process.env.CUELINKS_API_KEY; // numeric publisher ID
+// CUELINKS_WEBSITE_ID is the access token for the clnk.in API (kept for Myntra fallback)
+const ACCESS_TOKEN = process.env.CUELINKS_WEBSITE_ID;
+const CHANNEL_ID = process.env.CUELINKS_API_KEY; // numeric publisher ID (CID)
 
-const CLNK_BASE_URL   = 'https://api.clnk.in';
-const CACHE_TTL       = 6 * 60 * 60;           // 6 hours
-const REDIS_PREFIX    = 'bestpickr:cuelinks';
-const REQUEST_TIMEOUT = 10000;                  // 10s
+// Linkkit: https://linksredirect.com/?cid=<CHANNEL_ID>&source=linkkit&url=<encoded>
+const LINKKIT_BASE = "https://linksredirect.com";
+const CLNK_BASE_URL = "https://api.clnk.in";
+const CACHE_TTL = 6 * 60 * 60; // 6 hours
+const STALE_PRICE_TTL = 1 * 60 * 60; // 1 hour — retry sooner when price=null
+const REDIS_PREFIX = "bestpickr:cuelinks";
+const REQUEST_TIMEOUT = 10000; // 10s
 
 // ── MYNTRA-RELEVANT CATEGORIES ────────────────────────────────────
 const MYNTRA_CATEGORIES = new Set([
-  'footwear', 'fashion', 'skincare', 'beauty',
-  'accessories', 'clothing', 'bags', 'jewellery', 'watches', 'sports',
+  "footwear",
+  "fashion",
+  "skincare",
+  "beauty",
+  "accessories",
+  "clothing",
+  "bags",
+  "jewellery",
+  "watches",
+  "sports",
 ]);
 const MYNTRA_KEYWORDS = [
-  'shoe', 'sneaker', 'sandal', 'boot', 'heel',
-  'shirt', 'tshirt', 't-shirt', 'jeans', 'kurta', 'saree', 'dress',
-  'serum', 'sunscreen', 'moisturizer', 'cleanser',
-  'bag', 'wallet', 'watch', 'sunglasses', 'belt', 'jacket',
+  "shoe",
+  "sneaker",
+  "sandal",
+  "boot",
+  "heel",
+  "shirt",
+  "tshirt",
+  "t-shirt",
+  "jeans",
+  "kurta",
+  "saree",
+  "dress",
+  "serum",
+  "sunscreen",
+  "moisturizer",
+  "cleanser",
+  "bag",
+  "wallet",
+  "watch",
+  "sunglasses",
+  "belt",
+  "jacket",
 ];
 
 function isMyntraRelevant(productName, category) {
   if (MYNTRA_CATEGORIES.has(category?.toLowerCase())) return true;
-  const q = (productName || '').toLowerCase();
+  const q = (productName || "").toLowerCase();
   return MYNTRA_KEYWORDS.some((kw) => q.includes(kw));
 }
 
@@ -83,11 +113,26 @@ async function getAffiliateLinks(asin, productName, brand, category) {
   // ── STEP 1: Redis cache check ─────────────────────────────────
   const cached = await getCachedLinks(asin);
   if (cached) {
-    logger.info(`🔗 Cuelinks: cache HIT for ${asin} (${Date.now() - start}ms)`);
-    return { ...cached, cached: true, error: null };
+    // Return cached only if we have a Flipkart price; otherwise re-fetch to get it
+    const hasPrice = cached.flipkart?.price != null;
+    if (hasPrice) {
+      logger.info(
+        `🔗 Cuelinks: cache HIT for ${asin} (${Date.now() - start}ms)`,
+      );
+      return { ...cached, cached: true, error: null };
+    }
+    logger.info(
+      `🔗 Cuelinks: cache hit but price=null for ${asin} — refreshing`,
+    );
   }
 
-  const result = { flipkart: null, myntra: null, bestDeal: null, cached: false, error: null };
+  const result = {
+    flipkart: null,
+    myntra: null,
+    bestDeal: null,
+    cached: false,
+    error: null,
+  };
 
   try {
     // ── STEP 2: Build search URLs + convert to affiliate links ────
@@ -98,55 +143,142 @@ async function getAffiliateLinks(asin, productName, brand, category) {
         : Promise.resolve(null),
     ]);
 
-    if (flipkartResult.status === 'fulfilled' && flipkartResult.value) {
+    if (flipkartResult.status === "fulfilled" && flipkartResult.value) {
       result.flipkart = flipkartResult.value;
-      logger.info(`🔗 Cuelinks: Flipkart link ready (${result.flipkart._source})`);
-    } else if (flipkartResult.status === 'rejected') {
-      logger.warn(`🔗 Cuelinks: Flipkart failed — ${flipkartResult.reason?.message}`);
+      logger.info(
+        `🔗 Cuelinks: Flipkart link ready (${result.flipkart._source})`,
+      );
+    } else if (flipkartResult.status === "rejected") {
+      logger.warn(
+        `🔗 Cuelinks: Flipkart failed — ${flipkartResult.reason?.message}`,
+      );
     }
 
-    if (myntraResult.status === 'fulfilled' && myntraResult.value) {
+    if (myntraResult.status === "fulfilled" && myntraResult.value) {
       result.myntra = myntraResult.value;
       logger.info(`🔗 Cuelinks: Myntra link ready (${result.myntra._source})`);
-    } else if (myntraResult.status === 'rejected') {
-      logger.warn(`🔗 Cuelinks: Myntra failed — ${myntraResult.reason?.message}`);
+    } else if (myntraResult.status === "rejected") {
+      logger.warn(
+        `🔗 Cuelinks: Myntra failed — ${myntraResult.reason?.message}`,
+      );
     }
 
-    // ── STEP 3: Cache ─────────────────────────────────────────────
-    await setCachedLinks(asin, {
-      flipkart: result.flipkart ? cleanForCache(result.flipkart) : null,
-      myntra:   result.myntra   ? cleanForCache(result.myntra)   : null,
-      bestDeal: null, // no prices from link-only approach
-    });
+    // ── STEP 3: Cache — shorter TTL when price is still null ──────
+    const cacheTtl =
+      result.flipkart?.price != null ? CACHE_TTL : STALE_PRICE_TTL;
+    await setCachedLinks(
+      asin,
+      {
+        flipkart: result.flipkart ? cleanForCache(result.flipkart) : null,
+        myntra: result.myntra ? cleanForCache(result.myntra) : null,
+        bestDeal: null,
+      },
+      cacheTtl,
+    );
 
     logger.info(
-      `🔗 Cuelinks: done for ${asin} — flipkart=${result.flipkart ? '✅' : '❌'} ` +
-      `myntra=${result.myntra ? '✅' : '❌'} (${Date.now() - start}ms)`,
+      `🔗 Cuelinks: done for ${asin} — flipkart=${result.flipkart ? "✅" : "❌"} ` +
+        `myntra=${result.myntra ? "✅" : "❌"} price=${result.flipkart?.price ?? null} (${Date.now() - start}ms)`,
     );
     return result;
-
   } catch (err) {
     logger.error(`🔗 Cuelinks: unexpected error for ${asin} — ${err.message}`);
-    return { flipkart: null, myntra: null, bestDeal: null, cached: false, error: err.message };
+    return {
+      flipkart: null,
+      myntra: null,
+      bestDeal: null,
+      cached: false,
+      error: err.message,
+    };
   }
+}
+
+// ═════════════════════════════════════════════════════════════════
+// LINKKIT URL BUILDER (Cuelinks Linkkit / linksredirect.com)
+// ═════════════════════════════════════════════════════════════════
+/**
+ * Wrap any Flipkart or Myntra URL with Cuelinks Linkkit affiliate tracking.
+ * Format: https://linksredirect.com/?cid=<CHANNEL_ID>&source=linkkit&url=<encoded_url>
+ * No API call required — pure URL construction.
+ */
+function buildLinkkitAffiliateUrl(url) {
+  if (!url) return null;
+  if (!CHANNEL_ID) {
+    logger.warn(
+      "🔗 Cuelinks: CUELINKS_API_KEY (CID) not set — cannot build Linkkit URL",
+    );
+    return null;
+  }
+  return `${LINKKIT_BASE}/?cid=${encodeURIComponent(CHANNEL_ID)}&source=linkkit&url=${encodeURIComponent(url)}`;
+}
+
+// ═════════════════════════════════════════════════════════════════
+// BEST MATCH PICKER
+// ═════════════════════════════════════════════════════════════════
+/**
+ * Score and rank scraped Flipkart products against our target product name/brand.
+ * Returns the best-matching product or the first result if nothing scores.
+ */
+function pickBestMatch(products, productName, brand) {
+  if (!products || products.length === 0) return null;
+  const nameLower = (productName || "").toLowerCase();
+  const brandLower = (brand || "").toLowerCase();
+  const queryWords = nameLower.split(/\s+/).filter((w) => w.length > 3);
+
+  const scored = products.map((p) => {
+    const pName = (p.name || "").toLowerCase();
+    let score = 0;
+    if (brandLower && pName.includes(brandLower)) score += 20;
+    for (const word of queryWords) {
+      if (pName.includes(word)) score += 10;
+    }
+    if (p.price) score += 5;
+    return { ...p, _score: score };
+  });
+
+  scored.sort((a, b) => b._score - a._score);
+  return scored[0] || products[0];
 }
 
 // ═════════════════════════════════════════════════════════════════
 // FLIPKART SEARCH
 // ═════════════════════════════════════════════════════════════════
 async function searchFlipkart(productName, brand) {
-  const query      = [brand, productName].filter(Boolean).join(' ');
-  const searchUrl  = `https://www.flipkart.com/search?q=${encodeURIComponent(query)}&sort=popularity`;
-  const affiliate  = await convertToAffiliateLink(searchUrl);
+  const query = [brand, productName].filter(Boolean).join(" ");
 
+  // Try scraping Flipkart for actual product + real price
+  try {
+    const products = await flipkartService.searchProducts(query);
+    if (products.length > 0) {
+      const best = pickBestMatch(products, productName, brand);
+      if (best) {
+        const affiliateUrl = buildLinkkitAffiliateUrl(best.url) || best.url;
+        return {
+          price: best.price,
+          url: best.url,
+          affiliateUrl,
+          inStock: best.inStock !== false,
+          rating: best.rating,
+          reviewCount: best.reviewCount,
+          _source: "linkkit_scraped",
+        };
+      }
+    }
+  } catch (err) {
+    logger.warn(`🔗 Cuelinks: Flipkart scrape failed — ${err.message}`);
+  }
+
+  // Fallback: Flipkart search page URL wrapped with Linkkit
+  const searchUrl = `https://www.flipkart.com/search?q=${encodeURIComponent(query)}&sort=popularity`;
+  const affiliateUrl = buildLinkkitAffiliateUrl(searchUrl) || searchUrl;
   return {
-    price:       null,           // Flipkart search URL — price requires scraping
-    url:         searchUrl,
-    affiliateUrl: affiliate,
-    inStock:     true,
-    rating:      null,
+    price: null,
+    url: searchUrl,
+    affiliateUrl,
+    inStock: true,
+    rating: null,
     reviewCount: null,
-    _source:     affiliate !== searchUrl ? 'cuelinks_converted' : 'direct_url',
+    _source: "linkkit_search",
   };
 }
 
@@ -154,18 +286,18 @@ async function searchFlipkart(productName, brand) {
 // MYNTRA SEARCH
 // ═════════════════════════════════════════════════════════════════
 async function searchMyntra(productName, brand, category) {
-  const query     = [brand, productName].filter(Boolean).join(' ');
+  const query = [brand, productName].filter(Boolean).join(" ");
   const searchUrl = `https://www.myntra.com/search?rawQuery=${encodeURIComponent(query)}`;
-  const affiliate = await convertToAffiliateLink(searchUrl);
+  const affiliateUrl = buildLinkkitAffiliateUrl(searchUrl) || searchUrl;
 
   return {
-    price:       null,
-    url:         searchUrl,
-    affiliateUrl: affiliate,
-    inStock:     true,
-    rating:      null,
+    price: null,
+    url: searchUrl,
+    affiliateUrl,
+    inStock: true,
+    rating: null,
     reviewCount: null,
-    _source:     affiliate !== searchUrl ? 'cuelinks_converted' : 'direct_url',
+    _source: "linkkit_myntra",
   };
 }
 
@@ -183,14 +315,16 @@ async function searchMyntra(productName, brand, category) {
  */
 async function convertToAffiliateLink(originalUrl) {
   if (!ACCESS_TOKEN) {
-    logger.warn('🔗 Cuelinks: CUELINKS_WEBSITE_ID not set — returning direct URL');
+    logger.warn(
+      "🔗 Cuelinks: CUELINKS_WEBSITE_ID not set — returning direct URL",
+    );
     return originalUrl;
   }
 
   try {
     // CHANNEL_ID (CUELINKS_API_KEY) is the numeric publisher ID — include if available
     const body = {
-      long_url:     originalUrl,
+      long_url: originalUrl,
       access_token: ACCESS_TOKEN,
       ...(CHANNEL_ID ? { channel_id: CHANNEL_ID } : {}),
     };
@@ -200,14 +334,17 @@ async function convertToAffiliateLink(originalUrl) {
       body,
       {
         timeout: REQUEST_TIMEOUT,
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
       },
     );
 
     // Response field names vary — try common ones
     const shortUrl =
-      res.data?.short_url  ||
-      res.data?.shortUrl   ||
+      res.data?.short_url ||
+      res.data?.shortUrl ||
       res.data?.data?.short_url ||
       res.data?.url;
 
@@ -216,13 +353,18 @@ async function convertToAffiliateLink(originalUrl) {
       return shortUrl;
     }
 
-    logger.warn(`🔗 Cuelinks: API returned no short_url — body: ${JSON.stringify(res.data).slice(0, 200)}`);
+    logger.warn(
+      `🔗 Cuelinks: API returned no short_url — body: ${JSON.stringify(res.data).slice(0, 200)}`,
+    );
     return originalUrl;
-
   } catch (err) {
     const status = err.response?.status;
-    const msg    = err.response?.data ? JSON.stringify(err.response.data).slice(0, 150) : err.message;
-    logger.warn(`🔗 Cuelinks: link conversion failed (status=${status}) — ${msg}`);
+    const msg = err.response?.data
+      ? JSON.stringify(err.response.data).slice(0, 150)
+      : err.message;
+    logger.warn(
+      `🔗 Cuelinks: link conversion failed (status=${status}) — ${msg}`,
+    );
     return originalUrl; // Fall back to original — still sends traffic
   }
 }
@@ -233,7 +375,7 @@ async function convertToAffiliateLink(originalUrl) {
 
 async function getCachedLinks(asin) {
   const redis = getRedis();
-  if (!redis || redis.status !== 'ready') return null;
+  if (!redis || redis.status !== "ready") return null;
   const key = `${REDIS_PREFIX}:${asin}`;
   try {
     const raw = await redis.get(key);
@@ -244,12 +386,17 @@ async function getCachedLinks(asin) {
   }
 }
 
-async function setCachedLinks(asin, data) {
+async function setCachedLinks(asin, data, ttl = CACHE_TTL) {
   const redis = getRedis();
-  if (!redis || redis.status !== 'ready') return;
+  if (!redis || redis.status !== "ready") return;
   const key = `${REDIS_PREFIX}:${asin}`;
   try {
-    await redis.set(key, JSON.stringify({ ...data, cachedAt: Date.now() }), 'EX', CACHE_TTL);
+    await redis.set(
+      key,
+      JSON.stringify({ ...data, cachedAt: Date.now() }),
+      "EX",
+      ttl,
+    );
   } catch (err) {
     logger.warn(`🔗 Cuelinks: Redis SET failed for ${key} — ${err.message}`);
   }

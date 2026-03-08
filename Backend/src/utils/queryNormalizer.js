@@ -280,6 +280,8 @@ const PLURAL_MAP = {
   televisions: "tv",
   refrigerators: "refrigerator",
   purifiers: "purifier",
+  geysers: "geyser",
+  heaters: "heater",
   shoes: "shoe",
   sneakers: "sneaker",
   sandals: "sandal",
@@ -364,11 +366,14 @@ const KEYWORD_TO_SUBTYPE = {
   "induction stove": "induction_cooktop",
   "pressure cooker": "pressure_cooker",
   "water heater": "geyser",
+  "water heaters": "geyser",
   "running shoes": "running_shoes",
   "running shoe": "running_shoes",
   "face wash": "face_wash",
   "action camera": "action_camera",
   // Appliances — single word
+  // "ton" = AC capacity marker (1 ton, 1.5 ton, 2 ton) — always an air conditioner
+  ton: "air_conditioner",
   washing: "washing_machine",
   washer: "washing_machine",
   refrigerator: "refrigerator",
@@ -380,7 +385,9 @@ const KEYWORD_TO_SUBTYPE = {
   stove: "stove",
   cooktop: "stove",
   geyser: "geyser",
+  geysers: "geyser",
   heater: "geyser",
+  heaters: "geyser",
   purifier: "water_purifier",
   mixer: "mixer_grinder",
   grinder: "mixer_grinder",
@@ -437,6 +444,18 @@ const KEYWORD_TO_SUBTYPE = {
   playstation: "console",
   xbox: "console",
   ps5: "console",
+  // Bags
+  backpack: "backpack",
+  backpacks: "backpack",
+  luggage: "luggage",
+  suitcase: "luggage",
+  trolley: "luggage",
+  handbag: "handbag",
+  purse: "handbag",
+  tote: "handbag",
+  clutch: "handbag",
+  duffel: "backpack",
+  duffle: "backpack",
 };
 
 // Multi-word phrases to check first — sorted longest first to prefer specific matches

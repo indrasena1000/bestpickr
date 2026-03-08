@@ -31,19 +31,17 @@ const TOP_INDIA_CACHE_KEY = "bestpickr:top-india:stable";
 const TOP_INDIA_TTL = 21600; // 6h — aligned with snapshot cron cadence
 
 // GET /api/products/top-india
-// Returns the single BEST analyzed product for each canonical category.
+// Returns the single BEST snapshot product for each canonical category.
 //
 // Design principles:
 //   • STABLE — same products returned on every reload (6h stable cache).
 //   • DETERMINISTIC — always the #1 product by aiScore, never random.
-//   • FULL DATA — includes platforms[] so detail page works immediately,
-//     no client-side hydration needed.
-//   • ZERO external calls — reads only from Redis snapshot pool or Postgres.
-//   • PER-CATEGORY fallback — if a category has no Redis pool, queries
-//     Postgres directly (not only when ALL pools are empty).
+//   • FULL DATA — includes platforms[] so detail page works immediately.
+//   • ZERO external calls — Redis snapshot only (top50:{category}).
+//   • ZERO DB fallback — if a category has no snapshot, we skip it.
 //
 // Cache: bestpickr:top-india:stable (6h TTL)
-//   Invalidated by rankingSnapshotCron after each snapshot run so the
+//   Invalidated by rankingSnapshotCron after each 6h snapshot run so the
 //   next request automatically picks up newly-ranked products.
 
 // Helper: build a canonical product shape with platforms[]
@@ -92,7 +90,6 @@ function buildTopIndiaEntry(pick, cat, source) {
 }
 
 router.get("/top-india", async (req, res) => {
-  const pr = req.app.locals.prisma || prisma;
   const rc = getRedisClient();
 
   // ── 0. Return stable cache if available (prevents reshuffling on reload) ──
@@ -111,8 +108,7 @@ router.get("/top-india", async (req, res) => {
     }
   }
 
-  // ── 1. Build per-category: Redis snapshot pool (if enabled) first,
-  //       then Postgres fallback for every category that is missing ──────
+  // ── 1. Build per-category from Redis snapshots only ───────────────────
   const products = [];
 
   await Promise.all(
@@ -134,50 +130,10 @@ router.get("/top-india", async (req, res) => {
             return;
           }
         }
-      } catch (_) {}
-
-      // Postgres fallback — query for the single best fully-analyzed product
-      try {
-        const rows = await pr.product.findMany({
-          where: {
-            category: cat,
-            inStock: true,
-            aiScore: { not: null },
-            imageUrl: { not: null },
-            brand: { not: null },
-            platform: "AMAZON",
-          },
-          orderBy: { aiScore: "desc" },
-          take: 1,
-          select: {
-            id: true,
-            name: true,
-            brand: true,
-            category: true,
-            currentPrice: true,
-            imageUrl: true,
-            aiScore: true,
-            platformId: true,
-            affiliateUrl: true,
-            platformUrl: true,
-            platformRating: true,
-            reviewCount: true,
-            platform: true,
-          },
-        });
-        if (rows.length) {
-          const p = rows[0];
-          // Remap schema field platformRating → rating for buildTopIndiaEntry
-          products.push(
-            buildTopIndiaEntry(
-              { ...p, rating: p.platformRating, price: p.currentPrice },
-              cat,
-              "postgres",
-            ),
-          );
-        }
       } catch (err) {
-        logger.warn(`top-india: Postgres failed for ${cat} — ${err.message}`);
+        logger.warn(
+          `top-india: Redis snapshot read failed for ${cat} — ${err.message}`,
+        );
       }
     }),
   );
@@ -209,7 +165,7 @@ router.get("/top-india", async (req, res) => {
   }
 
   logger.info(
-    `top-india: returning ${ordered.length} products (deterministic, source: postgres/redis)`,
+    `top-india: returning ${ordered.length} products (deterministic, source: redis-only)`,
   );
   res.json({ success: true, products: ordered });
 });
@@ -640,7 +596,10 @@ router.get("/:id/analyze", async (req, res) => {
   try {
     const rawId = req.params.id;
     const pr = req.app.locals.prisma || prisma;
-    const { runAnalysisPipeline } = require("../pipeline/analysisPipeline");
+    const {
+      runAnalysisPipeline,
+      lookupAnalysis,
+    } = require("../pipeline/analysisPipeline");
 
     // Try to find product in Postgres — handle both UUID and ASIN formats
     let dbProduct = null;
@@ -683,6 +642,32 @@ router.get("/:id/analyze", async (req, res) => {
     logger.info(
       `[analyze] id=${rawId} asin=${asin} name="${name}" dbFound=${!!dbProduct}`,
     );
+
+    // Cache-first path: if analysis already exists (Redis/Mongo), return it
+    // immediately and skip GPT entirely.
+    const cached = await lookupAnalysis(asin);
+    const hasReadableAnalysis =
+      !!cached &&
+      !!(
+        cached.buyRecommendation ||
+        (cached.whatPeopleLove && cached.whatPeopleLove.length > 0) ||
+        (cached.commonComplaints && cached.commonComplaints.length > 0) ||
+        cached.avoidIf
+      );
+
+    if (hasReadableAnalysis) {
+      return res.json({
+        success: true,
+        analysis: {
+          buyRecommendation: cached.buyRecommendation || null,
+          whatPeopleLove: cached.whatPeopleLove || [],
+          commonComplaints: cached.commonComplaints || [],
+          avoidIf: cached.avoidIf || null,
+          aiScore: cached.aiScore || null,
+        },
+        cached: true,
+      });
+    }
 
     const result = await runAnalysisPipeline(asin, name, category, {
       brand,

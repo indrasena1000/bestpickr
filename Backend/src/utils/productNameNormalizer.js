@@ -182,4 +182,26 @@ function normalize(query) {
   return { brand, model, normalized }
 }
 
-module.exports = { normalize, detectBrand, extractModel, setDynamicBrands, BRAND_ALIAS_MAP, VARIANT_TO_BRAND }
+/**
+ * addDynamicBrand(brandName)
+ * Immediately adds a single brand to the in-memory dynamic brand set.
+ * Called when a live Amazon fetch teaches us a new brand (e.g. "Safari"),
+ * so subsequent searches within the same server process benefit right away
+ * without waiting for the next 6h setDynamicBrands() cron refresh.
+ */
+function addDynamicBrand(brandName) {
+  if (!brandName) return
+  const name = brandName.toLowerCase().trim()
+  if (!name || name.length < 3 || AMBIGUOUS_BRAND_WORDS.has(name)) return
+
+  if (name.includes(' ')) {
+    if (!_dynMultiBrands.includes(name)) {
+      _dynMultiBrands.push(name)
+      _dynMultiBrands.sort((a, b) => b.length - a.length)
+    }
+  } else {
+    _dynSingleBrands.add(name)
+  }
+}
+
+module.exports = { normalize, detectBrand, extractModel, setDynamicBrands, addDynamicBrand, BRAND_ALIAS_MAP, VARIANT_TO_BRAND }
